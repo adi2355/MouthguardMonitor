@@ -1,74 +1,80 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { Text, View, Button } from "react-native";
+import { openDatabaseAsync, SQLiteDatabase, deleteDatabaseAsync } from 'expo-sqlite';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
 
-export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+interface Counter {
+  id: string,
+  count: number
 }
 
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
+export default function App() {
+
+  async function initDatabase() {
+    try {
+      const userDataDb: SQLiteDatabase = await openDatabaseAsync('userData');
+
+      await userDataDb.execAsync(`
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE IF NOT EXISTS userData (id TEXT PRIMARY KEY NOT NULL, count INTEGER);
+        INSERT INTO userData (id, count) VALUES ('counter', 0);
+      `);
+      console.log('initialized database');
+    } catch(e) {
+      console.log('Error initalizing db');
+      console.error(e);
+    }
+
+  }
+
+  async function getCount(){
+    try {
+      const userDataDb: SQLiteDatabase = await openDatabaseAsync('userData');
+
+      const firstRow: Counter = await userDataDb.getFirstAsync('SELECT * FROM userData') as Counter;
+      console.log(firstRow.id, firstRow.count);
+
+    } catch(e) {
+      console.log('Error fetching count from db');
+      console.error(e);
+    }
+  }
+
+  async function incrementCounter() {
+    try {
+      const userDataDb: SQLiteDatabase = await openDatabaseAsync('userData');
+
+      const counters: Counter[] = await userDataDb.getAllAsync(`SELECT * FROM userData WHERE id = 'counter'`);
+      const count = counters[0].count + 1;
+      await userDataDb.runAsync('UPDATE userData SET count = ? WHERE id = ?', count, 'counter');
+
+    } catch(e) {
+      console.log('Error fetching count from db');
+      console.error(e);
+    }
+  }
+
+  async function deleteTable() {
+    try{
+      deleteDatabaseAsync('userData')
+    } catch (e) {
+      console.error(e);
+    }
+
+  }
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
+      <Text>CRUD</Text>
+      <Button title="Initalize Database" onPress={initDatabase}></Button>
+      <Button title="getCount" onPress={getCount}></Button>
+      <Button title="incrementCounter" onPress={incrementCounter}></Button>
+      <Button title="deleteTable" onPress={deleteTable}></Button>
+    </View>
+  );
+}
