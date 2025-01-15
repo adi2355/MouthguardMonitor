@@ -9,8 +9,20 @@ export default function TabLayout() {
         options={{title: 'Home'}}
       />
       <Tabs.Screen
-        name="cannabisUsagePage"
-        options={{title: 'Cannabis Use'}}
+        name="mydata"
+        options={{title: 'My Data'}}
+      />
+      <Tabs.Screen
+        name="trending"
+        options={{title: 'Trending'}}
+      />
+      <Tabs.Screen
+        name="journal"
+        options={{title: 'Journal'}}
+      />
+      <Tabs.Screen
+        name="devices"
+        options={{title: 'Devices'}}
       />
     </Tabs>
   );

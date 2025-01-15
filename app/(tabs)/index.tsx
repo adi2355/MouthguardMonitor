@@ -1,48 +1,61 @@
-import { Text, View, Button } from "react-native";
-import { deleteDatabaseAsync, openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite';
+import { StyleSheet, View, SafeAreaView, Image, Dimensions, Text } from "react-native";
 import { useEffect } from "react";
-import { BONG_HITS_DATABASE_NAME, getInsertStatements } from "@/util/utils";
+import { initializeAppOnFirstLaunch, isFirstLaunch } from "@/util/dbManager";
 
 export default function App() {
-  
-  async function initDatabase() {
-    try {
-        const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-        await bongHitsDb.execAsync(`
-            PRAGMA journal_mode = WAL;
-            CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (timestamp TIMESTAMP PRIMARY KEY NOT NULL, duration_ms INTEGER NOT NULL);
-            \n\t`.concat(getInsertStatements()));
-        console.log(`Created ${BONG_HITS_DATABASE_NAME} table!`);
-    } 
-    catch (e) {
-        console.error(`Error creating ${BONG_HITS_DATABASE_NAME}`, e);
-    }
-}
 
   useEffect(() => {
-    initDatabase();
+    const firstLaunchFlag: Promise<boolean> = isFirstLaunch();
+    firstLaunchFlag.then( flag => {
+      if (flag) {
+        initializeAppOnFirstLaunch();
+      }
+    });
+    
   }, []);
 
-  async function deleteTable() {
-    try{
-      deleteDatabaseAsync('BongHits')
-      console.log('Table BongHits deleted')
-    } catch (e) {
-      console.error(e);
-    }
+    return (
+    <View style={styles.container}>
 
-  }
-
-  return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Text>Homepage</Text>
-      <Button title="deleteTable" onPress={deleteTable}></Button>
     </View>
+
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: .5,
+    flexDirection: 'column',
+    justifyContent: 'center',  
+    alignItems: 'center',    
+  },
+  imageContainer: {
+    position: 'absolute', 
+    top: -80, 
+    width: '90%',
+  },
+  masterLogo: { 
+    width: '100%',
+    resizeMode: 'contain',
+  },
+  text: {
+    textAlign: 'center',
+  },
+  horizontalLine: {
+    width: '90%', // Adjust the line width (percentage of the screen width)
+    height: 1, // Line thickness
+    backgroundColor: '#000', // Line color
+    marginTop: 100, // Space above and below the line
+    marginBottom: 20, // Space above and below the line
+  },
+  loginsContainer: {
+    display: 'flex',
+    flex: 0.5,
+    flexDirection: 'row',
+    marginTop: 50,
+  },
+  login: {
+    borderColor: '#000',
+    borderStyle: 'solid',
+  }
+});

@@ -16,7 +16,10 @@ export default function BarGraph(props: BarGraphProps) {
     const data = props.data;
     const barWidth = screenWidth / data.length - 10;
     const labelOffset = barWidth / 2;
-    const maxValue = Math.max(...data.map(item => item.value));
+    let maxValue = Math.max(...data.map(item => item.value));
+    if (maxValue === 0) {
+        maxValue = 10;
+    }
     const scale = 170 / maxValue;
     const animatedHeights = useRef(data.map(() => new Animated.Value(0))).current;
     const [selectedValue, setSelectedValue] = useState<number>(0);
@@ -34,6 +37,7 @@ export default function BarGraph(props: BarGraphProps) {
         Animated.stagger(100, animations).start();
     }, [animatedHeights, scale]);
 
+
     const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
     function handleBarPress(value: number) {
@@ -41,75 +45,58 @@ export default function BarGraph(props: BarGraphProps) {
     };
 
     return (
-        <View style={styles.card}>
-            <View style={styles.container}>
-                <Svg height="220" width={screenWidth}>
-                    <Defs>
-                        <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="100%">
-                            <Stop offset="0" stopColor="#6a11cb" />
-                            <Stop offset="1" stopColor="#2575fc" />
-                        </LinearGradient>
-                    </Defs>
-                    <G>
-                        {data.map((item, index) => (
-                            <AnimatedRect
-                                key={item.label}
-                                x={index * (barWidth + 12)}
-                                y={animatedHeights[index].interpolate({
-                                    inputRange: [0, item.value * scale],
-                                    outputRange: [200, 200 - item.value * scale],
-                                })}
-                                width={barWidth}
-                                height={animatedHeights[index]}
-                                fill="url(#grad)"
-                                rx="4"
-                                opacity={selectedValue === item.value ? 1 : 0.7}
-                                onPress={() => handleBarPress(item.value)}
-                            />
-                        ))}
-                    </G>
-                </Svg>
-                {selectedValue && (
-                    <View style={styles.valueDisplay}>
-                        <Text style={styles.valueText}>Hits: {selectedValue}</Text>
-                    </View>
-                )}
-                <View style={styles.labels}>
+        <View style={styles.container}>
+            <Svg height="220" width={screenWidth}>
+                <Defs>
+                    <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="100%">
+                        <Stop offset="0" stopColor="#6a11cb" />
+                        <Stop offset="1" stopColor="#2575fc" />
+                    </LinearGradient>
+                </Defs>
+                <G>
                     {data.map((item, index) => (
-                        <Text
+                        <AnimatedRect
                             key={item.label}
-                            style={[
-                                styles.label,
-                                {
-                                    width: barWidth,
-                                    left: index * (barWidth + 12) + labelOffset - barWidth / 2,
-                                },
-                            ]}
-                        >
-                            {item.label}
-                        </Text>
+                            x={index * (barWidth + 12)}
+                            y={animatedHeights[index].interpolate({
+                                inputRange: [0, item.value * scale],
+                                outputRange: [200, 200 - item.value * scale],
+                            })}
+                            width={barWidth}
+                            height={animatedHeights[index]}
+                            fill="url(#grad)"
+                            rx="4"
+                            opacity={selectedValue === item.value ? 1 : 0.7}
+                            onPress={() => handleBarPress(item.value)}
+                        />
                     ))}
+                </G>
+            </Svg>
+            {selectedValue && (
+                <View style={styles.valueDisplay}>
+                    <Text style={styles.valueText}>Hits: {selectedValue}</Text>
                 </View>
+            )}
+            <View style={styles.labels}>
+                {data.map((item, index) => (
+                    <Text key={item.label}
+                        style={[
+                            styles.label,
+                            {
+                                width: barWidth,
+                                left: index * (barWidth + 12) + labelOffset - barWidth / 2,
+                            },
+                        ]}>
+                        {item.label}
+                    </Text>
+                ))}
             </View>
         </View>
+
     );
 };
 
 const styles = StyleSheet.create({
-    card: {
-        width: 350,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 8,
-        elevation: 6,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        padding: 20,
-    },
     container: {
         alignItems: 'center',
         justifyContent: 'center',
