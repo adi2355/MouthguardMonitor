@@ -17,7 +17,6 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ title, data }) => {
     <View style={[styles.row, index === 0 ? styles.topRank : {}]}>
       <Text style={styles.rank}>{index + 1}</Text>
       <Text style={styles.name}>{item.name}</Text>
-      <Text style={styles.score}>{item.score}</Text>
     </View>
   );
 
@@ -79,7 +78,7 @@ const styles = StyleSheet.create({
   score: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#12a35f',
   },
   empty: {
     textAlign: 'center',

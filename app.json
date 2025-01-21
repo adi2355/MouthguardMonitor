@@ -10,7 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.CanovaReactNativeApp"
+      "bundleIdentifier": "com.anonymous.CanovaReactNativeApp",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "This app requires Bluetooth access to connect to devices.",
+        "NSBluetoothPeripheralUsageDescription": "This app requires Bluetooth access to communicate with nearby devices."
+      }
     },
     "android": {
       "adaptiveIcon": {

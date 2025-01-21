@@ -16,7 +16,7 @@ export default function App() {
 
     return (
     <View style={styles.container}>
-
+      <Text>Welcome to Canova's App</Text>
     </View>
 
   );
