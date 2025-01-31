@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite';
-import { BONG_HITS_DATABASE_NAME, getInsertStatements } from "./utils";
+import { BONG_HITS_DATABASE_NAME, SAVED_DEVICES_DATABASE_NAME, getInsertStatements } from "./constants";
 
 const FIRST_LAUNCH_KEY: string = 'hasLaunched';
 
@@ -19,7 +19,7 @@ export async function initializeAppOnFirstLaunch() {
     initializeDatabase();
 }
 
-export async function getDevices() {
+export async function getSavedDevices() {
 
 }
 
@@ -31,8 +31,13 @@ async function initializeDatabase() {
             CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (timestamp TIMESTAMP PRIMARY KEY NOT NULL, duration_ms INTEGER NOT NULL);`
             .concat(getInsertStatements())
           );
-    }
-    catch (e) {
-      console.error(`Error creating ${BONG_HITS_DATABASE_NAME}`, e);
+
+      const savedDevicesDb: SQLiteDatabase = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
+      await savedDevicesDb.execAsync(`
+            PRAGMA journal_mode = WAL;
+            CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (uuid TEXT KEY NOT NULL, name TEXT NOT NULL);`
+          );
+    } catch (e) {
+      console.error("Error creating initializing databases", e);
     }
 }

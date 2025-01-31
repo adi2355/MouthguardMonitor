@@ -1,4 +1,5 @@
 export const BONG_HITS_DATABASE_NAME: string = "BongHits";
+export const SAVED_DEVICES_DATABASE_NAME: string = "SavedDevices";
 
 export const dayLookUpTable = new Map<number, string>()
 dayLookUpTable.set(0, "Sun");

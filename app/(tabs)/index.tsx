@@ -1,6 +1,6 @@
 import { StyleSheet, View, SafeAreaView, Image, Dimensions, Text } from "react-native";
 import { useEffect } from "react";
-import { initializeAppOnFirstLaunch, isFirstLaunch } from "@/util/dbManager";
+import { initializeAppOnFirstLaunch, isFirstLaunch } from "@/src/dbManager";
 
 export default function App() {
 

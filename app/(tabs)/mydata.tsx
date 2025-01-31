@@ -2,8 +2,8 @@ import { Text, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SQLiteDatabase, openDatabaseAsync } from "expo-sqlite";
 import { useState, useEffect } from "react";
-import { AverageHourCount, BongHit, BongHitStats, Datapoint } from "@/util/common-types";
-import { BONG_HITS_DATABASE_NAME, dayLookUpTable} from "@/util/utils";
+import { AverageHourCount, BongHit, BongHitStats, Datapoint } from "@/src/types";
+import { BONG_HITS_DATABASE_NAME, dayLookUpTable} from "@/src/constants";
 import { Card } from "@/components/Card";
 import AntDesign from '@expo/vector-icons/AntDesign';
 import { Link } from "expo-router";
@@ -175,15 +175,13 @@ export default function MyData() {
         <SafeAreaProvider style = {styles.scrollView}>
             <ScrollView>
                 <Link href={`/dataOverviews/dailyAverageOverview`} style={styles.cards}>
-                    <Card >
+                    <Card>
                         <Text style={styles.header}>Daily Average Overview</Text>
                         {dailyStatsOverview ? <LineChart data={dailyStatsOverview as any}  width={300} height={200} chartConfig={chartConfig}/> : <Text>Loading</Text>}
                     </Card>
                 </Link>
-
                 <Link href={`/dataOverviews/weeklyOverview`} style={styles.cards}>
-                    <Card >
-                        
+                    <Card>
                         <Text style={styles.header}>Past Week Overview</Text>
                         {weeklyHitsBarGraphProps ? <BarChart data={weeklyDataFake} width={300} height={200} chartConfig={chartConfig} /> : <Text>Loading</Text>}
                     </Card>
@@ -198,7 +196,7 @@ export default function MyData() {
                 </Card>
             </ScrollView>
         </SafeAreaProvider>
-    )
+    );
 }
 
 const styles = StyleSheet.create({
