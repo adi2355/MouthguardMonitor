@@ -1,5 +1,6 @@
+import { BluetoothContext } from '@/src/contexts/BluetoothContext';
 import AntDesign from '@expo/vector-icons/AntDesign';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import {
   View,
   Text,
@@ -12,96 +13,36 @@ import {
 import base64 from 'react-native-base64';
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 
-const Devices: React.FC = () => {
-  const [connectedDevice, setConnectedDevice] = useState<Device>();
-  const [savedDevices, setSavedDevices] = useState<Device[]>([]);
+export default function Devices() {
+
+  const [savedDevices, setSavedDevice] = useState<Device[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [scanning, setScanning] = useState<boolean>(false);
 
   //Track devices to avoid duplicate keys when scanning
   const undiscoveredDeviceSet = useRef(new Set<string>());
 
-  const manager = new BleManager();
+  const bluetoothHandler = useContext(BluetoothContext)!;
 
   useEffect(() => {
-    return () => {
-      manager.destroy(); // Clean up the BLE manager on unmount
-    };
+    setSavedDevice(bluetoothHandler.getSavedDevices());
   }, []);
 
-  async function connectToDevice(device: Device) {
-    try {
-      const deviceConnection: Device = await manager.connectToDevice(device.id);
-      setConnectedDevice(deviceConnection);
-
-      //TODO: change this
-      setSavedDevices([deviceConnection]);
-      await deviceConnection.discoverAllServicesAndCharacteristics();
-
-      const services = await deviceConnection.services();
-      if (services.length !== 1 ) {
-        throw Error("Bad number of services");
-      } 
-      
-      const service = services[0];
-      const characteristics = await service.characteristics();
-      if (characteristics.length !== 1) {
-        throw Error("Bad number of characteristics");
-      }
-      const characteristic = characteristics[0];
-
-      startStreamingData(
-        deviceConnection,
-        service.uuid,
-        characteristic.uuid,
-        onDataUpdate
-      );
-
-    } catch (error) {
-      console.error('Error discovering services/characteristics:', error);
-    } finally {
-      manager.stopDeviceScan();
-      undiscoveredDeviceSet.current.delete(device.id);
+  // THIS WILL decode BONG HIT DATA
+  function onDataUpdate(error: BleError | null, characteristic: Characteristic | null) {
+    if (error) {
+      console.log(error);
+      return -1;
+    } else if (!characteristic?.value) {
+      console.log("No Data was recieved");
+      return -1;
     }
-  }
-
-    // THIS WILL decode BONG HIT DATA
-    function onDataUpdate(error: BleError | null, characteristic: Characteristic | null)  {
-      if (error) {
-        console.log(error);
-        return -1;
-      } else if (!characteristic?.value) {
-        console.log("No Data was recieved");
-        return -1;
-      }
-      const rawData = base64.decode(characteristic.value);
-      Alert.alert(`Raw Data: ${rawData}` ) 
-    }
-
-  function disconnectFromDevice(connectedDevice: Device): void {
-    if (connectedDevice) {
-      manager.cancelDeviceConnection(connectedDevice.id);
-    }
-  }
-
-  async function startStreamingData(
-    device: Device, 
-    serviceUUID: string, 
-    characteristicUUID: string,
-    streamListener: (error: BleError | null, characteristic: Characteristic | null) => void
-    ) {
-    if (device) {
-      device.monitorCharacteristicForService(
-        serviceUUID,
-        characteristicUUID,
-        streamListener
-      );
-    } else {
-      console.log("No Device Connected");
-    }
+    const rawData = base64.decode(characteristic.value);
+    Alert.alert(`Raw Data: ${rawData}`);
   }
 
   function scanDevices(): void {
+    const manager: BleManager = bluetoothHandler.getBLEManager();
     setScanning(true);
     setDevices([]);
 
@@ -126,13 +67,13 @@ const Devices: React.FC = () => {
   };
 
   // Renders device
-  const renderDevice = ({ item }: { item: Device}): JSX.Element => (
-    <TouchableOpacity style={styles.deviceItem} onPress={() => connectToDevice(item)}>
+  const renderDevice = ({ item }: { item: Device }): JSX.Element => (
+    <TouchableOpacity style={styles.deviceItem} onPress={() => bluetoothHandler.connectToDevice(item)}>
       <AntDesign name="hdd" size={24} color="black" />
       <View style={styles.deviceInfo}>
         <Text style={styles.deviceName}>{item.name}</Text>
       </View>
-      {item.id === connectedDevice?.id ? <Text>Connected</Text> : <Text>Not Connected</Text>}
+      {item.id === bluetoothHandler.getConnectedDevice()?.id ? <Text>Connected</Text> : <Text>Not Connected</Text>}
     </TouchableOpacity>
   );
 
@@ -230,5 +171,3 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
-
-export default Devices;

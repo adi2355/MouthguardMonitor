@@ -1,4 +1,4 @@
-import { createContext } from "react";
+import { createContext, useContext } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
 import * as ExpoDevice from "expo-device";
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
@@ -50,6 +50,12 @@ export class BluetoothHandler {
         }
     }
 
+    public disconnectFromDevice(connectedDevice: Device) {
+        if (connectedDevice) {
+            this.manager.cancelDeviceConnection(connectedDevice.id);
+          }
+    }
+
     public streamOnConnectedDevice(streamListener: (error: BleError | null, characteristic: Characteristic | null) => void) {
         if (this.connectedDevice === null) {
             throw Error("Tried to stream with no device connected");
@@ -63,6 +69,15 @@ export class BluetoothHandler {
 
     public getBLEManager(): BleManager {
         return this.manager;
+    }
+
+    public getConnectedDevice(): Device | undefined {
+        return this.connectedDevice?.device;
+    }
+
+    public getSavedDevices(): Device[] {
+        // TODO query database
+        return [];
     }
 
     /*
