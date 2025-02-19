@@ -1,0 +1,1569 @@
+[1mdiff --git a/app.json b/app.json[m
+[1mindex d86b7c7..564e471 100644[m
+[1m--- a/app.json[m
+[1m+++ b/app.json[m
+[36m@@ -20,7 +20,16 @@[m
+       "adaptiveIcon": {[m
+         "foregroundImage": "./assets/images/canovafavicon.png",[m
+         "backgroundColor": "#ffffff"[m
+[31m-      }[m
+[32m+[m[32m      },[m
+[32m+[m[32m      "permissions": [[m
+[32m+[m[32m        "android.permission.BLUETOOTH",[m
+[32m+[m[32m        "android.permission.BLUETOOTH_ADMIN",[m
+[32m+[m[32m        "android.permission.BLUETOOTH_CONNECT",[m
+[32m+[m[32m        "android.permission.BLUETOOTH",[m
+[32m+[m[32m        "android.permission.BLUETOOTH_ADMIN",[m
+[32m+[m[32m        "android.permission.BLUETOOTH_CONNECT"[m
+[32m+[m[32m      ],[m
+[32m+[m[32m      "package": "com.anonymous.CanovaReactNativeApp"[m
+     },[m
+     "web": {[m
+       "bundler": "metro",[m
+[36m@@ -43,7 +52,10 @@[m
+         "react-native-ble-plx",[m
+         {[m
+           "isBackgroundEnabled": true,[m
+[31m-          "modes": ["peripheral", "central"],[m
+[32m+[m[32m          "modes": [[m
+[32m+[m[32m            "peripheral",[m
+[32m+[m[32m            "central"[m
+[32m+[m[32m          ],[m
+           "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to connect to bluetooth devices"[m
+         }[m
+       ][m
+[1mdiff --git a/app/(tabs)/mydata.tsx b/app/(tabs)/mydata.tsx[m
+[1mindex 612be43..8687f70 100644[m
+[1m--- a/app/(tabs)/mydata.tsx[m
+[1m+++ b/app/(tabs)/mydata.tsx[m
+[36m@@ -1,216 +1,1160 @@[m
+[31m-import { Text, ScrollView, StyleSheet } from "react-native";[m
+[32m+[m[32mimport { Text, ScrollView, StyleSheet, View, Dimensions, Platform, Pressable, TouchableOpacity, ActivityIndicator } from "react-native";[m
+ import { SafeAreaProvider } from "react-native-safe-area-context";[m
+ import { SQLiteDatabase, openDatabaseAsync } from "expo-sqlite";[m
+[31m-import { useState, useEffect } from "react";[m
+[31m-import { AverageHourCount, BongHit, BongHitStats, Datapoint } from "@/src/types";[m
+[31m-import { BONG_HITS_DATABASE_NAME, dayLookUpTable} from "@/src/constants";[m
+[32m+[m[32mimport { useState, useEffect, useMemo } from "react";[m
+[32m+[m[32mimport { AverageHourCount, BongHitStats, Datapoint } from "@/src/types";[m
+[32m+[m[32mimport { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "@/src/constants";[m
+ import { Card } from "@/components/Card";[m
+[31m-import AntDesign from '@expo/vector-icons/AntDesign';[m
+[31m-import { Link } from "expo-router";[m
+[32m+[m[32mimport AntDesign from "@expo/vector-icons/AntDesign";[m
+[32m+[m[32mimport { Link, useRouter } from "expo-router";[m
+ import { LineChart, BarChart } from "react-native-chart-kit";[m
+[32m+[m[32mimport { LinearGradient } from "expo-linear-gradient";[m
+[32m+[m[32mimport { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";[m
+[32m+[m[32mimport { DailyAverageCard } from "@/components/DailyAverageCard";[m
+[32m+[m[32mimport WeeklyUsageBanner from "@/components/WeeklyUsageBanner";[m
+[32m+[m[32mimport AsyncStorage from "@react-native-async-storage/async-storage";[m
+ [m
+[32m+[m[32mconst windowWidth = Dimensions.get("window").width;[m
+ [m
+ const monthlyDataFake = {[m
+[31m-    labels: ["January", "February", "March", "April", "May", "June"],[m
+[31m-    datasets: [[m
+[31m-      {[m
+[31m-        data: [20, 45, 28, 80, 99, 43],[m
+[31m-        color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`, // optional[m
+[31m-        strokeWidth: 3 // optional[m
+[31m-      }[m
+[31m-    ],[m
+[31m-    legend: ["Hits Recorded"] // optional[m
+[32m+[m[32m  labels: ["January", "February", "March", "April", "May", "June"],[m
+[32m+[m[32m  datasets: [[m
+[32m+[m[32m    {[m
+[32m+[m[32m      data: [20, 45, 28, 80, 99, 43],[m
+[32m+[m[32m      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,[m
+[32m+[m[32m      strokeWidth: 3,[m
+[32m+[m[32m    },[m
+[32m+[m[32m  ],[m
+[32m+[m[32m  legend: ["Hits Recorded"],[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32mconst weeklyDataFake = {[m
+[32m+[m[32m  labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],[m
+[32m+[m[32m  datasets: [[m
+[32m+[m[32m    {[m
+[32m+[m[32m      data: [9, 4, 2, 0, 15, 4, 10],[m
+[32m+[m[32m      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,[m
+[32m+[m[32m      strokeWidth: 3,[m
+[32m+[m[32m    },[m
+[32m+[m[32m  ],[m
+[32m+[m[32m  legend: ["Hits Recorded"],[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Helper for consistent typography[m
+[32m+[m[32mconst typography = {[m
+[32m+[m[32m  largeTitle: {[m
+[32m+[m[32m    fontSize: 34,[m
+[32m+[m[32m    fontWeight: Platform.select({ ios: "700", android: "bold" }),[m
+[32m+[m[32m    letterSpacing: Platform.select({ ios: 0.41, android: 0.25 }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m  title1: {[m
+[32m+[m[32m    fontSize: 28,[m
+[32m+[m[32m    fontWeight: Platform.select({ ios: "600", android: "bold" }),[m
+[32m+[m[32m    letterSpacing: Platform.select({ ios: 0.34, android: 0.25 }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m  title2: {[m
+[32m+[m[32m    fontSize: 22,[m
+[32m+[m[32m    fontWeight: Platform.select({ ios: "600", android: "bold" }),[m
+[32m+[m[32m    letterSpacing: Platform.select({ ios: 0.35, android: 0.25 }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m  title3: {[m
+[32m+[m[32m    fontSize: 17,[m
+[32m+[m[32m    fontWeight: Platform.select({ ios: "600", android: "bold" }),[m
+[32m+[m[32m    letterSpacing: Platform.select({ ios: -0.41, android: 0.25 }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m  body: {[m
+[32m+[m[32m    fontSize: 15,[m
+[32m+[m[32m    fontWeight: "400",[m
+[32m+[m[32m    letterSpacing: Platform.select({ ios: -0.24, android: 0.25 }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m  caption1: {[m
+[32m+[m[32m    fontSize: 13,[m
+[32m+[m[32m    fontWeight: "400",[m
+[32m+[m[32m    letterSpacing: Platform.select({ ios: -0.08, android: 0.25 }),[m
+[32m+[m[32m  },[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32mconst colors = {[m
+[32m+[m[32m  systemBlue: "#007AFF",[m
+[32m+[m[32m  systemRed: "#FF3B30",[m
+[32m+[m[32m  systemYellow: "#FFE94D",[m
+[32m+[m[32m  systemGray: {[m
+[32m+[m[32m    1: "#8E8E93",[m
+[32m+[m[32m    2: "#AEAEB2",[m
+[32m+[m[32m    3: "#C7C7CC",[m
+[32m+[m[32m    4: "#D1D1D6",[m
+[32m+[m[32m    5: "#E5E5EA",[m
+[32m+[m[32m    6: "#F2F2F7",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  label: {[m
+[32m+[m[32m    primary: "#000000",[m
+[32m+[m[32m    secondary: "#666666",[m
+[32m+[m[32m    tertiary: "#8E8E93",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  background: {[m
+[32m+[m[32m    primary: "#FFFFFF",[m
+[32m+[m[32m    secondary: "#F2F2F7",[m
+[32m+[m[32m    tertiary: "#FFFFFF",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  gradient: {[m
+[32m+[m[32m    start: "#FFB6A3",[m
+[32m+[m[32m    middle: "#85D8CE",[m
+[32m+[m[32m    end: "#FFFFFF",[m
+[32m+[m[32m  },[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Raw data interface for mini chart[m
+[32m+[m[32minterface RawChartData {[m
+[32m+[m[32m  timestamp: string;[m
+[32m+[m[32m  value: number;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m// Add interfaces for type safety[m
+[32m+[m[32minterface DatabaseResult<T> {[m
+[32m+[m[32m  rows?: {[m
+[32m+[m[32m    _array?: T[];[m
+   };[m
+[32m+[m[32m}[m
+ [m
+[31m-  const weeklyDataFake = {[m
+[31m-    labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],[m
+[31m-    datasets: [[m
+[31m-      {[m
+[31m-        data: [9, 4, 2, 0, 15, 4, 10],[m
+[31m-        color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`, // optional[m
+[31m-        strokeWidth: 3 // optional[m
+[31m-      }[m
+[31m-    ],[m
+[31m-    legend: ["Hits Recorded"] // optional[m
+[32m+[m[32minterface HitCount {[m
+[32m+[m[32m  day: string;[m
+[32m+[m[32m  hit_count: number;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m// Add database initialization constants and functions[m
+[32m+[m[32mconst FIRST_LAUNCH_KEY = 'app_first_launch';[m
+[32m+[m[32mconst DB_VERSION_KEY = 'db_version';[m
+[32m+[m[32mconst CURRENT_DB_VERSION = '1.0';[m
+[32m+[m
+[32m+[m[32mconst initializeDatabase = async () => {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[41m    [m
+[32m+[m[32m    // Create tables if they don't exist[m
+[32m+[m[32m    await db.execAsync(`[m
+[32m+[m[32m      CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} ([m
+[32m+[m[32m        id INTEGER PRIMARY KEY AUTOINCREMENT,[m
+[32m+[m[32m        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,[m
+[32m+[m[32m        duration_ms INTEGER NOT NULL,[m
+[32m+[m[32m        intensity INTEGER DEFAULT 0,[m
+[32m+[m[32m        notes TEXT[m
+[32m+[m[32m      );[m
+[32m+[m[41m      [m
+[32m+[m[32m      CREATE INDEX IF NOT EXISTS idx_timestamp[m[41m [m
+[32m+[m[32m      ON ${BONG_HITS_DATABASE_NAME}(timestamp);[m
+[32m+[m[32m    `);[m
+[32m+[m
+[32m+[m[32m    // Store database version[m
+[32m+[m[32m    await AsyncStorage.setItem(DB_VERSION_KEY, CURRENT_DB_VERSION);[m
+[32m+[m[41m    [m
+[32m+[m[32m    console.log('Database initialized successfully');[m
+[32m+[m[32m    return true;[m
+[32m+[m[32m  } catch (error) {[m
+[32m+[m[32m    console.error('Error initializing database:', error);[m
+[32m+[m[32m    return false;[m
+[32m+[m[32m  }[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32mexport const initializeAppOnFirstLaunch = async () => {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    // Check if this is first launch[m
+[32m+[m[32m    const hasLaunched = await AsyncStorage.getItem(FIRST_LAUNCH_KEY);[m
+[32m+[m[32m    if (hasLaunched) {[m
+[32m+[m[32m      return;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    // Initialize database on first launch[m
+[32m+[m[32m    const success = await initializeDatabase();[m
+[32m+[m[32m    if (!success) {[m
+[32m+[m[32m      throw new Error('Database initialization failed');[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    // Mark first launch complete[m
+[32m+[m[32m    await AsyncStorage.setItem(FIRST_LAUNCH_KEY, 'true');[m
+[32m+[m[32m    console.log('App initialized successfully on first launch');[m
+[32m+[m[32m  } catch (error) {[m
+[32m+[m[32m    console.error('Error in initializeAppOnFirstLaunch:', error);[m
+[32m+[m[32m    throw error;[m
+[32m+[m[32m  }[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Add data validation helpers[m
+[32m+[m[32mconst validateDatapoint = (point: any): Datapoint => ({[m
+[32m+[m[32m  label: String(point?.label || ""),[m
+[32m+[m[32m  value: Number(point?.value || 0)[m
+[32m+[m[32m});[m
+[32m+[m
+[32m+[m[32mconst processWeeklyData = (weekData: Datapoint[], lastWeekAvg: number) => {[m
+[32m+[m[32m  if (!Array.isArray(weekData) || weekData.length === 0) {[m
+[32m+[m[32m    return { average: 0, change: 0 };[m
+[32m+[m[32m  }[m
+[32m+[m[41m  [m
+[32m+[m[32m  const total = weekData.reduce((sum, day) => sum + (day?.value || 0), 0);[m
+[32m+[m[32m  const average = Math.round(total / 7);[m
+[32m+[m[32m  return {[m[41m [m
+[32m+[m[32m    average,[m[41m [m
+[32m+[m[32m    change: calculatePercentageChange(average, lastWeekAvg)[m[41m [m
+   };[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Keep the properly defined version outside the component[m
+[32m+[m[32mconst getDailyAverageDatapoints = async () => {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[32m    const avgHourCount = await db.getAllAsync(`[m
+[32m+[m[32m      SELECT strftime('%H', timestamp) AS hourOfDay,[m[41m [m
+[32m+[m[32m             COUNT(*) AS count[m
+[32m+[m[32m      FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m      WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m      GROUP BY hourOfDay[m
+[32m+[m[32m      ORDER BY hourOfDay[m
+[32m+[m[32m    `);[m
+[32m+[m
+[32m+[m[32m    if (!avgHourCount?.length) return null;[m
+[32m+[m
+[32m+[m[32m    // Fill missing hours with proper validation[m
+[32m+[m[32m    const allHours = Array.from({ length: 24 }, (_, i) =>[m[41m [m
+[32m+[m[32m      i.toString().padStart(2, "0")[m
+[32m+[m[32m    );[m
+[32m+[m[41m    [m
+[32m+[m[32m    const dataMap = new Map([m
+[32m+[m[32m      avgHourCount.map(row => [[m
+[32m+[m[32m        String(row.hourOfDay || ''),[m
+[32m+[m[32m        Number(row.count || 0)[m
+[32m+[m[32m      ])[m
+[32m+[m[32m    );[m
+[32m+[m
+[32m+[m[32m    const processedData = allHours.map(hour => ({[m
+[32m+[m[32m      hourOfDay: hour,[m
+[32m+[m[32m      count: dataMap.get(hour) || 0[m
+[32m+[m[32m    }));[m
+[32m+[m
+[32m+[m[32m    return {[m
+[32m+[m[32m      labels: ["12am", "6am", "12pm", "6pm", "12am"],[m
+[32m+[m[32m      datasets: [{[m
+[32m+[m[32m        data: processedData.map(item => item.count),[m
+[32m+[m[32m        color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m        strokeWidth: 2,[m
+[32m+[m[32m      }],[m
+[32m+[m[32m      legend: ["Average daily hits"][m
+[32m+[m[32m    };[m
+[32m+[m[32m  } catch (e) {[m
+[32m+[m[32m    console.error("Error in getDailyAverageDatapoints:", e);[m
+[32m+[m[32m    return null;[m
+[32m+[m[32m  }[m
+[32m+[m[32m};[m
+ [m
+[31m-//   const chartConfig = {[m
+[31m-//     backgroundGradientFrom: "#f7f7f7",[m
+[31m-//     backgroundGradientFromOpacity: 0,[m
+[31m-//     backgroundGradientTo: "#f7f7f7",[m
+[31m-//     backgroundGradientToOpacity: .0,[m
+[31m-//     color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,[m
+[31m-//     strokeWidth: 2, // optional, default 3[m
+[31m-//     barPercentage: 0.5,[m
+[31m-//     useShadowColorFromDataset: false // optional[m
+[31m-//   };[m
+[31m-[m
+[31m-const chartConfig = {[m
+[31m-    backgroundColor: '#ffffff', // Chart background color[m
+[31m-    backgroundGradientFrom: '#ffffff',[m
+[31m-    backgroundGradientTo: '#ffffff',[m
+[31m-    decimalPlaces: 2, // No decimal points[m
+[31m-    color: () => `rgba(0, 128, 0, 1)`, // Green for text and lines[m
+[31m-    fillShadowGradient: `rgba(0, 128, 0, 1)`, // Opaque green for bars[m
+[31m-    fillShadowGradientOpacity: 1, // Fully opaque bars[m
+[31m-    barPercentage: 0.5, // Adjust bar width[m
+[31m-    labelColor: () => '#000000', // Black labels[m
+[32m+[m[32mconst fetchMiniChartData = async () => {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[32m    const results = await db.getAllAsync(`[m
+[32m+[m[32m      SELECT duration_ms AS value,[m
+[32m+[m[32m             timestamp[m
+[32m+[m[32m      FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m      WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m      ORDER BY timestamp DESC[m
+[32m+[m[32m      LIMIT 10[m
+[32m+[m[32m    `);[m
+[32m+[m
+[32m+[m[32m    return results.map(row => ({[m
+[32m+[m[32m      timestamp: String(row.timestamp || ''),[m
+[32m+[m[32m      value: Number(row.value || 0)[m
+[32m+[m[32m    }));[m
+[32m+[m[32m  } catch (e) {[m
+[32m+[m[32m    console.error("Error fetching mini chart data:", e);[m
+[32m+[m[32m    return [];[m
+[32m+[m[32m  }[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32mconst getBongHitStatsFromPastWeek = async () => {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[32m    const [avgResults, maxResults] = await Promise.all([[m
+[32m+[m[32m      db.getAllAsync(`[m
+[32m+[m[32m        SELECT AVG(duration_ms) AS avg_duration[m
+[32m+[m[32m        FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m        WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m      `),[m
+[32m+[m[32m      db.getAllAsync(`[m
+[32m+[m[32m        SELECT MAX(duration_ms) AS max_duration[m
+[32m+[m[32m        FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m        WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m      `)[m
+[32m+[m[32m    ]);[m
+[32m+[m
+[32m+[m[32m    if (!avgResults?.[0] || !maxResults?.[0]) return null;[m
+[32m+[m
+[32m+[m[32m    return {[m
+[32m+[m[32m      averageDuration: Number(avgResults[0].avg_duration || 0),[m
+[32m+[m[32m      longestHit: Number(maxResults[0].max_duration || 0)[m
+[32m+[m[32m    };[m
+[32m+[m[32m  } catch (e) {[m
+[32m+[m[32m    console.error("Error in getBongHitStatsFromPastWeek:", e);[m
+[32m+[m[32m    return null;[m
+[32m+[m[32m  }[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Update calculatePercentageChange to use passed parameters[m
+[32m+[m[32mconst calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {[m
+[32m+[m[32m  if (!lastWeekAvg) return 0;[m
+[32m+[m[32m  return Math.round(((currentAvg - lastWeekAvg) / lastWeekAvg) * 100);[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Add helper function for data validation[m
+[32m+[m[32mconst validateHitCount = (row: any): HitCount => ({[m
+[32m+[m[32m  day: String(row?.day || ''),[m
+[32m+[m[32m  hit_count: Number(row?.hit_count || 0)[m
+[32m+[m[32m});[m
+[32m+[m
+[32m+[m[32m// Add helper function for safe number parsing[m
+[32m+[m[32mconst safeParseInt = (value: any, fallback = 0): number => {[m
+[32m+[m[32m  const parsed = parseInt(String(value || ''), 10);[m
+[32m+[m[32m  return isNaN(parsed) ? fallback : parsed;[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Update WeeklyOverview component with chart config[m
+[32m+[m[32mconst WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {[m
+[32m+[m[32m  // Base chart config[m
+[32m+[m[32m  const baseChartConfig = useMemo(() => ({[m
+[32m+[m[32m    backgroundColor: "#ffffff",[m
+[32m+[m[32m    backgroundGradientFrom: "#ffffff",[m
+[32m+[m[32m    backgroundGradientTo: "#ffffff",[m
+[32m+[m[32m    decimalPlaces: 0,[m
+[32m+[m[32m    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m    labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,[m
+[32m+[m[32m    barPercentage: 0.7,[m
+[32m+[m[32m    useShadowColorFromDataset: false,[m
+[32m+[m[32m    withInnerLines: false,[m
+[32m+[m[32m    withVerticalLabels: true,[m
+[32m+[m[32m    withHorizontalLabels: true,[m
+[32m+[m[32m    withVerticalLines: false,[m
+[32m+[m[32m    withHorizontalLines: true,[m
+     propsForBackgroundLines: {[m
+[31m-      strokeWidth: 0, // Removes background grid lines[m
+[32m+[m[32m      stroke: "#e3e3e3",[m
+[32m+[m[32m      strokeWidth: 1,[m
+     },[m
+[31m-    useShadowColorFromDataset: false, // Avoid shadow gradient interference[m
+[31m-  };[m
+[32m+[m[32m    propsForDots: {[m
+[32m+[m[32m      r: "4",[m
+[32m+[m[32m      strokeWidth: "2",[m
+[32m+[m[32m      stroke: "#007AFF",[m
+[32m+[m[32m    },[m
+[32m+[m[32m    style: {[m
+[32m+[m[32m      borderRadius: 16,[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }), []);[m
+[32m+[m
+[32m+[m[32m  // Memoize the chart width calculation[m
+[32m+[m[32m  const chartWidth = useMemo(() => Math.max(windowWidth - 64, 200), [windowWidth]);[m
+[32m+[m
+[32m+[m[32m  // Memoize the complete chart config[m
+[32m+[m[32m  const memoizedChartConfig = useMemo(() => ({[m
+[32m+[m[32m    ...baseChartConfig,[m
+[32m+[m[32m    style: {[m
+[32m+[m[32m      ...baseChartConfig.style,[m
+[32m+[m[32m      width: chartWidth,[m
+[32m+[m[32m    },[m
+[32m+[m[32m  }), [baseChartConfig, chartWidth]);[m
+[32m+[m
+[32m+[m[32m  // Memoize the data transformation[m
+[32m+[m[32m  const chartData = useMemo(() => ({[m
+[32m+[m[32m    labels: weeklyHitsBarGraphProps.map((d) => d.label),[m
+[32m+[m[32m    datasets: [{[m[41m [m
+[32m+[m[32m      data: weeklyHitsBarGraphProps.map((d) => d.value),[m
+[32m+[m[32m      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`[m
+[32m+[m[32m    }][m
+[32m+[m[32m  }), [weeklyHitsBarGraphProps]);[m
+ [m
+[32m+[m[32m  if (!weeklyHitsBarGraphProps?.length) {[m
+[32m+[m[32m    return ([m
+[32m+[m[32m      <Card style={styles.card}>[m
+[32m+[m[32m        <View style={styles.cardHeader}>[m
+[32m+[m[32m          <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />[m
+[32m+[m[32m          <Text style={styles.cardTitle}>Weekly Overview</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m        <View style={styles.chartContainer}>[m
+[32m+[m[32m          <Text style={styles.noDataText}>No data available</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m      </Card>[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  return ([m
+[32m+[m[32m    <Card style={styles.card}>[m
+[32m+[m[32m      <View style={styles.cardHeader}>[m
+[32m+[m[32m        <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />[m
+[32m+[m[32m        <Text style={styles.cardTitle}>Weekly Overview</Text>[m
+[32m+[m[32m      </View>[m
+[32m+[m[32m      <Text style={styles.cardDescription}>Compare your usage across different days</Text>[m
+[32m+[m[32m      <View style={styles.chartContainer}>[m
+[32m+[m[32m        <BarChart[m
+[32m+[m[32m          data={chartData}[m
+[32m+[m[32m          width={chartWidth}[m
+[32m+[m[32m          height={180}[m
+[32m+[m[32m          chartConfig={memoizedChartConfig}[m
+[32m+[m[32m          style={styles.chart}[m
+[32m+[m[32m          showValuesOnTopOfBars[m
+[32m+[m[32m          fromZero[m
+[32m+[m[32m          segments={4}[m
+[32m+[m[32m          flatColor={true}[m
+[32m+[m[32m          withCustomBarColorFromData={true}[m
+[32m+[m[32m        />[m
+[32m+[m[32m      </View>[m
+[32m+[m[32m    </Card>[m
+[32m+[m[32m  );[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m// Add memoized MonthlyOverview component[m
+[32m+[m[32mconst MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {[m
+[32m+[m[32m  // Memoize the chart width calculation[m
+[32m+[m[32m  const chartWidth = useMemo(() => Math.max(windowWidth - 48, 200), [windowWidth]);[m
+   [m
+[32m+[m[32m  // Base chart config with additional optimizations[m
+[32m+[m[32m  const baseChartConfig = useMemo(() => ({[m
+[32m+[m[32m    backgroundColor: "#ffffff",[m
+[32m+[m[32m    backgroundGradientFrom: "#ffffff",[m
+[32m+[m[32m    backgroundGradientTo: "#ffffff",[m
+[32m+[m[32m    decimalPlaces: 0,[m
+[32m+[m[32m    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m    labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,[m
+[32m+[m[32m    barPercentage: 0.7,[m
+[32m+[m[32m    useShadowColorFromDataset: false,[m
+[32m+[m[32m    withInnerLines: false,[m
+[32m+[m[32m    withVerticalLabels: true,[m
+[32m+[m[32m    withHorizontalLabels: true,[m
+[32m+[m[32m    withVerticalLines: false,[m
+[32m+[m[32m    withHorizontalLines: true,[m
+[32m+[m[32m    propsForBackgroundLines: {[m
+[32m+[m[32m      stroke: "#e3e3e3",[m
+[32m+[m[32m      strokeWidth: 1,[m
+[32m+[m[32m    },[m
+[32m+[m[32m    propsForDots: {[m
+[32m+[m[32m      r: "4",[m
+[32m+[m[32m      strokeWidth: "2",[m
+[32m+[m[32m      stroke: "#007AFF",[m
+[32m+[m[32m    },[m
+[32m+[m[32m    style: {[m
+[32m+[m[32m      borderRadius: 16,[m
+[32m+[m[32m      width: chartWidth,[m
+[32m+[m[32m    },[m
+[32m+[m[32m    // Add these optimizations[m
+[32m+[m[32m    formatYLabel: (value: string) => Math.round(Number(value)).toString(),[m
+[32m+[m[32m    formatXLabel: (label: string) => label.substring(0, 3),[m
+[32m+[m[32m    segments: 4,[m
+[32m+[m[32m  }), [chartWidth]);[m
+[32m+[m
+[32m+[m[32m  // Memoize the chart data transformation[m
+[32m+[m[32m  const chartData = useMemo(() => ({[m
+[32m+[m[32m    labels: monthlyDataFake.labels.map(label => label.substring(0, 3)),[m
+[32m+[m[32m    datasets: [{[m
+[32m+[m[32m      data: monthlyDataFake.datasets[0].data,[m
+[32m+[m[32m      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m      strokeWidth: 2,[m
+[32m+[m[32m    }],[m
+[32m+[m[32m  }), []); // Empty dependency array since monthlyDataFake is constant[m
+[32m+[m
+[32m+[m[32m  if (!weeklyHitsBarGraphProps?.length) {[m
+[32m+[m[32m    return ([m
+[32m+[m[32m      <Card style={styles.card}>[m
+[32m+[m[32m        <View style={styles.cardHeader}>[m
+[32m+[m[32m          <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />[m
+[32m+[m[32m          <Text style={styles.cardTitle}>Monthly Overview</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m        <View style={styles.chartContainer}>[m
+[32m+[m[32m          <Text style={styles.noDataText}>No data available</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m      </Card>[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  return ([m
+[32m+[m[32m    <Card style={styles.card}>[m
+[32m+[m[32m      <View style={styles.cardHeader}>[m
+[32m+[m[32m        <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />[m
+[32m+[m[32m        <Text style={styles.cardTitle}>Monthly Overview</Text>[m
+[32m+[m[32m      </View>[m
+[32m+[m[32m      <Text style={styles.cardDescription}>Track your monthly trends</Text>[m
+[32m+[m[32m      <View style={styles.chartContainer}>[m
+[32m+[m[32m        <LineChart[m
+[32m+[m[32m          data={chartData}[m
+[32m+[m[32m          width={chartWidth}[m
+[32m+[m[32m          height={220}[m
+[32m+[m[32m          chartConfig={baseChartConfig}[m
+[32m+[m[32m          bezier[m
+[32m+[m[32m          style={styles.chart}[m
+[32m+[m[32m          withDots={true}[m
+[32m+[m[32m          withShadow={false}[m
+[32m+[m[32m          segments={4}[m
+[32m+[m[32m          fromZero[m
+[32m+[m[32m          withVerticalLines={false}[m
+[32m+[m[32m          withHorizontalLines={true}[m
+[32m+[m[32m          withVerticalLabels={true}[m
+[32m+[m[32m          withHorizontalLabels={true}[m
+[32m+[m[32m          hidePointsAtIndex={[]}[m
+[32m+[m[32m          renderDotContent={({ x, y, index }) => ([m
+[32m+[m[32m            <Text[m
+[32m+[m[32m              key={index}[m
+[32m+[m[32m              style={{[m
+[32m+[m[32m                position: 'absolute',[m
+[32m+[m[32m                top: y - 20,[m
+[32m+[m[32m                left: x - 10,[m
+[32m+[m[32m                fontSize: 10,[m
+[32m+[m[32m                color: colors.label.secondary,[m
+[32m+[m[32m              }}[m
+[32m+[m[32m            >[m
+[32m+[m[32m              {chartData.datasets[0].data[index]}[m
+[32m+[m[32m            </Text>[m
+[32m+[m[32m          )}[m
+[32m+[m[32m        />[m
+[32m+[m[32m      </View>[m
+[32m+[m[32m    </Card>[m
+[32m+[m[32m  );[m
+[32m+[m[32m};[m
+[32m+[m
+ export default function MyData() {[m
+[31m-    const [weeklyHitsBarGraphProps, setWeeklyHitsBarGraphProps] = useState<Datapoint[]>();[m
+[31m-    const [dailyStatsOverview, setDailyStatsOverview] = useState<Object>();[m
+[31m-    const [bongHitStats, setBongHitStats] = useState<BongHitStats>();[m
+[31m-[m
+[31m-    useEffect(() => {[m
+[31m-        getBongHitStatsFromPastWeek();[m
+[31m-        queryNumberOfHitsFromPastWeek();[m
+[31m-        getDailyAverageDatapoints();[m
+[31m-    }, []);[m
+[31m-[m
+[31m-    async function queryNumberOfHitsFromPastWeek() {[m
+[31m-        try {[m
+[31m-            const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[31m-            const bongHits: BongHit[] = await bongHitsDb.getAllAsync([m
+[31m-                `SELECT timestamp, duration_ms FROM ${BONG_HITS_DATABASE_NAME} WHERE TIMESTAMP >= DATETIME('now', '-7 days')`[m
+[31m-            );[m
+[31m-            const occurrenceMap: Map<number, number> = bongHits.reduce((map, bongHit) => {[m
+[31m-                const date = new Date(bongHit.timestamp).getDay()[m
+[31m-                map.set(date, (map.get(date) || 0) + 1);[m
+[31m-                return map;[m
+[31m-            }, new Map<number, number>());[m
+[31m-[m
+[31m-            //Back fill days with zero if there are missing days from the past week.[m
+[31m-            if (occurrenceMap.size < 7) {[m
+[31m-                for (let i = 0; i < 7; i++) {[m
+[31m-                    if(!occurrenceMap.has(i)){[m
+[31m-                        occurrenceMap.set(i, 0);[m
+[31m-                    }[m
+[31m-                }[m
+[31m-            }[m
+[32m+[m[32m  const router = useRouter();[m
+[32m+[m[32m  const [isLoading, setIsLoading] = useState(true);[m
+[32m+[m[32m  const [error, setError] = useState<string | null>(null);[m
+[32m+[m[32m  const [weeklyHitsBarGraphProps, setWeeklyHitsBarGraphProps] = useState<Datapoint[]>([]);[m
+[32m+[m[32m  const [dailyStatsOverview, setDailyStatsOverview] = useState<Object>();[m
+[32m+[m[32m  const [bongHitStats, setBongHitStats] = useState<BongHitStats>();[m
+[32m+[m[32m  const [weeklyAverage, setWeeklyAverage] = useState<number>(0);[m
+[32m+[m[32m  const [percentageChange, setPercentageChange] = useState<number>(0);[m
+[32m+[m[32m  const [miniChartData, setMiniChartData] = useState<RawChartData[]>([]);[m
+[32m+[m[32m  const [isScrolling, setIsScrolling] = useState(false);[m
+ [m
+[31m-            const numberOfHits: Datapoint[] = [];[m
+[31m-            occurrenceMap.forEach((value, key) => {[m
+[31m-                numberOfHits.push({[m
+[31m-                    label: dayLookUpTable.get(key)!,[m
+[31m-                    value: value[m
+[31m-                });[m
+[31m-            });[m
+[31m-            console.log(numberOfHits)[m
+[31m-            setWeeklyHitsBarGraphProps(numberOfHits)[m
+[31m-        } catch (e) {[m
+[31m-            console.error(e);[m
+[31m-        }[m
+[32m+[m[32m  /* ------------------------------------------------------------------[m
+[32m+[m[32m   * Data-fetching helpers using getAllAsync[m
+[32m+[m[32m   * ------------------------------------------------------------------ */[m
+[32m+[m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * Fetch a small set of data to show in a "mini chart."[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const fetchMiniChartData = async () => {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[32m      const results = await db.getAllAsync(`[m
+[32m+[m[32m        SELECT[m[41m [m
+[32m+[m[32m          duration_ms AS value,[m
+[32m+[m[32m          timestamp[m
+[32m+[m[32m        FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m        WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m        ORDER BY timestamp DESC[m
+[32m+[m[32m        LIMIT 10[m
+[32m+[m[32m      `);[m
+[32m+[m
+[32m+[m[32m      const rows = results?.length ? results : [];[m
+[32m+[m[32m      setMiniChartData(rows); // This array matches your RawChartData interface[m
+[32m+[m[32m    } catch (e) {[m
+[32m+[m[32m      console.error("Error fetching mini chart data:", e);[m
+[32m+[m[32m      throw e;[m
+     }[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * Retrieve average & max durations for the last 7 days.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const getBongHitStatsFromPastWeek = async () => {[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[32m      const [avgResults, maxResults] = await Promise.all([[m
+[32m+[m[32m        db.getAllAsync(`[m
+[32m+[m[32m          SELECT AVG(duration_ms) AS avg_duration[m
+[32m+[m[32m          FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m          WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m        `),[m
+[32m+[m[32m        db.getAllAsync(`[m
+[32m+[m[32m          SELECT MAX(duration_ms) AS max_duration[m
+[32m+[m[32m          FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m          WHERE timestamp >= date('now', '-7 days')[m
+[32m+[m[32m        `)[m
+[32m+[m[32m      ]);[m
+[32m+[m
+[32m+[m[32m      const avgRow = avgResults?.[0]?._array?.[0];[m
+[32m+[m[32m      const maxRow = maxResults?.[0]?._array?.[0];[m
+[32m+[m
+[32m+[m[32m      const stats: BongHitStats = {[m
+[32m+[m[32m        longestHit: maxRow?.max_duration || 0,[m
+[32m+[m[32m        averageDuration: avgRow?.avg_duration || 0,[m
+[32m+[m[32m      };[m
+[32m+[m
+[32m+[m[32m      setBongHitStats(stats);[m
+[32m+[m[32m      return stats;[m
+[32m+[m[32m    } catch (e) {[m
+[32m+[m[32m      console.error("Error in getBongHitStatsFromPastWeek:", e);[m
+[32m+[m[32m      throw e;[m
+[32m+[m[32m    }[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * Compare with the previous week's total hits to see how usage changed.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {[m
+[32m+[m[32m    if (!lastWeekAvg) return 0;[m
+[32m+[m[32m    return Math.round(((currentAvg - lastWeekAvg) / lastWeekAvg) * 100);[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * Orchestrate data loading on component mount.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    let mounted = true;[m
+[32m+[m[32m    let timeoutId: NodeJS.Timeout;[m
+[32m+[m[32m    let db: SQLiteDatabase | null = null;[m
+[32m+[m
+[32m+[m[32m    const loadData = async () => {[m
+[32m+[m[32m      try {[m
+[32m+[m[32m        setIsLoading(true);[m
+[32m+[m[32m        setError(null);[m
+ [m
+[31m-    async function getDailyAverageDatapoints() {[m
+[31m-        try {[m
+[31m-            const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[31m-            let avgHourCount: AverageHourCount[] = await bongHitsDb.getAllAsync([m
+[31m-                `[m
+[31m-                    SELECT  strftime('%H', timestamp) AS hourOfDay, COUNT(*) AS count[m
+[31m-                    FROM ${BONG_HITS_DATABASE_NAME}[m
+[31m-                    GROUP BY hourOfDay[m
+[31m-                    ORDER BY hourOfDay;[m
+[31m-                `[m
+[31m-            );[m
+[31m-            //Back fill if any hour DNE in database[m
+[31m-            if (avgHourCount.length < 24) {[m
+[31m-                // Create an array with all hours (00 to 23)[m
+[31m-                const allHours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));[m
+[31m-                const dataMap = new Map(avgHourCount.map(item => [item.hourOfDay, item.count]));[m
+[31m-[m
+[31m-                avgHourCount = allHours.map(hour => ({[m
+[31m-                    count: dataMap.get(hour) || 0,[m
+[31m-                    hourOfDay: hour[m
+[31m-                }));[m
+[32m+[m[32m        // Check database version before proceeding[m
+[32m+[m[32m        const dbVersion = await AsyncStorage.getItem(DB_VERSION_KEY);[m
+[32m+[m[32m        if (dbVersion !== CURRENT_DB_VERSION) {[m
+[32m+[m[32m          await initializeDatabase();[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        // Create new DB connection[m
+[32m+[m[32m        db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[41m        [m
+[32m+[m[32m        // First verify we have data[m
+[32m+[m[32m        const checkData = await db.getAllAsync(`[m
+[32m+[m[32m          SELECT COUNT(*) as count[m[41m [m
+[32m+[m[32m          FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m        `);[m
+[32m+[m[32m        console.log("Database record count:", checkData[0]?.count);[m
+[32m+[m
+[32m+[m[32m        // Get weekly data without the 7 day filter first to see all data[m
+[32m+[m[32m        const weekData = await db.getAllAsync(`[m
+[32m+[m[32m          SELECT strftime('%w', timestamp) AS day,[m
+[32m+[m[32m             COUNT(*) AS hit_count[m
+[32m+[m[32m          FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m          GROUP BY day[m
+[32m+[m[32m          ORDER BY day[m
+[32m+[m[32m        `);[m
+[32m+[m[41m        [m
+[32m+[m[32m        console.log("Weekly data raw:", weekData);[m
+[32m+[m[41m        [m
+[32m+[m[32m        if (!mounted) return;[m
+[32m+[m
+[32m+[m[32m        // Initialize array for all days of the week[m
+[32m+[m[32m        const processedWeekData = Array.from({ length: 7 }, (_, i) => ({[m
+[32m+[m[32m          label: dayLookUpTable.get(i) || "",[m
+[32m+[m[32m          value: 0[m
+[32m+[m[32m        }));[m
+[32m+[m
+[32m+[m[32m        // Fill in actual data[m
+[32m+[m[32m        weekData.forEach(row => {[m
+[32m+[m[32m          const dayIndex = safeParseInt(row.day);[m
+[32m+[m[32m          if (dayIndex >= 0 && dayIndex < 7) {[m
+[32m+[m[32m            processedWeekData[dayIndex].value = Number(row.hit_count || 0);[m
+[32m+[m[32m          }[m
+[32m+[m[32m        });[m
+[32m+[m
+[32m+[m[32m        console.log("Processed week data:", processedWeekData);[m
+[32m+[m[41m        [m
+[32m+[m[32m        setWeeklyHitsBarGraphProps(processedWeekData);[m
+[32m+[m[41m        [m
+[32m+[m[32m        const total = processedWeekData.reduce((sum, day) => sum + day.value, 0);[m
+[32m+[m[32m        const average = Math.round(total / 7);[m
+[32m+[m[41m        [m
+[32m+[m[32m        // Get last week's data for comparison[m
+[32m+[m[32m        const lastWeekResults = await db.getAllAsync(`[m
+[32m+[m[32m          SELECT COUNT(*) AS hit_count[m
+[32m+[m[32m          FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m          WHERE timestamp >= date('now', '-14 days')[m
+[32m+[m[32m            AND timestamp < date('now', '-7 days')[m
+[32m+[m[32m        `);[m
+[32m+[m[41m        [m
+[32m+[m[32m        const lastWeekAvg = Math.round((lastWeekResults[0]?.hit_count || 0) / 7);[m
+[32m+[m[32m        const change = calculatePercentageChange(average, lastWeekAvg);[m
+[32m+[m[41m        [m
+[32m+[m[32m        setWeeklyAverage(average);[m
+[32m+[m[32m        setPercentageChange(change);[m
+[32m+[m
+[32m+[m[32m        // Get daily data with proper validation[m
+[32m+[m[32m        const dailyStats = await getDailyAverageDatapoints();[m
+[32m+[m[32m        if (mounted && dailyStats) {[m
+[32m+[m[32m          setDailyStatsOverview(dailyStats);[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        // Get remaining data in parallel[m
+[32m+[m[32m        const [bongStats, miniData] = await Promise.all([[m
+[32m+[m[32m          getBongHitStatsFromPastWeek(),[m
+[32m+[m[32m          fetchMiniChartData()[m
+[32m+[m[32m        ]);[m
+[32m+[m
+[32m+[m[32m        if (!mounted) return;[m
+[32m+[m
+[32m+[m[32m        if (bongStats) setBongHitStats(bongStats);[m
+[32m+[m[32m        if (miniData?.length > 0) setMiniChartData(miniData);[m
+[32m+[m
+[32m+[m[32m      } catch (err) {[m
+[32m+[m[32m        console.error("Error in loadData:", err);[m
+[32m+[m[32m        if (mounted) {[m
+[32m+[m[32m          setError("Failed to load data");[m
+[32m+[m[32m        }[m
+[32m+[m[32m      } finally {[m
+[32m+[m[32m        if (mounted) {[m
+[32m+[m[32m          setIsLoading(false);[m
+[32m+[m[32m        }[m
+[32m+[m[32m        // Close database connection with delay to ensure queries complete[m
+[32m+[m[32m        if (db) {[m
+[32m+[m[32m          timeoutId = setTimeout(() => {[m
+[32m+[m[32m            if (db) {[m
+[32m+[m[32m              db.closeAsync().catch(err =>[m[41m [m
+[32m+[m[32m                console.error("Error closing database:", err)[m
+[32m+[m[32m              );[m
+[32m+[m[32m              db = null;[m
+             }[m
+[31m-            [m
+[31m-            let labels: string[] = [];[m
+[31m-            let values: number[] = [];[m
+[31m-            avgHourCount.forEach(item =>{[m
+[31m-                labels.push(item.hourOfDay);[m
+[31m-                values.push(item.count);[m
+[31m-            });[m
+[31m-            const dailyAvgData = {[m
+[31m-                labels: ["12am", "6am", "12pm", "6pm", "12am"],[m
+[31m-                datasets: [[m
+[31m-                  {[m
+[31m-                    data: values,[m
+[31m-                    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`, // optional[m
+[31m-                    strokeWidth: 2 // optional[m
+[31m-                  }[m
+[31m-                ],[m
+[31m-                legend: ["Average daily hits"] // optional[m
+[31m-              };[m
+[31m-[m
+[31m-            setDailyStatsOverview(dailyAvgData)[m
+[31m-        } catch (e) {[m
+[31m-            console.error(e);[m
+[32m+[m[32m          }, 100);[m
+         }[m
+[32m+[m[32m      }[m
+[32m+[m[32m    };[m
+[32m+[m
+[32m+[m[32m    loadData();[m
+[32m+[m
+[32m+[m[32m    // Cleanup function[m
+[32m+[m[32m    return () => {[m
+[32m+[m[32m      mounted = false;[m
+[32m+[m[32m      if (timeoutId) {[m
+[32m+[m[32m        clearTimeout(timeoutId);[m
+[32m+[m[32m      }[m
+[32m+[m[32m      // Ensure database is closed on unmount[m
+[32m+[m[32m      if (db) {[m
+[32m+[m[32m        db.closeAsync().catch(err =>[m[41m [m
+[32m+[m[32m          console.error("Error closing database on unmount:", err)[m
+[32m+[m[32m        );[m
+[32m+[m[32m        db = null;[m
+[32m+[m[32m      }[m
+[32m+[m[32m    };[m
+[32m+[m[32m  }, []);[m
+[32m+[m
+[32m+[m[32m  // Add garbage collection effect[m
+[32m+[m[32m  useEffect(() => {[m
+[32m+[m[32m    // Force garbage collection when component unmounts[m
+[32m+[m[32m    return () => {[m
+[32m+[m[32m      if (Platform.OS === 'android') {[m
+[32m+[m[32m        if (global.gc) global.gc();[m
+[32m+[m[32m      }[m
+[32m+[m[32m    };[m
+[32m+[m[32m  }, []);[m
+[32m+[m
+[32m+[m[32m  /* ------------------------------------------------------------------[m
+[32m+[m[32m   * Render helper functions[m
+[32m+[m[32m   * ------------------------------------------------------------------ */[m
+[32m+[m
+[32m+[m[32m  const renderWeeklyUsageBanner = () => {[m
+[32m+[m[32m    if (isLoading) {[m
+[32m+[m[32m      return ([m
+[32m+[m[32m        <View style={styles.loadingContainer}>[m
+[32m+[m[32m          <Text style={styles.loadingText}>Loading data...</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m      );[m
+     }[m
+ [m
+[31m-    async function getBongHitStatsFromPastWeek() {[m
+[31m-        try {[m
+[31m-            const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[31m-            const bongHits: any | null = await bongHitsDb.getFirstAsync(`SELECT AVG(duration_ms) FROM ${BONG_HITS_DATABASE_NAME} WHERE TIMESTAMP >= DATETIME('now', '-7 days')`);[m
+[31m-            const longestHit: any | null = await bongHitsDb.getFirstAsync(`SELECT MAX(duration_ms) FROM ${BONG_HITS_DATABASE_NAME} WHERE TIMESTAMP >= DATETIME('now', '-7 days')`);[m
+[31m-            setBongHitStats({[m
+[31m-                longestHit: longestHit["MAX(duration_ms)"],[m
+[31m-                averageDuration: bongHits["AVG(duration_ms)"][m
+[31m-            });[m
+[31m-[m
+[31m-        } catch(e) {[m
+[31m-            console.error(e);[m
+[31m-        }[m
+[32m+[m[32m    if (!weeklyHitsBarGraphProps?.length) {[m
+[32m+[m[32m      console.log("No weekly data available:", weeklyHitsBarGraphProps);[m
+[32m+[m[32m      return ([m
+[32m+[m[32m        <View style={styles.errorContainer}>[m
+[32m+[m[32m          <Text style={styles.errorText}>No data available</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m      );[m
+     }[m
+ [m
+[32m+[m[32m    const bannerProps = {[m
+[32m+[m[32m      weeklyData: weeklyHitsBarGraphProps,[m
+[32m+[m[32m      average: weeklyAverage || 0,[m
+[32m+[m[32m      percentageChange: percentageChange || 0,[m
+[32m+[m[32m    };[m
+[32m+[m
+[32m+[m[32m    console.log("Rendering WeeklyUsageBanner with props:", bannerProps);[m
+[32m+[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      return ([m
+[32m+[m[32m        <WeeklyUsageBanner[m
+[32m+[m[32m          {...bannerProps}[m
+[32m+[m[32m          onPress={() => router.push("/dataOverviews/weeklyAverage")}[m
+[32m+[m[32m        />[m
+[32m+[m[32m      );[m
+[32m+[m[32m    } catch (error) {[m
+[32m+[m[32m      console.error("Error rendering WeeklyUsageBanner:", error);[m
+[32m+[m[32m      return ([m
+[32m+[m[32m        <View style={styles.errorContainer}>[m
+[32m+[m[32m          <Text style={styles.errorText}>Error displaying weekly data</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m      );[m
+[32m+[m[32m    }[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  // Memoize the weekly chart component instance[m
+[32m+[m[32m  const weeklyOverview = useMemo(() => ([m
+[32m+[m[32m    <WeeklyOverview weeklyHitsBarGraphProps={weeklyHitsBarGraphProps} />[m
+[32m+[m[32m  ), [weeklyHitsBarGraphProps]);[m
+ [m
+[32m+[m[32m  // Memoize the monthly chart component instance[m
+[32m+[m[32m  const monthlyOverview = useMemo(() => ([m
+[32m+[m[32m    <MonthlyOverview weeklyHitsBarGraphProps={weeklyHitsBarGraphProps} />[m
+[32m+[m[32m  ), [weeklyHitsBarGraphProps]);[m
+[32m+[m
+[32m+[m[32m  // Memoize placeholder component[m
+[32m+[m[32m  const placeholderCard = useMemo(() => ([m
+[32m+[m[32m    <View style={[styles.card, styles.placeholderCard]}>[m
+[32m+[m[32m      <View style={styles.cardHeader}>[m
+[32m+[m[32m        <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />[m
+[32m+[m[32m        <View style={styles.placeholderTitle} />[m
+[32m+[m[32m      </View>[m
+[32m+[m[32m      <View style={styles.chartContainer}>[m
+[32m+[m[32m        <ActivityIndicator size="large" color="#007AFF" />[m
+[32m+[m[32m      </View>[m
+[32m+[m[32m    </View>[m
+[32m+[m[32m  ), []);[m
+[32m+[m
+[32m+[m[32m  const renderNotificationBanner = () => {[m
+     return ([m
+[31m-        <SafeAreaProvider style = {styles.scrollView}>[m
+[31m-            <ScrollView>[m
+[31m-                <Link href={`/dataOverviews/dailyAverageOverview`} style={styles.cards}>[m
+[31m-                    <Card>[m
+[31m-                        <Text style={styles.header}>Daily Average Overview</Text>[m
+[31m-                        {dailyStatsOverview ? <LineChart data={dailyStatsOverview as any}  width={300} height={200} chartConfig={chartConfig}/> : <Text>Loading</Text>}[m
+[31m-                    </Card>[m
+[31m-                </Link>[m
+[31m-                <Link href={`/dataOverviews/weeklyOverview`} style={styles.cards}>[m
+[31m-                    <Card>[m
+[31m-                        <Text style={styles.header}>Past Week Overview</Text>[m
+[31m-                        {weeklyHitsBarGraphProps ? <BarChart data={weeklyDataFake} width={300} height={200} chartConfig={chartConfig} /> : <Text>Loading</Text>}[m
+[31m-                    </Card>[m
+[31m-                </Link>[m
+[31m-                <Card style={styles.cards}>[m
+[31m-                    <Text style={styles.header}>Past Month Overview</Text>[m
+[31m-                    {weeklyHitsBarGraphProps ? <LineChart data={monthlyDataFake} width={500} height={300} chartConfig={chartConfig}/> : <Text>Loading</Text>}[m
+[31m-                </Card>[m
+[31m-                <Card style={styles.cards}>[m
+[31m-                    <Text style={styles.header}>Pick Time Range</Text>[m
+[31m-                    <AntDesign name="calendar" size={24} color="black" />[m
+[31m-                </Card>[m
+[31m-            </ScrollView>[m
+[31m-        </SafeAreaProvider>[m
+[32m+[m[32m      <View style={styles.notificationBanner}>[m
+[32m+[m[32m        <View style={styles.notificationHeader}>[m
+[32m+[m[32m          <View style={styles.notificationTitle}>[m
+[32m+[m[32m            <MaterialCommunityIcons name="bell-outline" size={16} color="#000" />[m
+[32m+[m[32m            <Text style={styles.notificationTitleText}>Daily Summary</Text>[m
+[32m+[m[32m          </View>[m
+[32m+[m[32m          <View style={styles.notificationTime}>[m
+[32m+[m[32m            <Text style={styles.timeText}>Last 24 hours</Text>[m
+[32m+[m[32m            <TouchableOpacity style={styles.dismissButtonContainer}>[m
+[32m+[m[32m              <Text style={styles.dismissButton}>Dismiss</Text>[m
+[32m+[m[32m            </TouchableOpacity>[m
+[32m+[m[32m          </View>[m
+[32m+[m[32m        </View>[m
+[32m+[m
+[32m+[m[32m        <View style={styles.notificationContent}>[m
+[32m+[m[32m          <MaterialCommunityIcons[m
+[32m+[m[32m            name="clock-outline"[m
+[32m+[m[32m            size={32}[m
+[32m+[m[32m            color="#000"[m
+[32m+[m[32m            style={styles.earIcon}[m
+[32m+[m[32m          />[m
+[32m+[m[32m          <View style={styles.notificationTextContainer}>[m
+[32m+[m[32m            <Text style={styles.notificationMainText}>[m
+[32m+[m[32m              {`Average of ${weeklyAverage} hits per day`}[m
+[32m+[m[32m            </Text>[m
+[32m+[m[32m            <Text style={styles.notificationSubText}>[m
+[32m+[m[32m              Your daily average has increased compared to last week[m
+[32m+[m[32m            </Text>[m
+[32m+[m[32m            <TouchableOpacity>[m
+[32m+[m[32m              <Text style={styles.moreDetailsLink}>More Details</Text>[m
+[32m+[m[32m            </TouchableOpacity>[m
+[32m+[m[32m          </View>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m      </View>[m
+     );[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  return ([m
+[32m+[m[32m    <SafeAreaProvider>[m
+[32m+[m[32m      <ScrollView[m[41m [m
+[32m+[m[32m        style={styles.container}[m
+[32m+[m[32m        removeClippedSubviews={true}[m
+[32m+[m[32m        maxToRenderPerBatch={2}[m
+[32m+[m[32m        windowSize={3}[m
+[32m+[m[32m        updateCellsBatchingPeriod={50}[m
+[32m+[m[32m        showsVerticalScrollIndicator={false}[m
+[32m+[m[32m        contentContainerStyle={styles.contentContainer}[m
+[32m+[m[32m        scrollEventThrottle={16}[m
+[32m+[m[32m        bounces={false}[m
+[32m+[m[32m        overScrollMode="never"[m
+[32m+[m[32m        maintainVisibleContentPosition={{[m
+[32m+[m[32m          minIndexForVisible: 0,[m
+[32m+[m[32m          autoscrollToTopThreshold: 10,[m
+[32m+[m[32m        }}[m
+[32m+[m[32m        keyboardShouldPersistTaps="handled"[m
+[32m+[m[32m        onScrollBeginDrag={() => setIsScrolling(true)}[m
+[32m+[m[32m        onScrollEndDrag={() => setIsScrolling(false)}[m
+[32m+[m[32m        onMomentumScrollEnd={() => setIsScrolling(false)}[m
+[32m+[m[32m      >[m
+[32m+[m[32m        <LinearGradient[m
+[32m+[m[32m          colors={[colors.gradient.start, colors.gradient.middle, colors.gradient.end]}[m
+[32m+[m[32m          locations={[0, 0.2, 0.4]}[m
+[32m+[m[32m          start={{ x: 1, y: 0 }}[m
+[32m+[m[32m          end={{ x: 0, y: 1 }}[m
+[32m+[m[32m          style={styles.gradientBackground}[m
+[32m+[m[32m        />[m
+[32m+[m
+[32m+[m[32m        {/* Header */}[m
+[32m+[m[32m        <View style={styles.headerContainer}>[m
+[32m+[m[32m          <Text style={styles.headerTitle}>Summary</Text>[m
+[32m+[m[32m          <View style={styles.profilePic} />[m
+[32m+[m[32m        </View>[m
+[32m+[m
+[32m+[m[32m        {/* Notification Banner */}[m
+[32m+[m[32m        <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>[m
+[32m+[m
+[32m+[m[32m        {/* Example "Medical ID" Card */}[m
+[32m+[m[32m        <View style={styles.medicalIdCard}>[m
+[32m+[m[32m          {/* ... or your actual MedicalIDCard component ... */}[m
+[32m+[m[32m        </View>[m
+[32m+[m
+[32m+[m[32m        {/* Data Content */}[m
+[32m+[m[32m        {isLoading ? ([m
+[32m+[m[32m          <View style={styles.loadingContainer}>[m
+[32m+[m[32m            <Text style={styles.loadingText}>Loading data...</Text>[m
+[32m+[m[32m          </View>[m
+[32m+[m[32m        ) : error ? ([m
+[32m+[m[32m          <View style={styles.errorContainer}>[m
+[32m+[m[32m            <Text style={styles.errorText}>{error}</Text>[m
+[32m+[m[32m          </View>[m
+[32m+[m[32m        ) : ([m
+[32m+[m[32m          <>[m
+[32m+[m[32m            <DailyAverageCard[m
+[32m+[m[32m              data={weeklyHitsBarGraphProps}[m
+[32m+[m[32m              averageHits={weeklyAverage}[m
+[32m+[m[32m              onPress={() => router.push("/dataOverviews/dailyAverageOverview")}[m
+[32m+[m[32m            />[m
+[32m+[m[32m            {renderWeeklyUsageBanner()}[m
+[32m+[m[32m            {isScrolling ? placeholderCard : weeklyOverview}[m
+[32m+[m[32m            {isScrolling ? placeholderCard : monthlyOverview}[m
+[32m+[m[32m          </>[m
+[32m+[m[32m        )}[m
+[32m+[m
+[32m+[m[32m        {/* Time Range Selector */}[m
+[32m+[m[32m        <Card style={[styles.card, styles.timeRangeCard]}>[m
+[32m+[m[32m          <View style={styles.timeRangeContent}>[m
+[32m+[m[32m            <Text style={styles.cardTitle}>Pick Time Range</Text>[m
+[32m+[m[32m            <AntDesign name="calendar" size={24} color="black" />[m
+[32m+[m[32m          </View>[m
+[32m+[m[32m        </Card>[m
+[32m+[m[32m      </ScrollView>[m
+[32m+[m[32m    </SafeAreaProvider>[m
+[32m+[m[32m  );[m
+ }[m
+ [m
+[32m+[m[32m/* ------------------------------------------------------------------[m
+[32m+[m[32m * Styles[m
+[32m+[m[32m * ------------------------------------------------------------------ */[m
+ const styles = StyleSheet.create({[m
+[31m-    header: {[m
+[31m-        fontSize: 18[m
+[32m+[m[32m  container: {[m
+[32m+[m[32m    flex: 1,[m
+[32m+[m[32m    backgroundColor: colors.background.primary,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  contentContainer: {[m
+[32m+[m[32m    paddingBottom: 32,[m
+[32m+[m[32m    // Remove paddingHorizontal if not needed[m
+[32m+[m[32m  },[m
+[32m+[m[32m  gradientBackground: {[m
+[32m+[m[32m    position: "absolute",[m
+[32m+[m[32m    left: 0,[m
+[32m+[m[32m    right: 0,[m
+[32m+[m[32m    top: 0,[m
+[32m+[m[32m    height: "35%",[m
+[32m+[m[32m    zIndex: 0,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  headerContainer: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    justifyContent: "space-between",[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    paddingHorizontal: 16,[m
+[32m+[m[32m    paddingTop: 52,[m
+[32m+[m[32m    paddingBottom: 20,[m
+[32m+[m[32m    zIndex: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  headerTitle: {[m
+[32m+[m[32m    ...typography.largeTitle,[m
+[32m+[m[32m    color: "#000000",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  profilePic: {[m
+[32m+[m[32m    width: 40,[m
+[32m+[m[32m    height: 40,[m
+[32m+[m[32m    borderRadius: 20,[m
+[32m+[m[32m    backgroundColor: "#ddd",[m
+[32m+[m[32m    borderWidth: 1,[m
+[32m+[m[32m    borderColor: "rgba(0,0,0,0.1)",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  card: {[m
+[32m+[m[32m    backgroundColor: colors.background.primary,[m
+[32m+[m[32m    marginHorizontal: 16,[m
+[32m+[m[32m    marginVertical: 8,[m
+[32m+[m[32m    borderRadius: 12,[m
+[32m+[m[32m    padding: 16,[m
+[32m+[m[32m    shadowColor: colors.label.primary,[m
+[32m+[m[32m    shadowOffset: {[m
+[32m+[m[32m      width: 0,[m
+[32m+[m[32m      height: 1,[m
+     },[m
+[31m-    scrollView: {[m
+[31m-        flex: 1,[m
+[31m-        flexDirection: 'column',[m
+[31m-        justifyContent: 'center',  [m
+[31m-        alignItems: 'center',    [m
+[31m-        margin: 20[m
+[31m-      },[m
+[31m-      cards: {[m
+[31m-        marginVertical: 40[m
+[31m-      }[m
+[31m-});[m
+\ No newline at end of file[m
+[32m+[m[32m    shadowOpacity: 0.05,[m
+[32m+[m[32m    shadowRadius: 4,[m
+[32m+[m[32m    elevation: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  cardHeader: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    marginBottom: 8,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  cardTitle: {[m
+[32m+[m[32m    ...typography.title3,[m
+[32m+[m[32m    color: colors.label.primary,[m
+[32m+[m[32m    marginLeft: 10,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  cardDescription: {[m
+[32m+[m[32m    ...typography.body,[m
+[32m+[m[32m    color: colors.label.secondary,[m
+[32m+[m[32m    marginTop: 4,[m
+[32m+[m[32m    marginBottom: 16,[m
+[32m+[m[32m    lineHeight: 20,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  chartContainer: {[m
+[32m+[m[32m    marginTop: 16,[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    paddingHorizontal: 8,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  chart: {[m
+[32m+[m[32m    marginVertical: 8,[m
+[32m+[m[32m    borderRadius: 16,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  timeRangeCard: {[m
+[32m+[m[32m    marginBottom: 16,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  timeRangeContent: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    justifyContent: "space-between",[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    padding: 16,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationBanner: {[m
+[32m+[m[32m    backgroundColor: "#FFE94D",[m
+[32m+[m[32m    marginHorizontal: 16,[m
+[32m+[m[32m    marginVertical: 8,[m
+[32m+[m[32m    borderRadius: 12,[m
+[32m+[m[32m    padding: 16,[m
+[32m+[m[32m    shadowColor: "#000",[m
+[32m+[m[32m    shadowOffset: { width: 0, height: 1 },[m
+[32m+[m[32m    shadowOpacity: 0.05,[m
+[32m+[m[32m    shadowRadius: 4,[m
+[32m+[m[32m    elevation: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationHeader: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    justifyContent: "space-between",[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    marginBottom: 12,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationTitle: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    gap: 4,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationTitleText: {[m
+[32m+[m[32m    ...typography.caption1,[m
+[32m+[m[32m    fontWeight: "600",[m
+[32m+[m[32m    letterSpacing: 0.5,[m
+[32m+[m[32m    textTransform: "uppercase",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationTime: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    gap: 8,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  timeText: {[m
+[32m+[m[32m    ...typography.caption1,[m
+[32m+[m[32m    color: colors.label.secondary,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  dismissButtonContainer: {[m
+[32m+[m[32m    marginLeft: 8,[m
+[32m+[m[32m    padding: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  dismissButton: {[m
+[32m+[m[32m    fontSize: 14,[m
+[32m+[m[32m    color: "#666",[m
+[32m+[m[32m    fontWeight: "400",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationContent: {[m
+[32m+[m[32m    flexDirection: "row",[m
+[32m+[m[32m    marginBottom: 16,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  earIcon: {[m
+[32m+[m[32m    marginRight: 12,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationTextContainer: {[m
+[32m+[m[32m    flex: 1,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationMainText: {[m
+[32m+[m[32m    ...typography.title3,[m
+[32m+[m[32m    color: colors.label.primary,[m
+[32m+[m[32m    marginBottom: 4,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  notificationSubText: {[m
+[32m+[m[32m    ...typography.body,[m
+[32m+[m[32m    color: colors.label.secondary,[m
+[32m+[m[32m    marginBottom: 4,[m
+[32m+[m[32m    lineHeight: 20,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  moreDetailsLink: {[m
+[32m+[m[32m    ...typography.body,[m
+[32m+[m[32m    color: colors.systemBlue,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  loadingContainer: {[m
+[32m+[m[32m    padding: 20,[m
+[32m+[m[32m    alignItems: "center",[m
+[32m+[m[32m    backgroundColor: "white",[m
+[32m+[m[32m    borderRadius: 12,[m
+[32m+[m[32m    margin: 16,[m
+[32m+[m[32m    shadowColor: "#000",[m
+[32m+[m[32m    shadowOffset: { width: 0, height: 1 },[m
+[32m+[m[32m    shadowOpacity: 0.1,[m
+[32m+[m[32m    shadowRadius: 4,[m
+[32m+[m[32m    elevation: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  loadingText: {[m
+[32m+[m[32m    fontSize: 16,[m
+[32m+[m[32m    color: "#8E8E93",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  errorContainer: {[m
+[32m+[m[32m    backgroundColor: "#fff",[m
+[32m+[m[32m    padding: 16,[m
+[32m+[m[32m    marginHorizontal: 16,[m
+[32m+[m[32m    marginVertical: 8,[m
+[32m+[m[32m    borderRadius: 12,[m
+[32m+[m[32m    shadowColor: "#000",[m
+[32m+[m[32m    shadowOffset: {[m
+[32m+[m[32m      width: 0,[m
+[32m+[m[32m      height: 1,[m
+[32m+[m[32m    },[m
+[32m+[m[32m    shadowOpacity: 0.1,[m
+[32m+[m[32m    shadowRadius: 4,[m
+[32m+[m[32m    elevation: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  errorText: {[m
+[32m+[m[32m    fontSize: 16,[m
+[32m+[m[32m    color: "#666",[m
+[32m+[m[32m    textAlign: "center",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  noDataText: {[m
+[32m+[m[32m    fontSize: 16,[m
+[32m+[m[32m    color: "#666",[m
+[32m+[m[32m  },[m
+[32m+[m[32m  medicalIdCard: {[m
+[32m+[m[32m    backgroundColor: colors.background.primary,[m
+[32m+[m[32m    marginHorizontal: 16,[m
+[32m+[m[32m    marginVertical: 8,[m
+[32m+[m[32m    borderRadius: 12,[m
+[32m+[m[32m    padding: 16,[m
+[32m+[m[32m    shadowColor: colors.label.primary,[m
+[32m+[m[32m    shadowOffset: {[m
+[32m+[m[32m      width: 0,[m
+[32m+[m[32m      height: 1,[m
+[32m+[m[32m    },[m
+[32m+[m[32m    shadowOpacity: 0.05,[m
+[32m+[m[32m    shadowRadius: 4,[m
+[32m+[m[32m    elevation: 2,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  placeholderCard: {[m
+[32m+[m[32m    minHeight: 250,[m
+[32m+[m[32m    justifyContent: 'center',[m
+[32m+[m[32m    alignItems: 'center',[m
+[32m+[m[32m    backgroundColor: colors.background.secondary,[m
+[32m+[m[32m  },[m
+[32m+[m[32m  placeholderTitle: {[m
+[32m+[m[32m    width: 120,[m
+[32m+[m[32m    height: 20,[m
+[32m+[m[32m    backgroundColor: colors.systemGray[4],[m
+[32m+[m[32m    borderRadius: 4,[m
+[32m+[m[32m    marginLeft: 10,[m
+[32m+[m[32m  },[m
+[32m+[m[32m});[m
+[41m+[m
+[1mdiff --git a/app/dataOverviews/dailyAverageOverview.tsx b/app/dataOverviews/dailyAverageOverview.tsx[m
+[1mindex 03bd60f..daae98e 100644[m
+[1m--- a/app/dataOverviews/dailyAverageOverview.tsx[m
+[1m+++ b/app/dataOverviews/dailyAverageOverview.tsx[m
+[36m@@ -1,9 +1,495 @@[m
+[31m-import { View } from "react-native";[m
+[32m+[m[32mimport React, { useState, useEffect } from 'react';[m
+[32m+[m[32mimport { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from "react-native";[m
+[32m+[m[32mimport { LineChart } from 'react-native-chart-kit';[m
+[32m+[m[32mimport { MaterialCommunityIcons } from '@expo/vector-icons';[m
+[32m+[m[32mimport { openDatabaseAsync } from 'expo-sqlite';[m
+[32m+[m[32mimport { BONG_HITS_DATABASE_NAME } from '@/src/constants';[m
+[32m+[m[32mimport { useRouter } from 'expo-router';[m
+[32m+[m
+[32m+[m[32mconst windowWidth = Dimensions.get('window').width;[m
+[32m+[m
+[32m+[m[32mconst TimeRangeSelector = ({ selectedRange, onRangeChange }) => {[m
+[32m+[m[32m    const ranges = ['H', 'D', 'W', 'M', '6M', 'Y'];[m
+[32m+[m[41m    [m
+[32m+[m[32m    return ([m
+[32m+[m[32m        <View style={styles.timeSelector}>[m
+[32m+[m[32m            {ranges.map((range) => ([m
+[32m+[m[32m                <TouchableOpacity[m
+[32m+[m[32m                    key={range}[m
+[32m+[m[32m                    onPress={() => onRangeChange(range)}[m
+[32m+[m[32m                    style={[[m
+[32m+[m[32m                        styles.timeSelectorButton,[m
+[32m+[m[32m                        selectedRange === range && styles.timeSelectorButtonSelected[m
+[32m+[m[32m                    ]}[m
+[32m+[m[32m                >[m
+[32m+[m[32m                    <Text style={[[m
+[32m+[m[32m                        styles.timeSelectorText,[m
+[32m+[m[32m                        selectedRange === range && styles.timeSelectorTextSelected[m
+[32m+[m[32m                    ]}>[m
+[32m+[m[32m                        {range}[m
+[32m+[m[32m                    </Text>[m
+[32m+[m[32m                </TouchableOpacity>[m
+[32m+[m[32m            ))}[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m    );[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32mconst InfoCard = ({ icon, title, description, value, period, showArrow = true }) => ([m
+[32m+[m[32m    <TouchableOpacity style={styles.infoCard}>[m
+[32m+[m[32m        <View style={styles.infoCardHeader}>[m
+[32m+[m[32m            {icon}[m
+[32m+[m[32m            <Text style={styles.infoCardTitle}>{title}</Text>[m
+[32m+[m[32m        </View>[m
+[32m+[m[32m        <Text style={styles.infoCardDescription}>{description}</Text>[m
+[32m+[m[32m        {value && period && ([m
+[32m+[m[32m            <View style={styles.monthComparison}>[m
+[32m+[m[32m                <View style={styles.monthValue}>[m
+[32m+[m[32m                    <Text style={styles.valueText}>{value}</Text>[m
+[32m+[m[32m                    <Text style={styles.unitText}>s</Text>[m
+[32m+[m[32m                </View>[m
+[32m+[m[32m                <View style={[styles.periodBar, { backgroundColor: '#007AFF' }]}>[m
+[32m+[m[32m                    <Text style={styles.periodText}>{period}</Text>[m
+[32m+[m[32m                </View>[m
+[32m+[m[32m            </View>[m
+[32m+[m[32m        )}[m
+[32m+[m[32m        {showArrow && ([m
+[32m+[m[32m            <MaterialCommunityIcons[m[41m [m
+[32m+[m[32m                name="chevron-right"[m[41m [m
+[32m+[m[32m                size={24}[m[41m [m
+[32m+[m[32m                color="#C7C7CC"[m[41m [m
+[32m+[m[32m                style={styles.arrowIcon}[m
+[32m+[m[32m            />[m
+[32m+[m[32m        )}[m
+[32m+[m[32m    </TouchableOpacity>[m
+[32m+[m[32m);[m
+ [m
+ export default function DailyAverageOverview() {[m
+[31m-    return([m
+[31m-        <View>[m
+[31m-            Daily average overview[m
+[32m+[m[32m    const router = useRouter();[m
+[32m+[m[32m    const [selectedRange, setSelectedRange] = useState('H');[m
+[32m+[m[32m    const [chartData, setChartData] = useState({[m
+[32m+[m[32m        labels: [],[m
+[32m+[m[32m        datasets: [{[m
+[32m+[m[32m            data: [0],[m
+[32m+[m[32m            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m            strokeWidth: 2[m
+[32m+[m[32m        }][m
+[32m+[m[32m    });[m
+[32m+[m[32m    const [averageDuration, setAverageDuration] = useState(0);[m
+[32m+[m[32m    const [hitCount, setHitCount] = useState(0);[m
+[32m+[m
+[32m+[m[32m    useEffect(() => {[m
+[32m+[m[32m        const loadData = async () => {[m
+[32m+[m[32m            try {[m
+[32m+[m[32m                const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);[m
+[32m+[m[32m                let query = '';[m
+[32m+[m[41m                [m
+[32m+[m[32m                // Different queries based on time range[m
+[32m+[m[32m                switch(selectedRange) {[m
+[32m+[m[32m                    case 'H':[m
+[32m+[m[32m                        query = `[m
+[32m+[m[32m                            SELECT[m[41m [m
+[32m+[m[32m                                strftime('%H:%M', timestamp) as time_label,[m
+[32m+[m[32m                                AVG(duration_ms)/1000 as avg_duration,[m
+[32m+[m[32m                                COUNT(*) as count[m
+[32m+[m[32m                            FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m                            WHERE timestamp >= '2024-12-24'[m
+[32m+[m[32m                            GROUP BY strftime('%H:%M', timestamp)[m
+[32m+[m[32m                            ORDER BY timestamp[m
+[32m+[m[32m                            LIMIT 12;[m
+[32m+[m[32m                        `;[m
+[32m+[m[32m                        break;[m
+[32m+[m[32m                    case 'D':[m
+[32m+[m[32m                        query = `[m
+[32m+[m[32m                            SELECT[m[41m [m
+[32m+[m[32m                                strftime('%H:00', timestamp) as time_label,[m
+[32m+[m[32m                                AVG(duration_ms)/1000 as avg_duration,[m
+[32m+[m[32m                                COUNT(*) as count[m
+[32m+[m[32m                            FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m                            WHERE timestamp >= '2024-12-24'[m
+[32m+[m[32m                            GROUP BY strftime('%H', timestamp)[m
+[32m+[m[32m                            ORDER BY time_label;[m
+[32m+[m[32m                        `;[m
+[32m+[m[32m                        break;[m
+[32m+[m[32m                    default:[m
+[32m+[m[32m                        query = `[m
+[32m+[m[32m                            SELECT[m[41m [m
+[32m+[m[32m                                strftime('%H:00', timestamp) as time_label,[m
+[32m+[m[32m                                AVG(duration_ms)/1000 as avg_duration,[m
+[32m+[m[32m                                COUNT(*) as count[m
+[32m+[m[32m                            FROM ${BONG_HITS_DATABASE_NAME}[m
+[32m+[m[32m                            WHERE timestamp >= '2024-12-24'[m
+[32m+[m[32m                            GROUP BY strftime('%H', timestamp)[m
+[32m+[m[32m                            ORDER BY time_label;[m
+[32m+[m[32m                        `;[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                const result = await db.getAllAsync(query);[m
+[32m+[m[32m                console.log("Query result:", result);[m
+[32m+[m
+[32m+[m[32m                if (result && result.length > 0) {[m
+[32m+[m[32m                    console.log("Processed data:", result);[m
+[32m+[m[41m                    [m
+[32m+[m[32m                    const timePoints = result.map(r => r.time_label);[m
+[32m+[m[32m                    const durationValues = result.map(r => Math.round(r.avg_duration));[m
+[32m+[m[41m                    [m
+[32m+[m[32m                    // Calculate average duration from the results[m
+[32m+[m[32m                    const totalDuration = result.reduce((acc, curr) => acc + (curr.avg_duration || 0), 0);[m
+[32m+[m[32m                    const avgDuration = Math.round(totalDuration / result.length);[m
+[32m+[m[32m                    setAverageDuration(avgDuration);[m
+[32m+[m[41m                    [m
+[32m+[m[32m                    // Calculate total hits[m
+[32m+[m[32m                    const totalHits = result.reduce((acc, curr) => acc + curr.count, 0);[m
+[32m+[m[32m                    setHitCount(totalHits);[m
+[32m+[m
+[32m+[m[32m                    // Set chart data[m
+[32m+[m[32m                    setChartData({[m
+[32m+[m[32m                        labels: timePoints,[m
+[32m+[m[32m                        datasets: [{[m
+[32m+[m[32m                            data: durationValues,[m
+[32m+[m[32m                            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m                            strokeWidth: 2[m
+[32m+[m[32m                        }][m
+[32m+[m[32m                    });[m
+[32m+[m[32m                }[m
+[32m+[m[32m            } catch (error) {[m
+[32m+[m[32m                console.error('Error loading data:', error);[m
+[32m+[m[32m            }[m
+[32m+[m[32m        };[m
+[32m+[m
+[32m+[m[32m        loadData();[m
+[32m+[m[32m    }, [selectedRange]);[m
+[32m+[m
+[32m+[m[32m    const chartConfig = {[m
+[32m+[m[32m        backgroundColor: '#ffffff',[m
+[32m+[m[32m        backgroundGradientFrom: '#ffffff',[m
+[32m+[m[32m        backgroundGradientTo: '#ffffff',[m
+[32m+[m[32m        decimalPlaces: 0,[m
+[32m+[m[32m        color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,[m
+[32m+[m[32m        labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,[m
+[32m+[m[32m        strokeWidth: 2,[m
+[32m+[m[32m        propsForVerticalLabels: {[m
+[32m+[m[32m            fontSize: 10,[m
+[32m+[m[32m            color: '#666666'[m
+[32m+[m[32m        },[m
+[32m+[m[32m        propsForHorizontalLabels: {[m
+[32m+[m[32m            fontSize: 10,[m
+[32m+[m[32m            color: '#666666'[m

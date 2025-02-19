@@ -1,0 +1,2534 @@
+
+
+================================================================================
+File: app.json
+================================================================================
+
+{
+  "expo": {
+    "name": "CanovaReactNativeApp",
+    "slug": "CanovaReactNativeApp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/canovafavicon.png",
+    "scheme": "myapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.CanovaReactNativeApp",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "This app requires Bluetooth access to connect to devices.",
+        "NSBluetoothPeripheralUsageDescription": "This app requires Bluetooth access to communicate with nearby devices."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/canovafavicon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ],
+      "package": "com.anonymous.CanovaReactNativeApp"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/canovafavicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-sqlite",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": [
+            "peripheral",
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to connect to bluetooth devices"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
+
+
+================================================================================
+File: app/_layout.tsx
+================================================================================
+
+import { Stack } from "expo-router";
+import { useState } from "react";
+import { BluetoothContext, BluetoothHandler } from "@/src/contexts/BluetoothContext";
+
+export default function RootLayout() {
+
+  const [bluetoothHandler] = useState<BluetoothHandler>(new BluetoothHandler());
+
+  return (
+    <BluetoothContext.Provider value={bluetoothHandler}>
+      <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="+not-found" />
+      </Stack>  
+    </BluetoothContext.Provider>
+  );
+}
+
+
+================================================================================
+File: app/(tabs)/_layout.tsx
+================================================================================
+
+import { Tabs } from 'expo-router';
+import React from 'react';
+
+export default function TabLayout() {
+  return (
+    <Tabs>
+      <Tabs.Screen
+        name="index"
+        options={{title: 'Home'}}
+      />
+      <Tabs.Screen
+        name="mydata"
+        options={{title: 'My Data'}}
+      />
+      <Tabs.Screen
+        name="trending"
+        options={{title: 'Trending'}}
+      />
+      <Tabs.Screen
+        name="journal"
+        options={{title: 'Journal'}}
+      />
+      <Tabs.Screen
+        name="devices"
+        options={{title: 'Devices'}}
+      />
+    </Tabs>
+  );
+}
+
+================================================================================
+File: app/(tabs)/devices.tsx
+================================================================================
+
+import { BluetoothContext } from '@/src/contexts/BluetoothContext';
+import AntDesign from '@expo/vector-icons/AntDesign';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Alert
+} from 'react-native';
+import base64 from 'react-native-base64';
+import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
+
+export default function Devices() {
+
+  const [savedDevices, setSavedDevice] = useState<Device[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [scanning, setScanning] = useState<boolean>(false);
+
+  //Track devices to avoid duplicate keys when scanning
+  const undiscoveredDeviceSet = useRef(new Set<string>());
+
+  const bluetoothHandler = useContext(BluetoothContext)!;
+
+  useEffect(() => {
+    setSavedDevice(bluetoothHandler.getSavedDevices());
+  }, []);
+
+  // THIS WILL decode BONG HIT DATA
+  function onDataUpdate(error: BleError | null, characteristic: Characteristic | null) {
+    if (error) {
+      console.log(error);
+      return -1;
+    } else if (!characteristic?.value) {
+      console.log("No Data was recieved");
+      return -1;
+    }
+    const rawData = base64.decode(characteristic.value);
+    Alert.alert(`Raw Data: ${rawData}`);
+  }
+
+  function scanDevices(): void {
+    const manager: BleManager = bluetoothHandler.getBLEManager();
+    setScanning(true);
+    setDevices([]);
+
+    manager.startDeviceScan(null, null, (error, device) => {
+      if (error) {
+        console.error('Error scanning devices:', error.message);
+        setScanning(false);
+        return;
+      }
+
+      if (device && device.name && !undiscoveredDeviceSet.current.has(device.id)) {
+        undiscoveredDeviceSet.current.add(device.id); // Add device ID to the Set
+        setDevices((prevDevices) => [...prevDevices, device]);
+      }
+    });
+
+    // Stop scanning after 10 seconds
+    setTimeout(() => {
+      manager.stopDeviceScan();
+      setScanning(false);
+    }, 10000);
+  };
+
+  // Renders device
+  const renderDevice = ({ item }: { item: Device }): JSX.Element => (
+    <TouchableOpacity style={styles.deviceItem} onPress={() => bluetoothHandler.connectToDevice(item)}>
+      <AntDesign name="hdd" size={24} color="black" />
+      <View style={styles.deviceInfo}>
+        <Text style={styles.deviceName}>{item.name}</Text>
+      </View>
+      {item.id === bluetoothHandler.getConnectedDevice()?.id ? <Text>Connected</Text> : <Text>Not Connected</Text>}
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.devicesFlatMapContainer}>
+        <View style={styles.header}>
+          <Text style={styles.headerText}>My Devices</Text>
+        </View>
+        <FlatList
+          data={savedDevices}
+          keyExtractor={(item) => item.id}
+          renderItem={renderDevice}
+          contentContainerStyle={styles.list}
+        />
+      </View>
+      <View style={styles.devicesFlatMapContainer}>
+        <View style={styles.header}>
+          <Text style={styles.headerText}>Other Devices</Text>
+        </View>
+        <TouchableOpacity style={styles.scanButton} onPress={scanDevices} disabled={scanning}>
+          <Text style={styles.scanButtonText}>
+            {scanning ? 'Scanning...' : 'Scan for Devices'}
+          </Text>
+        </TouchableOpacity>
+        {scanning && <ActivityIndicator style={styles.loader} size="large" color="#007AFF" />}
+        <FlatList
+          data={devices}
+          keyExtractor={(item) => item.id}
+          renderItem={renderDevice}
+          contentContainerStyle={styles.list}
+        />
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f8f8',
+  },
+  devicesFlatMapContainer: {
+    marginBottom: 20
+  },
+  header: {
+    backgroundColor: '#ffffff',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e6e6e6'
+  },
+  headerText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  scanButton: {
+    backgroundColor: '#12a35f',
+    padding: 12,
+    margin: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  scanButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loader: {
+    marginTop: 10,
+  },
+  list: {
+    padding: 16,
+  },
+  deviceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e6e6e6',
+    borderRadius: 6,
+    marginVertical: 4,
+  },
+  deviceInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  deviceName: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  deviceId: {
+    color: '#8e8e93',
+    fontSize: 12,
+  },
+});
+
+
+================================================================================
+File: app/(tabs)/index.tsx
+================================================================================
+
+import { StyleSheet, View, SafeAreaView, Image, Dimensions, Text } from "react-native";
+import { useEffect } from "react";
+import { initializeAppOnFirstLaunch, isFirstLaunch } from "@/src/dbManager";
+
+export default function App() {
+
+  useEffect(() => {
+    const firstLaunchFlag: Promise<boolean> = isFirstLaunch();
+    firstLaunchFlag.then( flag => {
+      if (flag) {
+        initializeAppOnFirstLaunch();
+      }
+    });
+    
+  }, []);
+
+    return (
+    <View style={styles.container}>
+      <Text>Welcome to Canova's App</Text>
+    </View>
+
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: .5,
+    flexDirection: 'column',
+    justifyContent: 'center',  
+    alignItems: 'center',    
+  },
+  imageContainer: {
+    position: 'absolute', 
+    top: -80, 
+    width: '90%',
+  },
+  masterLogo: { 
+    width: '100%',
+    resizeMode: 'contain',
+  },
+  text: {
+    textAlign: 'center',
+  },
+  horizontalLine: {
+    width: '90%', // Adjust the line width (percentage of the screen width)
+    height: 1, // Line thickness
+    backgroundColor: '#000', // Line color
+    marginTop: 100, // Space above and below the line
+    marginBottom: 20, // Space above and below the line
+  },
+  loginsContainer: {
+    display: 'flex',
+    flex: 0.5,
+    flexDirection: 'row',
+    marginTop: 50,
+  },
+  login: {
+    borderColor: '#000',
+    borderStyle: 'solid',
+  }
+});
+
+================================================================================
+File: app/(tabs)/journal.tsx
+================================================================================
+
+import React, { useState } from 'react';
+import { View, Text, Modal, TextInput, Button, StyleSheet } from 'react-native';
+import { Calendar } from 'react-native-calendars';
+
+export default function JournalCalendar() {
+  const [selectedDate, setSelectedDate] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [entries, setEntries] = useState({});
+  const [currentEntry, setCurrentEntry] = useState('');
+
+  const handleDayPress = (day) => {
+    const date = day.dateString;
+    setSelectedDate(date);
+    setCurrentEntry(entries[date] || '');
+    setModalVisible(true);
+  };
+
+  const saveEntry = () => {
+    setEntries({ ...entries, [selectedDate]: currentEntry });
+    setModalVisible(false);
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Calendar */}
+      <Calendar
+        onDayPress={handleDayPress}
+        markedDates={{
+          ...Object.keys(entries).reduce((acc, date) => {
+            acc[date] = { marked: true };
+            return acc;
+          }, {}),
+          [selectedDate]: { selected: true, selectedColor: '#12a35f' },
+        }}
+      />
+
+      {/* Modal for journal entry */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              Journal Entry for {selectedDate}
+            </Text>
+            <TextInput
+              style={styles.input}
+              multiline
+              placeholder="Write your journal entry here..."
+              value={currentEntry}
+              onChangeText={setCurrentEntry}
+            />
+            <View style={styles.modalButtons}>
+              <Button title="Save" onPress={saveEntry} />
+              <Button title="Cancel" onPress={() => setModalVisible(false)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Display Saved Entries */}
+      <View style={styles.entriesContainer}>
+        <Text style={styles.entriesTitle}>Saved Journal Entries:</Text>
+        {Object.keys(entries).length > 0 ? (
+          Object.entries(entries).map(([date, entry]) => (
+            <View key={date} style={styles.entry}>
+              <Text style={styles.entryDate}>{date}</Text>
+              <Text style={styles.entryText}>{entry}</Text>
+            </View>
+          ))
+        ) : (
+          <Text>No journal entries yet.</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 20,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  input: {
+    width: '100%',
+    height: 100,
+    borderColor: '#ddd',
+    borderWidth: 1,
+    borderRadius: 5,
+    padding: 10,
+    textAlignVertical: 'top',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  entriesContainer: {
+    marginTop: 20,
+  },
+  entriesTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  entry: {
+    marginBottom: 10,
+  },
+  entryDate: {
+    fontWeight: 'bold',
+  },
+  entryText: {
+    fontSize: 14,
+  },
+});
+
+
+================================================================================
+File: app/(tabs)/mydata.tsx
+================================================================================
+
+import { Text, ScrollView, StyleSheet, View, Dimensions, Platform, Pressable, TouchableOpacity } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SQLiteDatabase, openDatabaseAsync } from "expo-sqlite";
+import { useState, useEffect } from "react";
+import { AverageHourCount, BongHitStats, Datapoint } from "@/src/types";
+import { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "@/src/constants";
+import { Card } from "@/components/Card";
+import AntDesign from "@expo/vector-icons/AntDesign";
+import { Link, useRouter } from "expo-router";
+import { LineChart, BarChart } from "react-native-chart-kit";
+import { LinearGradient } from "expo-linear-gradient";
+import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import { DailyAverageCard } from "@/components/DailyAverageCard";
+import WeeklyUsageBanner from "@/components/WeeklyUsageBanner";
+
+const windowWidth = Dimensions.get("window").width;
+
+const monthlyDataFake = {
+  labels: ["January", "February", "March", "April", "May", "June"],
+  datasets: [
+    {
+      data: [20, 45, 28, 80, 99, 43],
+      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+      strokeWidth: 3,
+    },
+  ],
+  legend: ["Hits Recorded"],
+};
+
+const weeklyDataFake = {
+  labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  datasets: [
+    {
+      data: [9, 4, 2, 0, 15, 4, 10],
+      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+      strokeWidth: 3,
+    },
+  ],
+  legend: ["Hits Recorded"],
+};
+
+// Helper for consistent typography
+const typography = {
+  largeTitle: {
+    fontSize: 34,
+    fontWeight: Platform.select({ ios: "700", android: "bold" }),
+    letterSpacing: Platform.select({ ios: 0.41, android: 0.25 }),
+  },
+  title1: {
+    fontSize: 28,
+    fontWeight: Platform.select({ ios: "600", android: "bold" }),
+    letterSpacing: Platform.select({ ios: 0.34, android: 0.25 }),
+  },
+  title2: {
+    fontSize: 22,
+    fontWeight: Platform.select({ ios: "600", android: "bold" }),
+    letterSpacing: Platform.select({ ios: 0.35, android: 0.25 }),
+  },
+  title3: {
+    fontSize: 17,
+    fontWeight: Platform.select({ ios: "600", android: "bold" }),
+    letterSpacing: Platform.select({ ios: -0.41, android: 0.25 }),
+  },
+  body: {
+    fontSize: 15,
+    fontWeight: "400",
+    letterSpacing: Platform.select({ ios: -0.24, android: 0.25 }),
+  },
+  caption1: {
+    fontSize: 13,
+    fontWeight: "400",
+    letterSpacing: Platform.select({ ios: -0.08, android: 0.25 }),
+  },
+};
+
+const colors = {
+  systemBlue: "#007AFF",
+  systemRed: "#FF3B30",
+  systemYellow: "#FFE94D",
+  systemGray: {
+    1: "#8E8E93",
+    2: "#AEAEB2",
+    3: "#C7C7CC",
+    4: "#D1D1D6",
+    5: "#E5E5EA",
+    6: "#F2F2F7",
+  },
+  label: {
+    primary: "#000000",
+    secondary: "#666666",
+    tertiary: "#8E8E93",
+  },
+  background: {
+    primary: "#FFFFFF",
+    secondary: "#F2F2F7",
+    tertiary: "#FFFFFF",
+  },
+  gradient: {
+    start: "#FFB6A3",
+    middle: "#85D8CE",
+    end: "#FFFFFF",
+  },
+};
+
+const chartConfig = {
+  backgroundColor: "#ffffff",
+  backgroundGradientFrom: "#ffffff",
+  backgroundGradientTo: "#ffffff",
+  decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+  labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
+  style: {
+    borderRadius: 16,
+  },
+  propsForDots: {
+    r: "4",
+    strokeWidth: "2",
+    stroke: "#007AFF",
+  },
+  propsForBackgroundLines: {
+    stroke: "#e3e3e3",
+    strokeWidth: 1,
+  },
+  barPercentage: 0.7,
+  useShadowColorFromDataset: false,
+};
+
+// Raw data interface for mini chart
+interface RawChartData {
+  timestamp: string;
+  value: number;
+}
+
+export default function MyData() {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [weeklyHitsBarGraphProps, setWeeklyHitsBarGraphProps] = useState<Datapoint[]>([]);
+  const [dailyStatsOverview, setDailyStatsOverview] = useState<Object>();
+  const [bongHitStats, setBongHitStats] = useState<BongHitStats>();
+  const [weeklyAverage, setWeeklyAverage] = useState<number>(0);
+  const [percentageChange, setPercentageChange] = useState<number>(0);
+  const [miniChartData, setMiniChartData] = useState<RawChartData[]>([]);
+
+  /* ------------------------------------------------------------------
+   * Data-fetching helpers using execAsync
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Example: fetch a daily average data overview and store in dailyStatsOverview state.
+   * Replaces old getAllAsync usage with execAsync.
+   */
+  const getDailyAverageDatapoints = async () => {
+    try {
+      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+
+      // execAsync returns an array of results, 1 for each statement
+      const results = await db.execAsync(`
+        SELECT strftime('%H', timestamp) AS hourOfDay, COUNT(*) AS count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24'
+        GROUP BY hourOfDay
+        ORDER BY hourOfDay
+      `);
+
+      const rows = results[0]?.rows?._array || [];
+      let avgHourCount: AverageHourCount[] = rows.map((r: any) => ({
+        hourOfDay: r.hourOfDay,
+        count: r.count,
+      }));
+
+      // Fill missing hours
+      if (avgHourCount.length < 24) {
+        const allHours = Array.from({ length: 24 }, (_, i) =>
+          i.toString().padStart(2, "0")
+        );
+        const dataMap = new Map(
+          avgHourCount.map(item => [item.hourOfDay, item.count])
+        );
+
+        avgHourCount = allHours.map(hour => ({
+          hourOfDay: hour,
+          count: dataMap.get(hour) || 0,
+        }));
+      }
+
+      const dailyAvgData = {
+        labels: ["12am", "6am", "12pm", "6pm", "12am"],
+        datasets: [
+          {
+            data: avgHourCount.map(item => item.count),
+            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+            strokeWidth: 2,
+          },
+        ],
+        legend: ["Average daily hits"],
+      };
+
+      setDailyStatsOverview(dailyAvgData);
+    } catch (e) {
+      console.error("Error in getDailyAverageDatapoints:", e);
+      throw e;
+    }
+  };
+
+  /**
+   * Fetch a small set of data to show in a "mini chart."
+   */
+  const fetchMiniChartData = async () => {
+    try {
+      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      const results = await db.execAsync(`
+        SELECT 
+          duration_ms AS value,
+          timestamp
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24'
+        ORDER BY timestamp DESC
+        LIMIT 10
+      `);
+
+      const rows = results[0]?.rows?._array || [];
+      setMiniChartData(rows); // This array matches your RawChartData interface
+    } catch (e) {
+      console.error("Error fetching mini chart data:", e);
+      throw e;
+    }
+  };
+
+  /**
+   * Retrieve average & max durations for the last 7 days.
+   */
+  const getBongHitStatsFromPastWeek = async () => {
+    try {
+      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      const avgRes = await db.execAsync(`
+        SELECT AVG(duration_ms) AS avg_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= DATETIME('now', '-7 days')
+      `);
+      const maxRes = await db.execAsync(`
+        SELECT MAX(duration_ms) AS max_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= DATETIME('now', '-7 days')
+      `);
+
+      const avgRow = avgRes[0]?.rows?._array?.[0];
+      const maxRow = maxRes[0]?.rows?._array?.[0];
+
+      const stats: BongHitStats = {
+        longestHit: maxRow?.max_duration || 0,
+        averageDuration: avgRow?.avg_duration || 0,
+      };
+
+      setBongHitStats(stats);
+      return stats;
+    } catch (e) {
+      console.error("Error in getBongHitStatsFromPastWeek:", e);
+      throw e;
+    }
+  };
+
+  /**
+   * For the last 7 days, how many hits occurred on each day of the week?
+   */
+  const queryNumberOfHitsFromPastWeek = async () => {
+    try {
+      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      const results = await db.execAsync(`
+        SELECT
+          strftime('%w', timestamp) AS day,
+          COUNT(*) AS hit_count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24'
+        GROUP BY day
+        ORDER BY day
+      `);
+
+      const rows = results[0]?.rows?._array || [];
+      console.log("Weekly query results:", rows);
+
+      const weekData: Datapoint[] = Array.from({ length: 7 }, (_, i) => ({
+        label: dayLookUpTable.get(i) || "",
+        value: 0,
+      }));
+
+      rows.forEach(row => {
+        const dayIndex = parseInt(row.day, 10);
+        if (dayIndex >= 0 && dayIndex < 7) {
+          weekData[dayIndex].value = row.hit_count;
+        }
+      });
+
+      // Update local state
+      setWeeklyHitsBarGraphProps(weekData);
+
+      // Calculate weekly average
+      const total = weekData.reduce((sum, day) => sum + day.value, 0);
+      const average = Math.round(total / 7);
+      setWeeklyAverage(average);
+
+      return weekData;
+    } catch (e) {
+      console.error("Error in queryNumberOfHitsFromPastWeek:", e);
+      throw e;
+    }
+  };
+
+  /**
+   * Compare with the previous week's total hits to see how usage changed.
+   */
+  const getLastWeekAverage = async (): Promise<number> => {
+    try {
+      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      const results = await db.execAsync(`
+        SELECT COUNT(*) AS hit_count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= date('2024-12-17') -- Previous week start
+          AND timestamp < date('2024-12-24');  -- Start of current week
+      `);
+
+      const row = results[0]?.rows?._array?.[0];
+      const total = row?.hit_count || 0;
+      return Math.round(total / 7); // daily average
+    } catch (e) {
+      console.error("Error getting last week average:", e);
+      return 0;
+    }
+  };
+
+  /**
+   * Helper to compute percentage difference from last week.
+   */
+  const calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {
+    if (!lastWeekAvg) return 0;
+    return Math.round(((currentAvg - lastWeekAvg) / lastWeekAvg) * 100);
+  };
+
+  /**
+   * Orchestrate data loading on component mount.
+   */
+  useEffect(() => {
+    let mounted = true;
+
+    const loadData = async () => {
+      if (!mounted) return;
+
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        console.log("Starting data load...");
+        const lastWeekAvg = await getLastWeekAverage();
+        console.log("Last week average:", lastWeekAvg);
+
+        // Execute all queries in parallel (with error handling)
+        const results = await Promise.allSettled([
+          getBongHitStatsFromPastWeek(),
+          queryNumberOfHitsFromPastWeek(),
+          getDailyAverageDatapoints(),
+          fetchMiniChartData(),
+        ]);
+
+        // Safely extract the parallel results
+        const [bongStats, weekData, dailyStats, miniData] = results.map(r =>
+          r.status === "fulfilled" ? r.value : null
+        );
+
+        console.log("Data load results:", {
+          bongStats,
+          weekData,
+          dailyStats,
+          miniData,
+        });
+
+        // If we actually got weekData from above, compute usage changes
+        if (mounted && weekData) {
+          const total = weekData.reduce((sum: number, day: any) => sum + day.value, 0);
+          const average = Math.round(total / 7);
+          const change = calculatePercentageChange(average, lastWeekAvg);
+          console.log("Setting values:", { average, change });
+          setWeeklyAverage(average);
+          setPercentageChange(change);
+        }
+      } catch (err) {
+        console.error("Error in loadData:", err);
+        if (mounted) {
+          setError("Failed to load data. Please try again.");
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------
+   * Render helper functions
+   * ------------------------------------------------------------------ */
+
+  const renderWeeklyUsageBanner = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading data...</Text>
+        </View>
+      );
+    }
+
+    if (!weeklyHitsBarGraphProps?.length) {
+      console.log("No weekly data available:", weeklyHitsBarGraphProps);
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>No data available</Text>
+        </View>
+      );
+    }
+
+    const bannerProps = {
+      weeklyData: weeklyHitsBarGraphProps,
+      average: weeklyAverage || 0,
+      percentageChange: percentageChange || 0,
+    };
+
+    console.log("Rendering WeeklyUsageBanner with props:", bannerProps);
+
+    try {
+      return (
+        <WeeklyUsageBanner
+          {...bannerProps}
+          onPress={() => router.push("/dataOverviews/weeklyAverage")}
+        />
+      );
+    } catch (error) {
+      console.error("Error rendering WeeklyUsageBanner:", error);
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Error displaying weekly data</Text>
+        </View>
+      );
+    }
+  };
+
+  const renderMonthlyOverview = () => {
+    const chartWidth = Math.max(windowWidth - 48, 200);
+
+    if (!weeklyHitsBarGraphProps?.length) {
+      return (
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
+            <Text style={styles.cardTitle}>Monthly Overview</Text>
+          </View>
+          <View style={styles.chartContainer}>
+            <Text style={styles.noDataText}>No data available</Text>
+          </View>
+        </Card>
+      );
+    }
+
+    return (
+      <Card style={styles.card}>
+        <View style={styles.cardHeader}>
+          <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
+          <Text style={styles.cardTitle}>Monthly Overview</Text>
+        </View>
+        <Text style={styles.cardDescription}>Track your monthly trends</Text>
+        <View style={styles.chartContainer}>
+          <LineChart
+            data={monthlyDataFake}
+            width={chartWidth}
+            height={220}
+            chartConfig={{
+              ...chartConfig,
+              style: {
+                ...chartConfig.style,
+                width: chartWidth,
+              },
+            }}
+            bezier
+            style={styles.chart}
+          />
+        </View>
+      </Card>
+    );
+  };
+
+  const renderWeeklyOverview = () => {
+    const chartWidth = Math.max(windowWidth - 64, 200);
+
+    if (!weeklyHitsBarGraphProps?.length) {
+      return (
+        <Card style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+            <Text style={styles.cardTitle}>Weekly Overview</Text>
+          </View>
+          <View style={styles.chartContainer}>
+            <Text style={styles.noDataText}>No data available</Text>
+          </View>
+        </Card>
+      );
+    }
+
+    return (
+      <Card style={styles.card}>
+        <View style={styles.cardHeader}>
+          <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+          <Text style={styles.cardTitle}>Weekly Overview</Text>
+        </View>
+        <Text style={styles.cardDescription}>Compare your usage across different days</Text>
+        <View style={styles.chartContainer}>
+          <BarChart
+            data={{
+              labels: weeklyHitsBarGraphProps.map((d) => d.label),
+              datasets: [{ data: weeklyHitsBarGraphProps.map((d) => d.value) }],
+            }}
+            width={chartWidth}
+            height={180}
+            chartConfig={{
+              ...chartConfig,
+              style: {
+                ...chartConfig.style,
+                width: chartWidth,
+              },
+            }}
+            style={styles.chart}
+            showValuesOnTopOfBars
+            fromZero
+          />
+        </View>
+      </Card>
+    );
+  };
+
+  const renderNotificationBanner = () => {
+    return (
+      <View style={styles.notificationBanner}>
+        <View style={styles.notificationHeader}>
+          <View style={styles.notificationTitle}>
+            <MaterialCommunityIcons name="bell-outline" size={16} color="#000" />
+            <Text style={styles.notificationTitleText}>Daily Summary</Text>
+          </View>
+          <View style={styles.notificationTime}>
+            <Text style={styles.timeText}>Last 24 hours</Text>
+            <TouchableOpacity style={styles.dismissButtonContainer}>
+              <Text style={styles.dismissButton}>Dismiss</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.notificationContent}>
+          <MaterialCommunityIcons
+            name="clock-outline"
+            size={32}
+            color="#000"
+            style={styles.earIcon}
+          />
+          <View style={styles.notificationTextContainer}>
+            <Text style={styles.notificationMainText}>
+              {`Average of ${weeklyAverage} hits per day`}
+            </Text>
+            <Text style={styles.notificationSubText}>
+              Your daily average has increased compared to last week
+            </Text>
+            <TouchableOpacity>
+              <Text style={styles.moreDetailsLink}>More Details</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaProvider>
+      <ScrollView style={styles.container}>
+        <LinearGradient
+          colors={[colors.gradient.start, colors.gradient.middle, colors.gradient.end]}
+          locations={[0, 0.2, 0.4]}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.gradientBackground}
+        />
+
+        <View style={styles.contentContainer}>
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <Text style={styles.headerTitle}>Summary</Text>
+            <View style={styles.profilePic} />
+          </View>
+
+          {/* Notification Banner */}
+          <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
+
+          {/* Example "Medical ID" Card */}
+          <View style={styles.medicalIdCard}>
+            {/* ... or your actual MedicalIDCard component ... */}
+          </View>
+
+          {/* Data Content */}
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading data...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : (
+            <>
+              <DailyAverageCard
+                data={weeklyHitsBarGraphProps}
+                averageHits={weeklyAverage}
+                onPress={() => router.push("/dataOverviews/dailyAverageOverview")}
+              />
+              {renderWeeklyUsageBanner()}
+              {renderWeeklyOverview()}
+              {renderMonthlyOverview()}
+            </>
+          )}
+
+          {/* Time Range Selector */}
+          <Card style={[styles.card, styles.timeRangeCard]}>
+            <View style={styles.timeRangeContent}>
+              <Text style={styles.cardTitle}>Pick Time Range</Text>
+              <AntDesign name="calendar" size={24} color="black" />
+            </View>
+          </Card>
+        </View>
+      </ScrollView>
+    </SafeAreaProvider>
+  );
+}
+
+/* ------------------------------------------------------------------
+ * Styles
+ * ------------------------------------------------------------------ */
+const styles = StyleSheet.create({
+  gradientBackground: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: "35%",
+    zIndex: 0,
+  },
+  container: {
+    flex: 1,
+  },
+  contentContainer: {
+    flex: 1,
+    position: "relative",
+    zIndex: 1,
+    paddingBottom: 32,
+  },
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 52,
+    paddingBottom: 20,
+    zIndex: 2,
+  },
+  headerTitle: {
+    ...typography.largeTitle,
+    color: "#000000",
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#ddd",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.1)",
+  },
+  card: {
+    backgroundColor: colors.background.primary,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: colors.label.primary,
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  cardTitle: {
+    ...typography.title3,
+    color: colors.label.primary,
+    marginLeft: 10,
+  },
+  cardDescription: {
+    ...typography.body,
+    color: colors.label.secondary,
+    marginTop: 4,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  chartContainer: {
+    marginTop: 16,
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+  timeRangeCard: {
+    marginBottom: 16,
+  },
+  timeRangeContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+  },
+  notificationBanner: {
+    backgroundColor: "#FFE94D",
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  notificationHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  notificationTitle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  notificationTitleText: {
+    ...typography.caption1,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  notificationTime: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  timeText: {
+    ...typography.caption1,
+    color: colors.label.secondary,
+  },
+  dismissButtonContainer: {
+    marginLeft: 8,
+    padding: 2,
+  },
+  dismissButton: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "400",
+  },
+  notificationContent: {
+    flexDirection: "row",
+    marginBottom: 16,
+  },
+  earIcon: {
+    marginRight: 12,
+  },
+  notificationTextContainer: {
+    flex: 1,
+  },
+  notificationMainText: {
+    ...typography.title3,
+    color: colors.label.primary,
+    marginBottom: 4,
+  },
+  notificationSubText: {
+    ...typography.body,
+    color: colors.label.secondary,
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  moreDetailsLink: {
+    ...typography.body,
+    color: colors.systemBlue,
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 12,
+    margin: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#8E8E93",
+  },
+  errorContainer: {
+    backgroundColor: "#fff",
+    padding: 16,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+  },
+  noDataText: {
+    fontSize: 16,
+    color: "#666",
+  },
+  medicalIdCard: {
+    backgroundColor: colors.background.primary,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: colors.label.primary,
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+});
+
+
+
+================================================================================
+File: app/(tabs)/trending.tsx
+================================================================================
+
+import { Card } from "@/components/Card";
+import Leaderboard from "@/components/Leaderboard";
+import { SafeAreaView, StyleSheet } from "react-native";
+
+export default function Trending() {
+
+    const sampleData = [
+        { id: '1', name: 'Blue Dream', score: 95 },
+        { id: '2', name: 'OG Kush', score: 85 },
+        { id: '3', name: 'Gorilla Glue', score: 70 },
+        { id: '4', name: 'Gelato', score: 60 },
+        { id: '5', name: 'Lemon Haze', score: 85 },
+        { id: '6', name: 'Sour Diesel', score: 70 },
+        { id: '7', name: 'Skywalker OG', score: 60 },
+        { id: '8', name: 'Jack Herrer', score: 5 },
+        { id: '9', name: 'Wedding Cake', score: 20 },
+        { id: '10', name: 'Girl Scout Cookies', score: 9 },
+      ];
+    
+      return (
+        <SafeAreaView style={styles.safeAreaViewContainer}>
+            <Card style={styles.cardContainer}>
+                <Leaderboard title={"Trending Strains"}data={sampleData} />
+            </Card>
+        </SafeAreaView>
+      );
+    
+}
+const styles = StyleSheet.create({ 
+    safeAreaViewContainer: {
+        flexDirection: 'column',
+        alignItems: 'center',
+        flex: 1,
+        margin: 30,
+    },
+    cardContainer: {
+        flex: 1
+    }
+});
+
+================================================================================
+File: package.json
+================================================================================
+
+{
+  "name": "canovareactnativeapp",
+  "main": "expo-router/entry",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "test": "jest --watchAll",
+    "lint": "expo lint"
+  },
+  "jest": {
+    "preset": "jest-expo"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.0.2",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-navigation/bottom-tabs": "^7.2.0",
+    "@react-navigation/native": "^7.0.14",
+    "expo": "~52.0.23",
+    "expo-blur": "~14.0.1",
+    "expo-constants": "~17.0.3",
+    "expo-dev-client": "~5.0.8",
+    "expo-device": "^7.0.2",
+    "expo-font": "~13.0.2",
+    "expo-haptics": "~14.0.0",
+    "expo-linking": "~7.0.3",
+    "expo-router": "~4.0.15",
+    "expo-splash-screen": "~0.29.18",
+    "expo-sqlite": "~15.1.2",
+    "expo-status-bar": "~2.0.0",
+    "expo-symbols": "~0.2.0",
+    "expo-system-ui": "~4.0.6",
+    "expo-web-browser": "~14.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-base64": "^0.2.1",
+    "react-native-ble-plx": "^3.4.0",
+    "react-native-calendars": "^1.1308.0",
+    "react-native-chart-kit": "^6.12.0",
+    "react-native-gesture-handler": "~2.20.2",
+    "react-native-reanimated": "~3.16.1",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-svg": "^15.10.1",
+    "react-native-web": "~0.19.13",
+    "react-native-webview": "13.12.5",
+    "expo-linear-gradient": "~14.0.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@react-native-community/cli": "latest",
+    "@types/jest": "^29.5.12",
+    "@types/react": "~18.3.12",
+    "@types/react-native-base64": "^0.2.2",
+    "@types/react-test-renderer": "^18.3.0",
+    "jest": "^29.2.1",
+    "jest-expo": "~52.0.2",
+    "react-test-renderer": "18.3.1",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}
+
+
+================================================================================
+File: src/constants.ts
+================================================================================
+
+export const BONG_HITS_DATABASE_NAME: string = "BongHits";
+export const SAVED_DEVICES_DATABASE_NAME: string = "SavedDevices";
+
+export const dayLookUpTable = new Map<number, string>()
+dayLookUpTable.set(0, "Sun");
+dayLookUpTable.set(1, "Mon");
+dayLookUpTable.set(2, "Tue");
+dayLookUpTable.set(3, "Wed");
+dayLookUpTable.set(4, "Thu");
+dayLookUpTable.set(5, "Fri");
+dayLookUpTable.set(6, "Sat");
+
+
+/**
+ * Stupid goofy hardcoded function for testing
+ * https://www.mockaroo.com/
+ * @returns 
+ */
+export function getInsertStatements(): string {
+    return(`
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 18:28:33', 27050);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 03:31:57', 12228);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 23:51:43', 13319);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 17:23:17', 18857);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 11:04:59', 10164);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 12:15:16', 17533);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 14:02:16', 6253);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 08:19:24', 16822);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 08:59:23', 22545);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 00:18:00', 8259);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 04:04:13', 2611);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 07:48:33', 22620);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 21:38:17', 15988);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 14:01:32', 22414);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 01:11:03', 15364);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 15:27:55', 4427);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 20:31:00', 4238);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 06:22:38', 15957);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 14:39:58', 26633);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 08:48:03', 13728);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 08:49:51', 15266);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 20:12:41', 28871);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 10:54:11', 21137);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 19:39:11', 15547);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 23:10:19', 26405);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 23:16:18', 26609);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 00:47:56', 14683);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 12:40:53', 8349);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 13:22:24', 2529);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 05:51:30', 27163);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 18:13:22', 2017);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 14:04:39', 16879);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 19:32:07', 21005);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 14:58:39', 11376);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 12:38:21', 10324);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 11:38:52', 12010);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 22:09:03', 25025);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 20:06:15', 23315);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 23:46:27', 5947);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 09:35:11', 28873);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 05:31:18', 9933);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 08:16:19', 11598);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 02:06:41', 5220);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 18:26:53', 29317);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 18:31:28', 9696);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 03:01:15', 1722);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 22:53:09', 11971);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 23:41:27', 1696);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 21:20:11', 1938);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 00:02:10', 8739);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 22:30:33', 23382);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 09:09:16', 3101);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 12:25:42', 13340);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 05:44:07', 19667);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 23:58:50', 14682);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 19:07:30', 24476);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 08:40:40', 14354);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 07:49:21', 1256);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 00:56:24', 10278);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 01:15:44', 7190);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 06:26:27', 27299);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 14:33:52', 15905);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 06:11:55', 19032);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 23:02:27', 18370);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 15:54:03', 11882);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 02:46:22', 7576);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 19:05:26', 25154);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 20:10:40', 12887);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 07:33:01', 6308);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 00:25:59', 25113);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 09:01:27', 8963);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 22:59:58', 18095);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 10:12:03', 22986);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 00:00:28', 4289);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 10:17:33', 24578);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 03:02:28', 27227);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 15:25:26', 12128);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 15:44:36', 13216);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 03:35:02', 21264);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 19:39:28', 16349);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 11:37:03', 1560);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 03:02:07', 9661);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 07:55:44', 14209);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 23:56:43', 15217);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 18:34:17', 21324);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 11:23:57', 8449);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 23:25:34', 10440);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 17:27:45', 16397);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 06:48:50', 17728);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 02:50:59', 28456);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 15:22:11', 2355);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 02:26:45', 22264);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 13:52:29', 11556);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 15:50:53', 15389);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 00:46:53', 20501);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 14:42:23', 23826);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 08:20:24', 23469);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 00:48:39', 4673);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 12:46:37', 6143);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 19:15:14', 17958);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 09:31:58', 12818);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 19:27:55', 17130);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 00:29:24', 26745);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 20:09:06', 6774);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 12:21:58', 20714);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 23:34:50', 25222);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 23:31:36', 8294);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 08:25:24', 22141);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 15:25:19', 15331);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 12:35:28', 23559);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 11:17:03', 18771);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 13:09:37', 19791);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 18:35:08', 16599);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 00:56:47', 2883);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 23:31:56', 28255);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 09:01:04', 5614);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 21:18:19', 8019);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:47:23', 9281);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 03:04:53', 14525);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 22:24:55', 4877);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 08:20:46', 21000);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 03:28:26', 18682);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 16:31:38', 12361);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 18:48:14', 17469);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 15:58:50', 8781);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 22:55:12', 9940);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 15:39:19', 27739);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 19:10:57', 6675);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 18:02:28', 9229);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 23:34:43', 21950);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 05:49:14', 17697);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 09:50:53', 3006);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 14:37:41', 12970);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 11:07:08', 14972);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 11:34:03', 28490);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 05:29:49', 3179);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 23:39:20', 3344);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 18:43:45', 11380);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 16:29:56', 25279);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 13:11:15', 2086);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 20:23:14', 13442);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 13:30:30', 9339);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 13:26:47', 4365);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 19:31:06', 15770);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 17:26:04', 8196);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 09:07:00', 18517);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 23:24:35', 8582);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 08:59:00', 25597);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 18:48:47', 18583);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 14:29:09', 3844);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 19:40:33', 4154);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 22:05:57', 20669);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 15:32:01', 22298);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 13:38:55', 14931);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 14:33:46', 19567);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 14:38:00', 6719);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 09:02:46', 20582);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 18:43:08', 1940);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 22:58:56', 13892);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 04:29:41', 5393);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 11:48:46', 20049);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 18:10:55', 10213);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 04:22:49', 5747);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 05:13:01', 1401);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 04:24:00', 13341);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 18:13:48', 8321);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 14:18:48', 20796);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 02:09:42', 29228);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 23:19:13', 1473);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 21:02:12', 1753);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 13:09:18', 29396);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 15:09:11', 5841);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 04:44:01', 25423);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 02:28:48', 19248);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 23:44:06', 20424);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 14:43:24', 21147);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 22:00:51', 17591);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 18:08:44', 11846);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 22:26:38', 1607);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 04:19:19', 19273);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 11:48:01', 23188);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 13:51:19', 21280);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 15:25:48', 3904);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 03:34:27', 4270);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 21:58:58', 14515);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 10:20:38', 16545);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 00:22:13', 8443);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 12:26:12', 1432);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 14:00:45', 20597);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 02:18:06', 27981);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 20:43:28', 1833);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 22:50:56', 12268);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 01:37:54', 26719);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 11:36:50', 1959);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 08:10:44', 5918);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 16:07:11', 23560);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 05:22:31', 2195);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 04:31:30', 9281);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 04:44:11', 11141);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:28:49', 20490);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 10:25:12', 21551);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 12:25:46', 21114);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 02:22:33', 22851);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 14:58:55', 28280);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 08:11:17', 22100);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 17:48:13', 26793);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 16:56:21', 13085);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 22:36:34', 1183);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 00:45:27', 7545);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 16:17:44', 9817);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 02:09:12', 19452);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 23:44:59', 1775);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 20:30:57', 24365);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 04:42:10', 20488);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 08:49:35', 11969);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 05:10:43', 4718);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 00:36:52', 6532);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 06:00:07', 2964);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 03:30:11', 2792);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 08:55:12', 29073);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 23:24:27', 12784);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 13:48:03', 18556);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 08:10:53', 4315);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 23:31:21', 4884);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 06:24:57', 20050);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 18:45:20', 24488);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 22:04:00', 7904);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 02:05:28', 2817);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 18:08:42', 22405);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 12:55:07', 15391);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 21:36:35', 4364);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 04:09:30', 14833);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 09:43:30', 14447);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 04:12:23', 6487);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 06:21:34', 1953);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 10:06:41', 23735);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 01:25:39', 26339);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 02:00:56', 16085);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 19:29:57', 26554);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 19:51:31', 6156);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 07:03:40', 9443);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 20:40:50', 16029);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 01:15:51', 16188);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 17:02:52', 1990);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 17:33:31', 8163);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 01:03:50', 13352);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 04:13:22', 29982);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 18:50:23', 28909);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 09:00:19', 11230);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 04:55:05', 29399);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 19:53:25', 28447);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 14:06:16', 14004);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 23:47:36', 28681);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 19:21:46', 22242);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 08:04:26', 10230);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 03:18:10', 29103);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 11:36:18', 15670);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 08:32:36', 25891);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 00:43:47', 25134);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 16:57:37', 21671);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 21:39:58', 23569);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 20:21:11', 11529);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 00:10:44', 22232);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 17:52:51', 2600);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 03:46:13', 6850);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 18:00:29', 12308);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 01:53:48', 22742);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 00:49:37', 23289);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 18:25:19', 18954);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 13:33:15', 24082);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 02:47:45', 19382);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 23:22:49', 21350);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 01:48:44', 14901);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 22:06:59', 22882);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 22:07:46', 25474);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 05:59:40', 11558);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 09:13:10', 16217);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 23:01:04', 24839);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 07:06:53', 27923);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 15:09:48', 6425);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 11:09:20', 6536);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 00:15:36', 5754);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 18:31:58', 16608);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 16:01:33', 2565);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 02:41:41', 24875);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 23:39:15', 27481);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 09:51:30', 29456);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 09:27:11', 2759);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 18:10:17', 23121);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 21:13:22', 26974);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 03:29:48', 19583);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 20:35:37', 19799);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 08:42:12', 25335);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 16:09:59', 21197);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 03:36:19', 29852);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 16:42:10', 29568);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 20:56:25', 4824);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 09:27:20', 29735);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 18:39:02', 3114);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 07:38:42', 19765);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 17:35:06', 8208);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 12:16:44', 10238);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 02:06:24', 5430);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 20:43:56', 15531);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 23:21:02', 3030);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 15:54:22', 10465);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 09:26:16', 3439);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 15:46:30', 9416);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:44:41', 4069);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:28:25', 25070);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 22:52:05', 5400);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 05:57:30', 18851);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 19:23:51', 11139);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 17:14:17', 5761);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 01:55:03', 3969);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 14:28:55', 13416);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 01:57:22', 4251);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 01:27:34', 15220);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 19:59:45', 12514);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 05:45:41', 10036);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 00:31:07', 29512);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 07:54:00', 1998);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 02:24:24', 25692);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 07:45:34', 16259);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 09:17:48', 9367);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 20:01:39', 19067);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 16:24:27', 8343);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 15:06:09', 22859);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 05:53:55', 24721);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 12:34:16', 12123);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 13:03:04', 15336);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 00:22:58', 26799);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 02:28:39', 23453);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 02:49:20', 8332);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 17:21:24', 12961);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 17:50:55', 14636);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 07:30:24', 20414);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 07:40:23', 29070);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 13:04:53', 22082);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 06:17:53', 6053);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 03:00:21', 18137);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 13:17:20', 9537);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 19:54:05', 27472);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 12:12:35', 1641);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 23:43:48', 14055);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:21:33', 20924);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 10:26:06', 14534);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 11:19:47', 18564);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 03:27:35', 23549);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 10:05:28', 17265);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 09:49:25', 22426);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 11:55:27', 2238);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 08:38:23', 23557);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 23:28:36', 12506);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 21:47:23', 11052);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 14:40:05', 5367);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 05:41:55', 18727);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 09:35:32', 11867);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 18:58:29', 23122);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 15:24:16', 24627);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 13:13:43', 24051);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 13:45:36', 18388);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 12:03:13', 18629);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 18:32:25', 14724);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 10:29:18', 13976);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 04:05:04', 27438);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 15:48:00', 7551);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 20:27:44', 18195);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 17:25:14', 13291);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 09:23:12', 4080);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 16:31:06', 10816);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 05:36:54', 18519);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 00:30:13', 5290);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 17:03:29', 3736);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 11:54:00', 21882);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:09:50', 26173);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 06:04:10', 29624);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 22:35:39', 17801);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 14:14:09', 4294);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 07:07:20', 9000);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 13:46:15', 6109);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 02:44:27', 27295);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 18:37:04', 3947);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 09:09:51', 7800);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 15:19:26', 4910);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 04:38:44', 10800);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 01:46:35', 22625);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 03:53:15', 12428);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 14:44:15', 2854);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 10:36:49', 11191);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 23:34:52', 9553);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 18:38:08', 8519);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 13:16:06', 5532);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 02:39:06', 9681);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 07:40:17', 14701);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 09:11:40', 29446);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 17:00:04', 29779);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 12:54:01', 28144);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 07:11:16', 24677);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 03:45:49', 7052);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 09:56:25', 13163);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 08:01:07', 2374);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 03:11:07', 21367);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 09:05:18', 25581);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 15:07:47', 7510);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 05:20:33', 12441);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 22:26:18', 1062);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 00:43:29', 16946);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 09:52:43', 21759);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 02:20:03', 18991);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 18:31:48', 27594);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 10:24:42', 7588);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 12:50:29', 9607);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 08:18:18', 10598);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 23:51:47', 2989);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 18:13:31', 7804);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 14:33:14', 29222);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 04:40:20', 23484);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 02:43:15', 21995);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 22:10:28', 10812);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 12:45:47', 23486);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 17:58:03', 15955);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 19:51:28', 15801);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 11:55:21', 10458);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 02:27:07', 15711);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 15:31:46', 7600);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 04:09:40', 6180);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 09:53:24', 29747);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 22:19:09', 3260);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 12:29:56', 19390);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 21:36:59', 7541);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 12:32:19', 13900);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 06:20:04', 19917);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 02:45:34', 29118);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 12:25:10', 12181);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 20:58:05', 5013);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 02:38:02', 8810);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 09:11:32', 7966);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 14:15:14', 18683);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 10:39:37', 13640);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 04:55:37', 23251);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 21:56:35', 5173);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 19:54:28', 7348);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 21:14:49', 18018);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 13:57:07', 3834);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 19:30:36', 6917);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 02:26:11', 5416);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 22:27:56', 11363);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 16:12:37', 12834);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 05:27:14', 3697);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 11:20:02', 28791);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 04:21:20', 20301);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 19:01:55', 28113);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 09:51:03', 4978);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 07:03:23', 12305);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 11:46:43', 4049);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 04:50:47', 11326);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 02:13:00', 6826);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 18:50:17', 2072);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 11:33:45', 19223);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 09:36:03', 25528);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 15:18:32', 29726);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 08:14:11', 3761);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-05 04:17:52', 25327);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 10:49:25', 14247);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 04:56:54', 13485);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 12:56:13', 15813);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 02:15:35', 6773);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 16:48:37', 25586);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 05:28:24', 15341);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 15:42:12', 20580);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 16:13:18', 26037);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 00:43:21', 10891);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 00:35:08', 16042);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 03:28:45', 11956);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 01:36:22', 3039);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 05:04:03', 2865);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 16:23:25', 7787);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-30 14:05:22', 5178);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-27 04:25:42', 21285);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 18:07:21', 18783);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-29 17:54:10', 18837);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-31 20:49:38', 2061);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-02 05:08:46', 13926);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 11:57:02', 8834);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-24 02:29:40', 5202);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 05:59:56', 2499);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-25 15:51:47', 16481);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-26 17:58:32', 15400);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 07:39:18', 28475);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 08:18:54', 23077);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 00:24:12', 16786);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 16:59:17', 5920);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 12:38:06', 5413);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 15:30:39', 27002);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-01 04:28:13', 17167);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 07:44:17', 12518);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-04 22:13:21', 2641);
+insert into BongHits (timestamp, duration_ms) values ('2025-01-03 15:20:32', 25185);
+insert into BongHits (timestamp, duration_ms) values ('2024-12-28 15:13:36', 10003);
+`)
+}
+
+================================================================================
+File: src/contexts/BluetoothContext.ts
+================================================================================
+
+import { createContext, useContext } from "react";
+import { PermissionsAndroid, Platform } from "react-native";
+import * as ExpoDevice from "expo-device";
+import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
+
+type ConnectedDevice = {
+    device: Device;
+    serviceUUID: string;
+    characteristicUUID: string
+}
+
+export class BluetoothHandler {
+    private manager: BleManager;
+    private connectedDevice: ConnectedDevice | null;
+
+    constructor() {
+        this.manager = new BleManager();
+        this.connectedDevice = null;
+    }
+
+    public async connectToDevice(device: Device) {
+        if (this.connectedDevice !== null) {
+            // TODO: decide how to handle new connection when device is already connected
+            return;
+        }
+        try {
+            const deviceConnection: Device = await this.manager.connectToDevice(device.id);
+            await deviceConnection.discoverAllServicesAndCharacteristics();
+            const services = await deviceConnection.services();
+            if (services.length !== 1) {
+                throw Error("Bad number of services");
+            }
+
+            const service = services[0];
+            const characteristics = await service.characteristics();
+            if (characteristics.length !== 1) {
+                throw Error("Bad number of characteristics");
+            }
+            const characteristic = characteristics[0];
+            this.connectedDevice = {
+                device: deviceConnection,
+                serviceUUID: service.uuid,
+                characteristicUUID: characteristic.uuid
+            }
+
+        } catch (error) {
+            console.error('Error discovering services/characteristics:', error);
+        } finally {
+            this.manager.stopDeviceScan();
+        }
+    }
+
+    public disconnectFromDevice(connectedDevice: Device) {
+        if (connectedDevice) {
+            this.manager.cancelDeviceConnection(connectedDevice.id);
+          }
+    }
+
+    public streamOnConnectedDevice(streamListener: (error: BleError | null, characteristic: Characteristic | null) => void) {
+        if (this.connectedDevice === null) {
+            throw Error("Tried to stream with no device connected");
+        } 
+        this.connectedDevice.device.monitorCharacteristicForService(
+            this.connectedDevice.serviceUUID,
+            this.connectedDevice.characteristicUUID,
+            streamListener
+          );
+    }
+
+    public getBLEManager(): BleManager {
+        return this.manager;
+    }
+
+    public getConnectedDevice(): Device | undefined {
+        return this.connectedDevice?.device;
+    }
+
+    public getSavedDevices(): Device[] {
+        // TODO query database
+        return [];
+    }
+
+    /*
+     * Requests bluetooth permissions, accounting for platform differences
+     */
+    private async requestPermissions() {
+        if (Platform.OS === "android") {
+            if ((ExpoDevice.platformApiLevel ?? -1) < 31) {
+                // Android version below 31
+                const granted = await PermissionsAndroid.request(
+                    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+                    {
+                        title: "Location Permission",
+                        message: "Bluetooth Low Energy requires Location",
+                        buttonPositive: "OK",
+                    }
+                );
+                return granted === PermissionsAndroid.RESULTS.GRANTED;
+            } else {
+                // Android version above 31
+                const isAndroid31PermissionsGranted = await this.requestAndroid31Permissions();
+
+                return isAndroid31PermissionsGranted;
+            }
+        } else {
+            //ios
+            return true;
+        }
+    }
+
+    private async requestAndroid31Permissions() {
+        const bluetoothScanPermission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+            {
+                title: "Location Permission",
+                message: "Bluetooth Low Energy requires Location",
+                buttonPositive: "OK",
+            }
+        );
+        const bluetoothConnectPermission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+            {
+                title: "Location Permission",
+                message: "Bluetooth Low Energy requires Location",
+                buttonPositive: "OK",
+            }
+        );
+        const fineLocationPermission = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+            {
+                title: "Location Permission",
+                message: "Bluetooth Low Energy requires Location",
+                buttonPositive: "OK",
+            }
+        );
+
+        return (
+            bluetoothScanPermission === "granted" &&
+            bluetoothConnectPermission === "granted" &&
+            fineLocationPermission === "granted"
+        );
+    }
+}
+
+export const BluetoothContext = createContext<BluetoothHandler | undefined>(undefined);
+
+
+================================================================================
+File: src/dbManager.ts
+================================================================================
+
+// File: src/dbManager.ts
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
+import {
+  BONG_HITS_DATABASE_NAME,
+  SAVED_DEVICES_DATABASE_NAME,
+  getInsertStatements,
+  dayLookUpTable,
+} from "./constants";
+import { BongHitStats, Datapoint, AverageHourCount } from "./types";
+
+const FIRST_LAUNCH_KEY = "hasLaunched";
+
+/**
+ * Checks if the application is launching for the first time.
+ */
+export async function isFirstLaunch(): Promise<boolean> {
+  return (await AsyncStorage.getItem(FIRST_LAUNCH_KEY)) === null;
+}
+
+/**
+ * Called on first launch to run any initial setup (e.g. DB creation).
+ */
+export async function initializeAppOnFirstLaunch() {
+  await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
+  await initializeDatabase();
+}
+
+/**
+ * Initializes the BongHits and SavedDevices databases/tables
+ * and inserts mock data, using expo-sqlite's newer async methods.
+ */
+async function initializeDatabase(): Promise<void> {
+  try {
+    // 1) Open and init BongHits database
+    const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    // Multi-statement: WAL mode, create table, insert mock data
+    await bongHitsDb.execAsync(`
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
+        timestamp TIMESTAMP PRIMARY KEY NOT NULL,
+        duration_ms INTEGER NOT NULL
+      );
+    `.concat(getInsertStatements()));
+
+    // 2) Open and init SavedDevices database
+    const savedDevicesDb: SQLiteDatabase = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
+    await savedDevicesDb.execAsync(`
+      PRAGMA journal_mode = WAL;
+      CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (
+        uuid TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL
+      );
+    `);
+
+    console.log("Databases initialized successfully.");
+  } catch (error) {
+    console.error("Error initializing databases:", error);
+    throw error;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Helpers to validate results before returning them
+ ------------------------------------------------------------------ */
+
+const validateBongHitStats = (stats: BongHitStats): BongHitStats => ({
+  averageDuration: Math.max(0, Number(stats.averageDuration) || 0),
+  longestHit: Math.max(0, Number(stats.longestHit) || 0),
+});
+
+const validateDatapoint = (point: Datapoint): Datapoint => ({
+  label: String(point.label || ""),
+  value: Math.max(0, Number(point.value) || 0),
+});
+
+const validateAverageHourCount = (count: AverageHourCount): AverageHourCount => ({
+  hourOfDay: String(count.hourOfDay || "00"),
+  count: Math.max(0, Number(count.count) || 0),
+});
+
+/* ------------------------------------------------------------------
+   Data-Fetching / Query Functions
+   (Now using execAsync, parse the result sets)
+ ------------------------------------------------------------------ */
+
+/**
+ * Retrieves average and max duration over the past 7 days.
+ */
+export async function getBongHitStatsFromPastWeek(): Promise<BongHitStats> {
+  try {
+    const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.execAsync(`
+      SELECT
+        AVG(duration_ms) AS avg_duration,
+        MAX(duration_ms) AS max_duration
+      FROM ${BONG_HITS_DATABASE_NAME}
+      WHERE timestamp >= DATETIME('now', '-7 days')
+    `);
+
+    // execAsync returns an array of result sets; we only have one query
+    const row = results[0]?.rows?._array[0];
+    if (!row) {
+      // Fallback if no data
+      return validateBongHitStats({ averageDuration: 0, longestHit: 0 });
+    }
+
+    return validateBongHitStats({
+      averageDuration: row.avg_duration,
+      longestHit: row.max_duration,
+    });
+  } catch (error) {
+    console.error("Error in getBongHitStatsFromPastWeek:", error);
+    throw error;
+  }
+}
+
+/**
+ * Counts hits per day over the past week (filling day indices 0..6).
+ */
+export async function queryNumberOfHitsFromPastWeek(): Promise<Datapoint[]> {
+  try {
+    const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.execAsync(`
+      SELECT 
+        strftime('%w', timestamp) AS day,
+        COUNT(*) AS hit_count
+      FROM ${BONG_HITS_DATABASE_NAME}
+      WHERE timestamp >= '2024-12-24'
+      GROUP BY day
+      ORDER BY day;
+    `);
+
+    const rows = results[0]?.rows?._array || [];
+    console.log("Weekly query results:", rows);
+
+    // Prepare an array for Sunday..Saturday
+    const weekData: Datapoint[] = Array.from({ length: 7 }, (_, i) => ({
+      label: dayLookUpTable.get(i) || "",
+      value: 0,
+    }));
+
+    rows.forEach((row: any) => {
+      const dayIndex = parseInt(row.day, 10);
+      if (dayIndex >= 0 && dayIndex < 7) {
+        weekData[dayIndex] = validateDatapoint({
+          label: dayLookUpTable.get(dayIndex) || "",
+          value: row.hit_count,
+        });
+      }
+    });
+
+    return weekData;
+  } catch (error) {
+    console.error("Error in queryNumberOfHitsFromPastWeek:", error);
+    throw error;
+  }
+}
+
+/**
+ * Returns a list of (hourOfDay -> # of hits) since 2024-12-24,
+ * filling missing hours with 0.
+ */
+export async function getDailyAverageDatapoints(): Promise<AverageHourCount[]> {
+  try {
+    const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.execAsync(`
+      SELECT 
+        strftime('%H', timestamp) AS hourOfDay,
+        COUNT(*) AS count
+      FROM ${BONG_HITS_DATABASE_NAME}
+      WHERE timestamp >= '2024-12-24'
+      GROUP BY hourOfDay
+      ORDER BY hourOfDay
+    `);
+
+    const rows = results[0]?.rows?._array || [];
+    // Hours "00" through "23"
+    const allHours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0"));
+    const dataMap = new Map<string, number>(
+      rows.map((item: any) => [item.hourOfDay, item.count])
+    );
+
+    return allHours.map((hour) =>
+      validateAverageHourCount({
+        hourOfDay: hour,
+        count: dataMap.get(hour) || 0,
+      })
+    );
+  } catch (error) {
+    console.error("Error in getDailyAverageDatapoints:", error);
+    throw error;
+  }
+}
+
+/**
+ * Generic function to get data based on a time range (D=Day, W=Week, M=Month).
+ * Returns both chartData and some aggregated stats.
+ */
+export async function getDailyStats(timeRange: string) {
+  let query = "";
+
+  switch (timeRange) {
+    case "D":
+      query = `
+        SELECT strftime('%H', timestamp) as label,
+               COUNT(*) as value,
+               AVG(duration_ms) as avg_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE date(timestamp) = date('now')
+        GROUP BY label
+        ORDER BY label
+      `;
+      break;
+    case "W":
+      query = `
+        SELECT strftime('%w', timestamp) as label,
+               COUNT(*) as value,
+               AVG(duration_ms) as avg_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= date('now', '-7 days')
+        GROUP BY label
+        ORDER BY label
+      `;
+      break;
+    case "M":
+      query = `
+        SELECT strftime('%d', timestamp) as label,
+               COUNT(*) as value,
+               AVG(duration_ms) as avg_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= date('now', '-30 days')
+        GROUP BY label
+        ORDER BY label
+      `;
+      break;
+    default:
+      // fallback same as 'D'
+      query = `
+        SELECT strftime('%H', timestamp) as label,
+               COUNT(*) as value,
+               AVG(duration_ms) as avg_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE date(timestamp) = date('now')
+        GROUP BY label
+        ORDER BY label
+      `;
+  }
+
+  try {
+    const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.execAsync(query);
+    const rows = results[0]?.rows?._array || [];
+
+    // Build chart data
+    const chartData = {
+      labels: rows.map((r: any) => `${r.label}h`),
+      datasets: [
+        {
+          data: rows.map((r: any) => r.value),
+          color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+          strokeWidth: 2,
+        },
+      ],
+      legend: ["Hits"],
+    };
+
+    // Build aggregated stats
+    // If no rows, handle safely
+    if (!rows.length) {
+      return {
+        chartData,
+        stats: {
+          avgDuration: 0,
+          totalHits: 0,
+          peakHour: null,
+        },
+      };
+    }
+
+    const avgDuration =
+      rows.reduce((acc: number, curr: any) => acc + curr.avg_duration, 0) /
+      rows.length;
+    const totalHits = rows.reduce((acc: number, curr: any) => acc + curr.value, 0);
+    const peak = rows.reduce((a: any, b: any) => (a.value > b.value ? a : b));
+    const peakHour = peak.label;
+
+    return {
+      chartData,
+      stats: {
+        avgDuration,
+        totalHits,
+        peakHour,
+      },
+    };
+  } catch (error) {
+    console.error("Error in getDailyStats:", error);
+    throw error;
+  }
+}
+
+
+================================================================================
+File: src/types.ts
+================================================================================
+
+export interface BongHit {
+    timestamp: string;
+    duration_ms: number;
+}
+
+export interface BongHitStats {
+    longestHit: number;
+    averageDuration: number;
+}
+
+export interface AverageHourCount {
+    count: number;
+    hourOfDay: string;
+}
+
+export interface Datapoint {
+    label: string;
+    value: number;
+}
+
+================================================================================
+File: tsconfig.json
+================================================================================
+
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
+}
