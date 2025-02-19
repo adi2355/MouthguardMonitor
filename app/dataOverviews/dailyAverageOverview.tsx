@@ -1,16 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, StatusBar } from "react-native";
 import { LineChart } from 'react-native-chart-kit';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { openDatabaseAsync } from 'expo-sqlite';
 import { BONG_HITS_DATABASE_NAME } from '@/src/constants';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const windowWidth = Dimensions.get('window').width;
 
-const TimeRangeSelector = ({ selectedRange, onRangeChange }) => {
+// Color constants to match your theme
+const COLORS = {
+  background: '#000000',
+  cardBackground: '#1A1A1A',
+  chartBackground: '#063B24',
+  primary: '#00E676',
+  primaryLight: '#69F0AE',
+  primaryDark: '#00C853',
+  text: {
+    primary: '#FFFFFF',
+    secondary: 'rgba(255, 255, 255, 0.8)',
+    tertiary: 'rgba(255, 255, 255, 0.6)',
+    quaternary: 'rgba(255, 255, 255, 0.4)',
+  },
+  divider: 'rgba(255, 255, 255, 0.1)',
+  chart: {
+    grid: 'rgba(255, 255, 255, 0.08)',
+  }
+};
+
+interface TimeRangeSelectorProps {
+    selectedRange: string;
+    onRangeChange: (range: string) => void;
+}
+
+const TimeRangeSelector: React.FC<TimeRangeSelectorProps> = ({ selectedRange, onRangeChange }) => {
     const ranges = ['H', 'D', 'W', 'M', '6M', 'Y'];
-    
     return (
         <View style={styles.timeSelector}>
             {ranges.map((range) => (
@@ -34,34 +60,64 @@ const TimeRangeSelector = ({ selectedRange, onRangeChange }) => {
     );
 };
 
-const InfoCard = ({ icon, title, description, value, period, showArrow = true }) => (
-    <TouchableOpacity style={styles.infoCard}>
-        <View style={styles.infoCardHeader}>
-            {icon}
-            <Text style={styles.infoCardTitle}>{title}</Text>
-        </View>
-        <Text style={styles.infoCardDescription}>{description}</Text>
-        {value && period && (
-            <View style={styles.monthComparison}>
-                <View style={styles.monthValue}>
-                    <Text style={styles.valueText}>{value}</Text>
-                    <Text style={styles.unitText}>s</Text>
-                </View>
-                <View style={[styles.periodBar, { backgroundColor: '#007AFF' }]}>
-                    <Text style={styles.periodText}>{period}</Text>
-                </View>
+interface InfoCardProps {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    value?: number;
+    period?: string;
+    showArrow?: boolean;
+}
+
+const InfoCard: React.FC<InfoCardProps> = ({ 
+    icon, 
+    title, 
+    description, 
+    value, 
+    period, 
+    showArrow = true 
+}) => (
+    <View style={styles.infoCard}>
+        <LinearGradient
+            colors={['rgba(0,230,118,0.1)', 'rgba(0,0,0,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.cardGradient}
+        />
+        <View style={styles.infoCardContent}>
+            <View style={styles.infoCardHeader}>
+                {icon}
+                <Text style={styles.infoCardTitle}>{title}</Text>
             </View>
-        )}
-        {showArrow && (
-            <MaterialCommunityIcons 
-                name="chevron-right" 
-                size={24} 
-                color="#C7C7CC" 
-                style={styles.arrowIcon}
-            />
-        )}
-    </TouchableOpacity>
+            <Text style={styles.infoCardDescription}>{description}</Text>
+            {value && period && (
+                <View style={styles.monthComparison}>
+                    <View style={styles.monthValue}>
+                        <Text style={styles.valueText}>{value}</Text>
+                        <Text style={styles.unitText}>s</Text>
+                    </View>
+                    <View style={[styles.periodBar, { backgroundColor: COLORS.primary }]}>
+                        <Text style={styles.periodText}>{period}</Text>
+                    </View>
+                </View>
+            )}
+            {showArrow && (
+                <MaterialCommunityIcons 
+                    name="chevron-right" 
+                    size={20} 
+                    color={COLORS.text.quaternary} 
+                    style={styles.arrowIcon}
+                />
+            )}
+        </View>
+    </View>
 );
+
+interface QueryResult {
+    time_label: string;
+    avg_duration: number;
+    count: number;
+}
 
 export default function DailyAverageOverview() {
     const router = useRouter();
@@ -70,389 +126,503 @@ export default function DailyAverageOverview() {
         labels: [],
         datasets: [{
             data: [0],
-            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+            color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
             strokeWidth: 2
         }]
     });
     const [averageDuration, setAverageDuration] = useState(0);
     const [hitCount, setHitCount] = useState(0);
 
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-                let query = '';
-                
-                // Different queries based on time range
-                switch(selectedRange) {
-                    case 'H':
-                        query = `
-                            SELECT 
-                                strftime('%H:%M', timestamp) as time_label,
-                                AVG(duration_ms)/1000 as avg_duration,
-                                COUNT(*) as count
-                            FROM ${BONG_HITS_DATABASE_NAME}
-                            WHERE timestamp >= '2024-12-24'
-                            GROUP BY strftime('%H:%M', timestamp)
-                            ORDER BY timestamp
-                            LIMIT 12;
-                        `;
-                        break;
-                    case 'D':
-                        query = `
-                            SELECT 
-                                strftime('%H:00', timestamp) as time_label,
-                                AVG(duration_ms)/1000 as avg_duration,
-                                COUNT(*) as count
-                            FROM ${BONG_HITS_DATABASE_NAME}
-                            WHERE timestamp >= '2024-12-24'
-                            GROUP BY strftime('%H', timestamp)
-                            ORDER BY time_label;
-                        `;
-                        break;
-                    default:
-                        query = `
-                            SELECT 
-                                strftime('%H:00', timestamp) as time_label,
-                                AVG(duration_ms)/1000 as avg_duration,
-                                COUNT(*) as count
-                            FROM ${BONG_HITS_DATABASE_NAME}
-                            WHERE timestamp >= '2024-12-24'
-                            GROUP BY strftime('%H', timestamp)
-                            ORDER BY time_label;
-                        `;
-                }
-
-                const result = await db.getAllAsync(query);
-                console.log("Query result:", result);
-
-                if (result && result.length > 0) {
-                    console.log("Processed data:", result);
-                    
-                    const timePoints = result.map(r => r.time_label);
-                    const durationValues = result.map(r => Math.round(r.avg_duration));
-                    
-                    // Calculate average duration from the results
-                    const totalDuration = result.reduce((acc, curr) => acc + (curr.avg_duration || 0), 0);
-                    const avgDuration = Math.round(totalDuration / result.length);
-                    setAverageDuration(avgDuration);
-                    
-                    // Calculate total hits
-                    const totalHits = result.reduce((acc, curr) => acc + curr.count, 0);
-                    setHitCount(totalHits);
-
-                    // Set chart data
-                    setChartData({
-                        labels: timePoints,
-                        datasets: [{
-                            data: durationValues,
-                            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-                            strokeWidth: 2
-                        }]
-                    });
-                }
-            } catch (error) {
-                console.error('Error loading data:', error);
+    const loadData = async () => {
+        try {
+            const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+            let query = '';
+            let timeDescription = '';
+            
+            // Use fixed date for test data
+            const testDate = '2024-12-24';
+            
+            switch(selectedRange) {
+                case 'H':
+                    query = `
+                        SELECT 
+                            strftime('%H:%M', timestamp) as time_label,
+                            ROUND(AVG(duration_ms)/1000, 1) as avg_duration,
+                            COUNT(*) as count
+                        FROM ${BONG_HITS_DATABASE_NAME}
+                        WHERE timestamp >= '${testDate}'
+                        GROUP BY strftime('%H:%M', timestamp)
+                        ORDER BY timestamp
+                        LIMIT 12;
+                    `;
+                    timeDescription = 'Past hour';
+                    break;
+                case 'D':
+                    query = `
+                        SELECT 
+                            strftime('%H:00', timestamp) as time_label,
+                            ROUND(AVG(duration_ms)/1000, 1) as avg_duration,
+                            COUNT(*) as count
+                        FROM ${BONG_HITS_DATABASE_NAME}
+                        WHERE timestamp >= '${testDate}'
+                        GROUP BY strftime('%H', timestamp)
+                        ORDER BY time_label;
+                    `;
+                    timeDescription = 'Past 24 hours';
+                    break;
+                case 'W':
+                    query = `
+                        SELECT 
+                            strftime('%w', timestamp) as time_label,
+                            ROUND(AVG(duration_ms)/1000, 1) as avg_duration,
+                            COUNT(*) as count
+                        FROM ${BONG_HITS_DATABASE_NAME}
+                        WHERE timestamp >= '${testDate}'
+                        GROUP BY strftime('%w', timestamp)
+                        ORDER BY time_label;
+                    `;
+                    timeDescription = 'Past week';
+                    break;
+                default:
+                    query = `
+                        SELECT 
+                            strftime('%H:00', timestamp) as time_label,
+                            ROUND(AVG(duration_ms)/1000, 1) as avg_duration,
+                            COUNT(*) as count
+                        FROM ${BONG_HITS_DATABASE_NAME}
+                        WHERE timestamp >= '${testDate}'
+                        GROUP BY strftime('%H', timestamp)
+                        ORDER BY time_label;
+                    `;
+                    timeDescription = 'Past 24 hours';
             }
-        };
 
+            const result = await db.getAllAsync<QueryResult>(query);
+            console.log("Query result:", result);
+
+            if (!result?.length) {
+                console.log("No data returned from query");
+                setDefaultValues();
+                return;
+            }
+
+            // Process time labels based on selected range
+            const timePoints = result.map(r => {
+                if (!r?.time_label) return '';
+                
+                if (selectedRange === 'W') {
+                    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    const dayIndex = parseInt(r.time_label);
+                    return days[dayIndex] || '';
+                }
+                return r.time_label;
+            }).filter(Boolean); // Remove empty strings
+
+            const durationValues = result.map(r => 
+                Math.round(r?.avg_duration || 0)
+            );
+
+            // Calculate average duration with null checks
+            const totalDuration = result.reduce((acc, curr) => 
+                acc + (curr?.avg_duration || 0), 0
+            );
+            const avgDuration = result.length ? 
+                Math.round(totalDuration / result.length) : 0;
+            
+            // Calculate total hits with null checks
+            const totalHits = result.reduce((acc, curr) => 
+                acc + (curr?.count || 0), 0
+            );
+
+            // Update state with validated data
+            setAverageDuration(avgDuration);
+            setHitCount(totalHits);
+            setChartData({
+                labels: timePoints.length ? timePoints : ['No Data'],
+                datasets: [{
+                    data: durationValues.length ? durationValues : [0],
+                    color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
+                    strokeWidth: 2
+                }]
+            });
+
+        } catch (error) {
+            console.error('Error loading data:', error);
+            setDefaultValues();
+        }
+    };
+
+    const setDefaultValues = () => {
+        setAverageDuration(0);
+        setHitCount(0);
+        setChartData({
+            labels: ['No Data'],
+            datasets: [{
+                data: [0],
+                color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
+                strokeWidth: 2
+            }]
+        });
+    };
+
+    useEffect(() => {
         loadData();
     }, [selectedRange]);
 
     const chartConfig = {
-        backgroundColor: '#ffffff',
-        backgroundGradientFrom: '#ffffff',
-        backgroundGradientTo: '#ffffff',
+        backgroundColor: COLORS.chartBackground,
+        backgroundGradientFrom: COLORS.chartBackground,
+        backgroundGradientTo: COLORS.chartBackground,
         decimalPlaces: 0,
-        color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-        labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
+        color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
+        labelColor: (opacity = 0.8) => `rgba(255, 255, 255, ${opacity * 0.6})`,
         strokeWidth: 2,
         propsForVerticalLabels: {
             fontSize: 10,
-            color: '#666666'
+            color: COLORS.text.tertiary
         },
         propsForHorizontalLabels: {
             fontSize: 10,
-            color: '#666666'
+            color: COLORS.text.tertiary
         },
         propsForBackgroundLines: {
-            strokeDasharray: "",
-            stroke: "#e3e3e3",
+            strokeDasharray: "5, 5",
+            stroke: COLORS.chart.grid,
             strokeWidth: 1
         },
         yAxisLabel: "",
         yAxisSuffix: "s",
         propsForDots: {
-            r: "3",
-            strokeWidth: "1",
-            stroke: "#007AFF"
+            r: "4",
+            strokeWidth: "0",
+            stroke: COLORS.primary,
+            fill: COLORS.primary
         },
+        fillShadowGradientFrom: 'rgba(0, 230, 118, 0.3)',
+        fillShadowGradientTo: 'rgba(0, 230, 118, 0)',
     };
 
     return (
-        <ScrollView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity>
-                    <MaterialCommunityIcons name="chevron-left" size={30} color="#007AFF" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Daily Average</Text>
-            </View>
+        <SafeAreaView style={styles.safeArea}>
+            <StatusBar barStyle="light-content" />
+            <ScrollView style={styles.container}>
+                <View style={styles.header}>
+                    <TouchableOpacity
+                        style={styles.backButton}
+                        onPress={() => router.back()}
+                    >
+                        <MaterialCommunityIcons name="chevron-left" size={28} color={COLORS.primary} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Daily Average</Text>
+                </View>
 
-            <View style={styles.content}>
-                <TimeRangeSelector
-                    selectedRange={selectedRange}
-                    onRangeChange={setSelectedRange}
-                />
+                <View style={styles.content}>
+                    <TimeRangeSelector
+                        selectedRange={selectedRange}
+                        onRangeChange={setSelectedRange}
+                    />
 
-                <View style={styles.exposureSection}>
-                    <Text style={styles.exposureLabel}>AVERAGE</Text>
-                    <View style={styles.exposureStatus}>
-                        <View style={styles.statusIconContainer}>
-                            <MaterialCommunityIcons name="clock-outline" size={32} color="#32CD32" />
+                    <View style={styles.exposureSection}>
+                        <Text style={styles.exposureLabel}>AVERAGE</Text>
+                        <View style={styles.exposureStatus}>
+                            <View style={styles.statusIconContainer}>
+                                <MaterialCommunityIcons name="clock-outline" size={32} color={COLORS.primary} />
+                            </View>
+                            <Text style={styles.statusText}>{averageDuration}<Text style={styles.unitLabel}>s</Text></Text>
                         </View>
-                        <Text style={styles.statusText}>{averageDuration}s</Text>
+                        <Text style={styles.timeText}>
+                            {selectedRange === 'H' ? 'Past hour average' :
+                             selectedRange === 'D' ? 'Past day average' :
+                             selectedRange === 'W' ? 'Past week average' :
+                             selectedRange === 'M' ? 'Past month average' :
+                             selectedRange === '6M' ? 'Past 6 months average' :
+                             'Past year average'}
+                        </Text>
                     </View>
-                    <Text style={styles.timeText}>Past hour average</Text>
-                </View>
 
-                <View style={styles.chartContainer}>
-                    <LineChart
-                        data={chartData}
-                        width={windowWidth - 32}
-                        height={180}
-                        chartConfig={chartConfig}
-                        bezier
-                        withVerticalLabels={true}
-                        withHorizontalLabels={true}
-                        withInnerLines={true}
-                        withOuterLines={true}
-                        withVerticalLines={true}
-                        yAxisInterval={3}
-                        segments={3}
-                        style={styles.chart}
-                    />
-                    <View style={styles.yAxisLabels}>
-                        <Text style={styles.yAxisText}>30s</Text>
-                        <Text style={styles.yAxisText}>20s</Text>
-                        <Text style={styles.yAxisText}>10s</Text>
-                        <Text style={styles.yAxisText}>0s</Text>
+                    <View style={styles.chartContainer}>
+                        <LineChart
+                            data={chartData}
+                            width={windowWidth - 40}
+                            height={200}
+                            chartConfig={chartConfig}
+                            bezier
+                            withVerticalLabels={true}
+                            withHorizontalLabels={true}
+                            withInnerLines={true}
+                            withOuterLines={false}
+                            withVerticalLines={false}
+                            withDots={true}
+                            withShadow={false}
+                            yAxisInterval={5}
+                            segments={4}
+                            style={styles.chart}
+                        />
+                    </View>
+
+                    <View style={styles.notificationCard}>
+                        <Text style={styles.notificationTitle}>Hit Statistics</Text>
+                        <View style={styles.hitCountContainer}>
+                            <Text style={styles.notificationCount}>{hitCount}</Text>
+                            <MaterialCommunityIcons 
+                                name="cannabis" 
+                                size={18} 
+                                color={COLORS.primary} 
+                                style={styles.hitCountIcon}
+                            />
+                        </View>
+                    </View>
+
+                    <TouchableOpacity 
+                        style={styles.showMoreButton}
+                        onPress={() => router.push('/dataOverviews/detailedData')}
+                    >
+                        <Text style={styles.showMoreText}>Show More Data</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.highlightsSection}>
+                        <View style={styles.highlightsHeader}>
+                            <Text style={styles.highlightsTitle}>Highlights</Text>
+                            <TouchableOpacity>
+                                <Text style={styles.showAllText}>Show All</Text>
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <InfoCard
+                            icon={<MaterialCommunityIcons name="clock-outline" size={24} color={COLORS.primary} />}
+                            title="Average Duration"
+                            description="On average, your hits this month were shorter than last month."
+                            value={averageDuration}
+                            period="February"
+                        />
+
+                        <InfoCard
+                            icon={<MaterialCommunityIcons name="information-outline" size={24} color={COLORS.primary} />}
+                            title="About Daily Average"
+                            description="This represents the average duration of your hits measured in seconds. It can be helpful to understand your usage patterns and optimize your experience."
+                            showArrow={false}
+                        />
                     </View>
                 </View>
-
-                <TouchableOpacity style={styles.notificationCard}>
-                    <Text style={styles.notificationTitle}>Hit Statistics</Text>
-                    <Text style={styles.notificationCount}>{hitCount}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={styles.showMoreButton}
-                    onPress={() => router.push('/dataOverviews/detailedData')}
-                >
-                    <Text style={styles.showMoreText}>Show More Data</Text>
-                </TouchableOpacity>
-
-                <View style={styles.highlightsSection}>
-                    <View style={styles.highlightsHeader}>
-                        <Text style={styles.highlightsTitle}>Highlights</Text>
-                        <TouchableOpacity>
-                            <Text style={styles.showAllText}>Show All</Text>
-                        </TouchableOpacity>
-                    </View>
-                    
-                    <InfoCard
-                        icon={<MaterialCommunityIcons name="clock-outline" size={24} color="#007AFF" />}
-                        title="Average Duration"
-                        description="On average, your hits this month were shorter than last month."
-                        value={averageDuration}
-                        period="February"
-                    />
-
-                    <InfoCard
-                        icon={<MaterialCommunityIcons name="information" size={24} color="#007AFF" />}
-                        title="About Daily Average"
-                        description="This represents the average duration of your hits measured in seconds. It can be helpful to understand your usage patterns and optimize your experience."
-                        showArrow={false}
-                    />
-                </View>
-        </View>
-        </ScrollView>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: COLORS.background,
+    },
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: COLORS.background,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingTop: 48,
-        paddingBottom: 8,
-        backgroundColor: '#ffffff',
+        paddingTop: 8,
+        paddingBottom: 16,
+        backgroundColor: COLORS.background,
+    },
+    backButton: {
+        padding: 4,
     },
     headerTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        fontSize: 22,
+        fontWeight: '600',
+        color: COLORS.text.primary,
         marginLeft: 8,
+        letterSpacing: 0.3,
     },
     content: {
         flex: 1,
+        paddingBottom: 32,
     },
     timeSelector: {
         flexDirection: 'row',
-        backgroundColor: '#e3e3e3',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
         margin: 16,
-        borderRadius: 8,
-        padding: 2,
+        borderRadius: 10,
+        padding: 3,
     },
     timeSelectorButton: {
         flex: 1,
-        paddingVertical: 6,
+        paddingVertical: 8,
+        paddingHorizontal: 4,
         alignItems: 'center',
-        borderRadius: 6,
+        borderRadius: 8,
     },
     timeSelectorButtonSelected: {
-        backgroundColor: '#ffffff',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
-        elevation: 1,
+        backgroundColor: COLORS.primary,
     },
     timeSelectorText: {
-        fontSize: 15,
-        color: '#666666',
+        fontSize: 14,
+        color: COLORS.text.secondary,
+        fontWeight: '500',
     },
     timeSelectorTextSelected: {
-        color: '#007AFF',
-        fontWeight: '500',
+        color: COLORS.background,
+        fontWeight: '600',
     },
     exposureSection: {
         paddingHorizontal: 16,
-        marginBottom: 16,
+        marginBottom: 24,
     },
     exposureLabel: {
         fontSize: 13,
         fontWeight: '600',
-        color: '#666666',
-        letterSpacing: 0.5,
-        marginBottom: 8,
+        color: COLORS.text.tertiary,
+        letterSpacing: 0.8,
+        marginBottom: 12,
     },
     exposureStatus: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 4,
+        marginBottom: 8,
     },
     statusIconContainer: {
-        marginRight: 8,
+        marginRight: 12,
     },
     statusText: {
-        fontSize: 34,
-        fontWeight: 'bold',
+        fontSize: 42,
+        fontWeight: '700',
+        color: COLORS.text.primary,
+        letterSpacing: -0.5,
+    },
+    unitLabel: {
+        fontSize: 32,
+        fontWeight: '400',
+        color: COLORS.text.tertiary,
+        marginLeft: 4,
     },
     timeText: {
         fontSize: 15,
-        color: '#666666',
+        color: COLORS.text.secondary,
     },
     chartContainer: {
         marginHorizontal: 16,
-        backgroundColor: '#ffffff',
-        borderRadius: 12,
+        marginBottom: 24,
+        backgroundColor: COLORS.chartBackground,
+        borderRadius: 16,
         padding: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 230, 118, 0.1)',
     },
     chart: {
-        marginRight: -32,
-        marginLeft: -32,
-    },
-    yAxisLabels: {
-        position: 'absolute',
-        right: 16,
-        top: 16,
-        bottom: 16,
-        justifyContent: 'space-between',
-    },
-    yAxisText: {
-        fontSize: 10,
-        color: '#666666',
+        borderRadius: 12,
     },
     notificationCard: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        backgroundColor: '#ffffff',
+        alignItems: 'center',
+        backgroundColor: COLORS.cardBackground,
         marginHorizontal: 16,
-        marginTop: 16,
+        marginBottom: 24,
         padding: 16,
         borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowRadius: 8,
+        elevation: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 230, 118, 0.1)',
     },
     notificationTitle: {
         fontSize: 17,
-        fontWeight: '500',
+        fontWeight: '600',
+        color: COLORS.text.primary,
+    },
+    hitCountContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     notificationCount: {
-        fontSize: 17,
-        fontWeight: '500',
+        fontSize: 20,
+        fontWeight: '600',
+        color: COLORS.primary,
+    },
+    hitCountIcon: {
+        marginLeft: 4,
     },
     showMoreButton: {
         alignItems: 'center',
-        padding: 16,
+        paddingVertical: 12,
+        marginBottom: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(0, 230, 118, 0.1)',
+        marginHorizontal: 16,
     },
     showMoreText: {
-        fontSize: 17,
-        color: '#007AFF',
+        fontSize: 16,
+        color: COLORS.primary,
+        fontWeight: '500',
     },
     highlightsSection: {
-        padding: 16,
+        paddingHorizontal: 16,
     },
     highlightsHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginBottom: 16,
     },
     highlightsTitle: {
         fontSize: 22,
-        fontWeight: 'bold',
+        fontWeight: '700',
+        color: COLORS.text.primary,
+        letterSpacing: 0.3,
     },
     showAllText: {
-        fontSize: 17,
-        color: '#007AFF',
+        fontSize: 16,
+        color: COLORS.primary,
+        fontWeight: '500',
     },
     infoCard: {
-        backgroundColor: '#ffffff',
-        borderRadius: 12,
-        padding: 16,
+        position: 'relative',
+        backgroundColor: COLORS.cardBackground,
+        borderRadius: 16,
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        shadowRadius: 8,
+        elevation: 4,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 230, 118, 0.1)',
+    },
+    cardGradient: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+    },
+    infoCardContent: {
+        padding: 16,
     },
     infoCardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 12,
     },
     infoCardTitle: {
         fontSize: 17,
         fontWeight: '600',
-        marginLeft: 8,
-        color: '#007AFF',
+        marginLeft: 10,
+        color: COLORS.primary,
     },
     infoCardDescription: {
-        fontSize: 17,
-        color: '#000000',
+        fontSize: 15,
+        color: COLORS.text.secondary,
         lineHeight: 22,
         marginBottom: 16,
     },
@@ -462,34 +632,35 @@ const styles = StyleSheet.create({
     monthValue: {
         flexDirection: 'row',
         alignItems: 'baseline',
-        marginBottom: 4,
+        marginBottom: 8,
     },
     valueText: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#000000',
+        fontSize: 36,
+        fontWeight: '700',
+        color: COLORS.text.primary,
     },
     unitText: {
-        fontSize: 32,
-        color: '#666666',
+        fontSize: 24,
+        color: COLORS.text.tertiary,
         marginLeft: 4,
     },
     periodBar: {
-        backgroundColor: '#007AFF',
-        borderRadius: 6,
-        padding: 8,
+        backgroundColor: COLORS.primary,
+        borderRadius: 8,
+        padding: 10,
         alignItems: 'center',
         marginTop: 8,
+        marginBottom: 8,
     },
     periodText: {
-        color: '#FFFFFF',
+        color: COLORS.background,
         fontSize: 15,
-        fontWeight: '500',
+        fontWeight: '600',
     },
     arrowIcon: {
         position: 'absolute',
         right: 16,
         top: '50%',
-        marginTop: -12,
+        marginTop: -10,
     },
 });

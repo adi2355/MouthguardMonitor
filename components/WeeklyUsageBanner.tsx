@@ -1,6 +1,23 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+const { width } = Dimensions.get('window');
+
+// Lighter color constants
+const COLORS = {
+  background: '#000000',
+  cardBackground: '#1A1A1A',
+  primary: '#00E676',
+  text: {
+    primary: '#FFFFFF',
+    secondary: 'rgba(255, 255, 255, 0.8)',
+    tertiary: 'rgba(255, 255, 255, 0.6)',
+  },
+  divider: 'rgba(255, 255, 255, 0.1)',
+  increase: '#FF5252',
+  decrease: '#00E676',
+};
 
 interface WeeklyUsageBannerProps {
     weeklyData: {
@@ -18,98 +35,134 @@ const WeeklyUsageBanner = ({
     percentageChange = 0,
     onPress 
 }: WeeklyUsageBannerProps) => {
-    // Add validation checks
-    if (!Array.isArray(weeklyData) || weeklyData.length === 0) {
-        return (
-            <View style={styles.container}>
-                <Text style={styles.title}>No data available</Text>
-            </View>
-        );
-    }
-
-    // Ensure safe value calculation
-    const safeValues = weeklyData.map(item => Math.max(0, Number(item.value) || 0));
-    const maxValue = Math.max(...safeValues, 1); // Use 1 as minimum to avoid division by zero
+    // Use memoization for calculations
+    const { safeValues, maxValue, barHeights } = useMemo(() => {
+        if (!Array.isArray(weeklyData) || weeklyData.length === 0) {
+            return { safeValues: [], maxValue: 1, barHeights: [] };
+        }
+        
+        const validValues = weeklyData.map(item => Math.max(0, Number(item.value) || 0));
+        const max = Math.max(...validValues, 1);
+        
+        // Pre-calculate bar heights
+        const heights = validValues.map(value => {
+            const heightPercentage = (value / max) * 100;
+            return Math.max(Math.min((heightPercentage * 100) / 100, 100), 4);
+        });
+        
+        return { safeValues: validValues, maxValue: max, barHeights: heights };
+    }, [weeklyData]);
     
-    const renderPercentageChange = () => {
+    // Memoize percentage change UI
+    const percentageChangeElement = useMemo(() => {
         if (percentageChange === 0) return null;
         
         const isIncrease = percentageChange > 0;
-        const color = isIncrease ? '#FF3B30' : '#34C759';
+        const color = isIncrease ? COLORS.increase : COLORS.decrease;
+        const icon = isIncrease ? "trending-up" : "trending-down";
         
         return (
             <View style={styles.changeContainer}>
+                <MaterialCommunityIcons 
+                    name={icon} 
+                    size={16} 
+                    color={color} 
+                />
                 <Text style={[styles.changeText, { color }]}>
-                    {isIncrease ? '↑' : '↓'} {Math.abs(Math.round(percentageChange))}% from last week
+                    {Math.abs(Math.round(percentageChange))}%
                 </Text>
             </View>
         );
-    };
+    }, [percentageChange]);
+
+    // Handle no data case
+    if (!Array.isArray(weeklyData) || weeklyData.length === 0) {
+        return (
+            <TouchableOpacity 
+                style={styles.container}
+                onPress={onPress}
+                activeOpacity={0.9}
+            >
+                <Text style={styles.noDataText}>No data available</Text>
+            </TouchableOpacity>
+        );
+    }
 
     return (
         <TouchableOpacity 
             style={styles.container}
             onPress={onPress}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
         >
             <View style={styles.headerContainer}>
                 <View style={styles.titleContainer}>
                     <MaterialCommunityIcons 
-                        name="clock-outline" 
-                        size={24} 
-                        color="#8E8E93" 
+                        name="chart-timeline-variant" 
+                        size={20} 
+                        color={COLORS.primary} 
                     />
-                    <Text style={styles.title}>Daily Average</Text>
+                    <Text style={styles.title}>Weekly Overview</Text>
                 </View>
-                {renderPercentageChange()}
+                {percentageChangeElement}
             </View>
             
             <View style={styles.averageContainer}>
-                <Text style={styles.averageValue}>
-                    {Math.round(average)} <Text style={styles.hitText}>hits</Text>
+                <View style={styles.averageTextContainer}>
+                    <Text style={styles.averageValue}>
+                        {Math.round(average)}
+                    </Text>
+                    <Text style={styles.hitText}>hits per day</Text>
+                </View>
+                <Text style={styles.comparisonText}>
+                    vs last week
                 </Text>
             </View>
 
             <View style={styles.chartContainer}>
                 {weeklyData.map((day, index) => {
-                    // Ensure safe value and calculate height
-                    const value = Math.max(0, Number(day.value) || 0);
-                    const heightPercentage = Math.min((value / maxValue) * 100, 100);
-                    const barHeight = Math.max((heightPercentage * 150) / 100, 4);
-
+                    const isHighlighted = safeValues[index] === Math.max(...safeValues);
                     return (
                         <View key={index} style={styles.barWrapper}>
                             <View style={styles.barContainer}>
-                                <View 
+                                <View
                                     style={[
                                         styles.bar, 
-                                        { height: barHeight }
+                                        { 
+                                            height: barHeights[index],
+                                            backgroundColor: isHighlighted ? COLORS.primary : 'rgba(255,255,255,0.2)'
+                                        }
                                     ]} 
                                 />
                             </View>
-                            <Text style={styles.dayLabel}>{day.label || ''}</Text>
+                            <Text style={[
+                                styles.dayLabel,
+                                isHighlighted && styles.dayLabelHighlighted
+                            ]}>
+                                {day.label || ''}
+                            </Text>
                         </View>
                     );
                 })}
+                
                 {average > 0 && maxValue > 0 && (
                     <View style={[
                         styles.averageLine,
                         { 
                             bottom: Math.max(
-                                Math.min((average / maxValue) * 150, 150),
+                                Math.min((average / maxValue) * 100, 100),
                                 0
-                            )
+                            ) + 20
                         }
                     ]} />
                 )}
             </View>
 
             <View style={styles.footer}>
-                <Text style={styles.footerText}>See All Activity</Text>
+                <Text style={styles.footerText}>View Details</Text>
                 <MaterialCommunityIcons 
                     name="chevron-right" 
-                    size={24} 
-                    color="#007AFF" 
+                    size={18} 
+                    color={COLORS.primary} 
                 />
             </View>
         </TouchableOpacity>
@@ -118,103 +171,128 @@ const WeeklyUsageBanner = ({
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 16,
+        backgroundColor: COLORS.cardBackground,
+        borderRadius: 16,
         margin: 16,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.2,
-        shadowRadius: 1.41,
-        elevation: 2,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 230, 118, 0.1)',
+    },
+    noDataText: {
+        color: COLORS.text.secondary,
+        fontSize: 16,
+        textAlign: 'center',
+        padding: 24,
     },
     headerContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 4,
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 8,
     },
     titleContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: 8,
     },
     title: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '600',
-        color: '#8E8E93',
-        marginLeft: 8,
+        color: COLORS.text.primary,
     },
     changeContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
     },
     changeText: {
-        fontSize: 15,
-        fontWeight: '500',
+        fontSize: 14,
+        fontWeight: '600',
     },
     averageContainer: {
-        marginVertical: 12,
+        marginHorizontal: 16,
+        marginBottom: 8,
+    },
+    averageTextContainer: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
     },
     averageValue: {
-        fontSize: 34,
-        fontWeight: 'bold',
-        color: '#000',
+        fontSize: 36,
+        fontWeight: '700',
+        color: COLORS.primary,
     },
     hitText: {
-        fontSize: 17,
-        fontWeight: 'normal',
-        color: '#8E8E93',
+        fontSize: 16,
+        fontWeight: '400',
+        color: COLORS.text.secondary,
+        marginLeft: 6,
+    },
+    comparisonText: {
+        fontSize: 14,
+        color: COLORS.text.tertiary,
+        marginTop: 2,
     },
     chartContainer: {
+        paddingHorizontal: 8,
+        height: 150,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-end',
-        height: 180,
-        marginBottom: 8,
         position: 'relative',
+        marginBottom: 8,
     },
     barWrapper: {
         flex: 1,
         alignItems: 'center',
     },
     barContainer: {
-        width: 30,
-        height: 150,
+        width: 8,
         justifyContent: 'flex-end',
+        height: 100,
     },
     bar: {
         width: '100%',
         borderRadius: 4,
-        backgroundColor: '#4CC9F0',
     },
     dayLabel: {
         marginTop: 8,
         fontSize: 12,
-        color: '#8E8E93',
+        color: COLORS.text.tertiary,
+        fontWeight: '500',
+    },
+    dayLabelHighlighted: {
+        color: COLORS.text.secondary,
+        fontWeight: '600',
     },
     averageLine: {
         position: 'absolute',
-        left: 0,
-        right: 0,
+        left: 16,
+        right: 16,
         height: 1,
-        backgroundColor: '#34C759',
+        backgroundColor: 'rgba(0, 230, 118, 0.5)',
     },
     footer: {
-        marginTop: 16,
+        marginTop: 8,
         borderTopWidth: 1,
-        borderTopColor: '#E5E5EA',
-        paddingTop: 16,
+        borderTopColor: COLORS.divider,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
     footerText: {
-        fontSize: 17,
-        color: '#007AFF',
+        fontSize: 15,
+        fontWeight: '500',
+        color: COLORS.primary,
     },
 });
 
-export default WeeklyUsageBanner;
+export default React.memo(WeeklyUsageBanner);

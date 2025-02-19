@@ -611,33 +611,27 @@ const typography = {
   },
 };
 
-const colors = {
-  systemBlue: "#007AFF",
-  systemRed: "#FF3B30",
-  systemYellow: "#FFE94D",
-  systemGray: {
-    1: "#8E8E93",
-    2: "#AEAEB2",
-    3: "#C7C7CC",
-    4: "#D1D1D6",
-    5: "#E5E5EA",
-    6: "#F2F2F7",
+const COLORS = {
+  background: '#000000',
+  cardBackground: '#1A1A1A',
+  primary: '#00E676',       // Neon green 
+  primaryLight: '#69F0AE',  // Light neon green
+  primaryDark: '#00C853',   // Darker green
+  text: {
+    primary: '#FFFFFF',
+    secondary: '#FFFFFFCC',  // 80% white
+    tertiary: '#FFFFFF99',   // 60% white
   },
-  label: {
-    primary: "#000000",
-    secondary: "#666666",
-    tertiary: "#8E8E93",
+  chart: {
+    primary: '#00E676',
+    secondary: '#69F0AE',
+    background: '#1A1A1A',
   },
-  background: {
-    primary: "#FFFFFF",
-    secondary: "#F2F2F7",
-    tertiary: "#FFFFFF",
-  },
-  gradient: {
-    start: "#FFB6A3",
-    middle: "#85D8CE",
-    end: "#FFFFFF",
-  },
+  gradientColors: {
+    start: 'rgba(0,230,118,0.4)',
+    middle: 'rgba(105,240,174,0.2)',
+    end: 'rgba(0,0,0,0)',
+  }
 };
 
 // Raw data interface for mini chart
@@ -741,70 +735,70 @@ const getDailyAverageDatapoints = async () => {
     const avgHourCount = await db.getAllAsync(`
       SELECT strftime('%H', timestamp) AS hourOfDay, 
              COUNT(*) AS count
-      FROM ${BONG_HITS_DATABASE_NAME}
+        FROM ${BONG_HITS_DATABASE_NAME}
       WHERE timestamp >= date('now', '-7 days')
-      GROUP BY hourOfDay
-      ORDER BY hourOfDay
-    `);
+        GROUP BY hourOfDay
+        ORDER BY hourOfDay
+      `);
 
     if (!avgHourCount?.length) return null;
 
     // Fill missing hours with proper validation
-    const allHours = Array.from({ length: 24 }, (_, i) => 
-      i.toString().padStart(2, "0")
-    );
+        const allHours = Array.from({ length: 24 }, (_, i) =>
+          i.toString().padStart(2, "0")
+        );
     
-    const dataMap = new Map(
+        const dataMap = new Map(
       avgHourCount.map(row => [
         String(row.hourOfDay || ''),
         Number(row.count || 0)
       ])
-    );
+        );
 
     const processedData = allHours.map(hour => ({
-      hourOfDay: hour,
+          hourOfDay: hour,
       count: dataMap.get(hour) || 0
-    }));
+        }));
 
     return {
-      labels: ["12am", "6am", "12pm", "6pm", "12am"],
+        labels: ["12am", "6am", "12pm", "6pm", "12am"],
       datasets: [{
         data: processedData.map(item => item.count),
-        color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-        strokeWidth: 2,
+            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+            strokeWidth: 2,
       }],
       legend: ["Average daily hits"]
-    };
-  } catch (e) {
-    console.error("Error in getDailyAverageDatapoints:", e);
+      };
+    } catch (e) {
+      console.error("Error in getDailyAverageDatapoints:", e);
     return null;
-  }
-};
+    }
+  };
 
-const fetchMiniChartData = async () => {
-  try {
+  const fetchMiniChartData = async () => {
+    try {
     const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
     const results = await db.getAllAsync(`
       SELECT duration_ms AS value,
-             timestamp
-      FROM ${BONG_HITS_DATABASE_NAME}
+          timestamp
+        FROM ${BONG_HITS_DATABASE_NAME}
       WHERE timestamp >= date('now', '-7 days')
-      ORDER BY timestamp DESC
-      LIMIT 10
-    `);
+        ORDER BY timestamp DESC
+        LIMIT 10
+      `);
 
     return results.map(row => ({
       timestamp: String(row.timestamp || ''),
       value: Number(row.value || 0)
     }));
-  } catch (e) {
-    console.error("Error fetching mini chart data:", e);
+    } catch (e) {
+      console.error("Error fetching mini chart data:", e);
     return [];
-  }
-};
+    }
+  };
 
-const getBongHitStatsFromPastWeek = async () => {
-  try {
+  const getBongHitStatsFromPastWeek = async () => {
+    try {
     const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
     const [avgResults, maxResults] = await Promise.all([
       db.getAllAsync(`
@@ -825,8 +819,8 @@ const getBongHitStatsFromPastWeek = async () => {
       averageDuration: Number(avgResults[0].avg_duration || 0),
       longestHit: Number(maxResults[0].max_duration || 0)
     };
-  } catch (e) {
-    console.error("Error in getBongHitStatsFromPastWeek:", e);
+    } catch (e) {
+      console.error("Error in getBongHitStatsFromPastWeek:", e);
     return null;
   }
 };
@@ -853,12 +847,12 @@ const safeParseInt = (value: any, fallback = 0): number => {
 const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {
   // Base chart config
   const baseChartConfig = useMemo(() => ({
-    backgroundColor: "#ffffff",
-    backgroundGradientFrom: "#ffffff",
-    backgroundGradientTo: "#ffffff",
+    backgroundColor: COLORS.chart.background,
+    backgroundGradientFrom: COLORS.chart.background,
+    backgroundGradientTo: COLORS.chart.background,
     decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-    labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
+    color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,  // Neon green
+    labelColor: (opacity = 0.8) => `rgba(255, 255, 255, ${opacity})`, // White labels
     barPercentage: 0.7,
     useShadowColorFromDataset: false,
     withInnerLines: false,
@@ -867,17 +861,21 @@ const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: 
     withVerticalLines: false,
     withHorizontalLines: true,
     propsForBackgroundLines: {
-      stroke: "#e3e3e3",
+      stroke: COLORS.text.tertiary,
       strokeWidth: 1,
     },
     propsForDots: {
       r: "4",
       strokeWidth: "2",
-      stroke: "#007AFF",
+      stroke: COLORS.primaryLight,
     },
     style: {
       borderRadius: 16,
-    }
+    },
+    // Add optimizations
+    formatYLabel: (value: string) => Math.round(Number(value)).toString(),
+    formatXLabel: (label: string) => label.substring(0, 3),
+    segments: 4,
   }), []);
 
   // Memoize the chart width calculation
@@ -897,7 +895,8 @@ const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: 
     labels: weeklyHitsBarGraphProps.map((d) => d.label),
     datasets: [{ 
       data: weeklyHitsBarGraphProps.map((d) => d.value),
-      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`
+      color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
+      strokeWidth: 2,
     }]
   }), [weeklyHitsBarGraphProps]);
 
@@ -905,7 +904,7 @@ const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: 
     return (
       <Card style={styles.card}>
         <View style={styles.cardHeader}>
-          <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+          <MaterialCommunityIcons name="calendar-week" size={24} color={COLORS.primary} />
           <Text style={styles.cardTitle}>Weekly Overview</Text>
         </View>
         <View style={styles.chartContainer}>
@@ -918,11 +917,21 @@ const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: 
   return (
     <Card style={styles.card}>
       <View style={styles.cardHeader}>
-        <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+        <MaterialCommunityIcons name="calendar-week" size={24} color={COLORS.primary} />
         <Text style={styles.cardTitle}>Weekly Overview</Text>
       </View>
       <Text style={styles.cardDescription}>Compare your usage across different days</Text>
       <View style={styles.chartContainer}>
+        <LinearGradient
+          colors={[
+            COLORS.gradientColors.start,
+            COLORS.gradientColors.middle,
+            COLORS.gradientColors.end
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.chartGradient}
+        />
         <BarChart
           data={chartData}
           width={chartWidth}
@@ -947,12 +956,10 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
   
   // Base chart config with additional optimizations
   const baseChartConfig = useMemo(() => ({
-    backgroundColor: "#ffffff",
-    backgroundGradientFrom: "#ffffff",
-    backgroundGradientTo: "#ffffff",
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-    labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
+    backgroundGradientFrom: COLORS.chart.background,
+    backgroundGradientTo: COLORS.chart.background,
+    color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
+    labelColor: () => COLORS.text.tertiary,
     barPercentage: 0.7,
     useShadowColorFromDataset: false,
     withInnerLines: false,
@@ -967,7 +974,7 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
     propsForDots: {
       r: "4",
       strokeWidth: "2",
-      stroke: "#007AFF",
+      stroke: COLORS.primaryLight
     },
     style: {
       borderRadius: 16,
@@ -984,7 +991,7 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
     labels: monthlyDataFake.labels.map(label => label.substring(0, 3)),
     datasets: [{
       data: monthlyDataFake.datasets[0].data,
-      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+      color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
       strokeWidth: 2,
     }],
   }), []); // Empty dependency array since monthlyDataFake is constant
@@ -993,7 +1000,7 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
     return (
       <Card style={styles.card}>
         <View style={styles.cardHeader}>
-          <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
+          <MaterialCommunityIcons name="calendar-month" size={24} color={COLORS.primary} />
           <Text style={styles.cardTitle}>Monthly Overview</Text>
         </View>
         <View style={styles.chartContainer}>
@@ -1006,11 +1013,21 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
   return (
     <Card style={styles.card}>
       <View style={styles.cardHeader}>
-        <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
+        <MaterialCommunityIcons name="calendar-month" size={24} color={COLORS.primary} />
         <Text style={styles.cardTitle}>Monthly Overview</Text>
       </View>
       <Text style={styles.cardDescription}>Track your monthly trends</Text>
       <View style={styles.chartContainer}>
+        <LinearGradient
+          colors={[
+            COLORS.gradientColors.start,
+            COLORS.gradientColors.middle,
+            COLORS.gradientColors.end
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.chartGradient}
+        />
         <LineChart
           data={chartData}
           width={chartWidth}
@@ -1035,7 +1052,7 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
                 top: y - 20,
                 left: x - 10,
                 fontSize: 10,
-                color: colors.label.secondary,
+                color: COLORS.text.secondary,
               }}
             >
               {chartData.datasets[0].data[index]}
@@ -1096,7 +1113,7 @@ export default function MyData() {
       const [avgResults, maxResults] = await Promise.all([
         db.getAllAsync(`
           SELECT AVG(duration_ms) AS avg_duration
-          FROM ${BONG_HITS_DATABASE_NAME}
+        FROM ${BONG_HITS_DATABASE_NAME}
           WHERE timestamp >= date('now', '-7 days')
         `),
         db.getAllAsync(`
@@ -1191,7 +1208,7 @@ export default function MyData() {
         setWeeklyHitsBarGraphProps(processedWeekData);
         
         const total = processedWeekData.reduce((sum, day) => sum + day.value, 0);
-        const average = Math.round(total / 7);
+          const average = Math.round(total / 7);
         
         // Get last week's data for comparison
         const lastWeekResults = await db.getAllAsync(`
@@ -1202,10 +1219,10 @@ export default function MyData() {
         `);
         
         const lastWeekAvg = Math.round((lastWeekResults[0]?.hit_count || 0) / 7);
-        const change = calculatePercentageChange(average, lastWeekAvg);
+          const change = calculatePercentageChange(average, lastWeekAvg);
         
-        setWeeklyAverage(average);
-        setPercentageChange(change);
+          setWeeklyAverage(average);
+          setPercentageChange(change);
 
         // Get daily data with proper validation
         const dailyStats = await getDailyAverageDatapoints();
@@ -1335,28 +1352,35 @@ export default function MyData() {
   // Memoize placeholder component
   const placeholderCard = useMemo(() => (
     <View style={[styles.card, styles.placeholderCard]}>
-      <View style={styles.cardHeader}>
-        <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+        <View style={styles.cardHeader}>
+        <MaterialCommunityIcons name="calendar-week" size={24} color={COLORS.primary} />
         <View style={styles.placeholderTitle} />
-      </View>
-      <View style={styles.chartContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-      </View>
-    </View>
+        </View>
+        <View style={styles.chartContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+          </View>
   ), []);
 
-  const renderNotificationBanner = () => {
-    return (
+  const renderNotificationBanner = () => (
+    <View style={styles.notificationContainer}>
+      <View style={styles.notificationGlow} />
       <View style={styles.notificationBanner}>
         <View style={styles.notificationHeader}>
           <View style={styles.notificationTitle}>
-            <MaterialCommunityIcons name="bell-outline" size={16} color="#000" />
+            <MaterialCommunityIcons 
+              name="bell-outline" 
+              size={16} 
+              color={COLORS.text.primary}
+            />
             <Text style={styles.notificationTitleText}>Daily Summary</Text>
           </View>
           <View style={styles.notificationTime}>
             <Text style={styles.timeText}>Last 24 hours</Text>
             <TouchableOpacity style={styles.dismissButtonContainer}>
-              <Text style={styles.dismissButton}>Dismiss</Text>
+              <Text style={[styles.dismissButton, { color: COLORS.text.tertiary }]}>
+                Dismiss
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1365,7 +1389,7 @@ export default function MyData() {
           <MaterialCommunityIcons
             name="clock-outline"
             size={32}
-            color="#000"
+            color={COLORS.text.primary}
             style={styles.earIcon}
           />
           <View style={styles.notificationTextContainer}>
@@ -1379,10 +1403,10 @@ export default function MyData() {
               <Text style={styles.moreDetailsLink}>More Details</Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
       </View>
     );
-  };
 
   return (
     <SafeAreaProvider>
@@ -1407,56 +1431,56 @@ export default function MyData() {
         onMomentumScrollEnd={() => setIsScrolling(false)}
       >
         <LinearGradient
-          colors={[colors.gradient.start, colors.gradient.middle, colors.gradient.end]}
-          locations={[0, 0.2, 0.4]}
-          start={{ x: 1, y: 0 }}
+          colors={['rgba(0,230,118,0.4)', 'rgba(105,240,174,0.2)', 'rgba(0,0,0,0)']}
+          locations={[0, 0.3, 0.7]}
+          start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={styles.gradientBackground}
         />
 
-        {/* Header */}
-        <View style={styles.headerContainer}>
-          <Text style={styles.headerTitle}>Summary</Text>
-          <View style={styles.profilePic} />
-        </View>
-
-        {/* Notification Banner */}
-        <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
-
-        {/* Example "Medical ID" Card */}
-        <View style={styles.medicalIdCard}>
-          {/* ... or your actual MedicalIDCard component ... */}
-        </View>
-
-        {/* Data Content */}
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading data...</Text>
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <Text style={styles.headerTitle}>Summary</Text>
+            <View style={styles.profilePic} />
           </View>
-        ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+
+          {/* Notification Banner */}
+          <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
+
+          {/* Example "Medical ID" Card */}
+          <View style={styles.medicalIdCard}>
+            {/* ... or your actual MedicalIDCard component ... */}
           </View>
-        ) : (
-          <>
-            <DailyAverageCard
-              data={weeklyHitsBarGraphProps}
-              averageHits={weeklyAverage}
-              onPress={() => router.push("/dataOverviews/dailyAverageOverview")}
-            />
-            {renderWeeklyUsageBanner()}
+
+          {/* Data Content */}
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading data...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : (
+            <>
+              <DailyAverageCard
+                data={weeklyHitsBarGraphProps}
+                averageHits={weeklyAverage}
+                onPress={() => router.push("/dataOverviews/dailyAverageOverview")}
+              />
+              {renderWeeklyUsageBanner()}
             {isScrolling ? placeholderCard : weeklyOverview}
             {isScrolling ? placeholderCard : monthlyOverview}
-          </>
-        )}
+            </>
+          )}
 
-        {/* Time Range Selector */}
-        <Card style={[styles.card, styles.timeRangeCard]}>
-          <View style={styles.timeRangeContent}>
-            <Text style={styles.cardTitle}>Pick Time Range</Text>
-            <AntDesign name="calendar" size={24} color="black" />
-          </View>
-        </Card>
+          {/* Time Range Selector */}
+          <Card style={[styles.card, styles.timeRangeCard]}>
+            <View style={styles.timeRangeContent}>
+              <Text style={styles.cardTitle}>Pick Time Range</Text>
+              <AntDesign name="calendar" size={24} color="black" />
+            </View>
+          </Card>
       </ScrollView>
     </SafeAreaProvider>
   );
@@ -1468,7 +1492,7 @@ export default function MyData() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.primary,
+    backgroundColor: COLORS.background,
   },
   contentContainer: {
     paddingBottom: 32,
@@ -1504,19 +1528,21 @@ const styles = StyleSheet.create({
     borderColor: "rgba(0,0,0,0.1)",
   },
   card: {
-    backgroundColor: colors.background.primary,
+    backgroundColor: '#1A1A1A',
     marginHorizontal: 16,
     marginVertical: 8,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    shadowColor: colors.label.primary,
+    shadowColor: '#00E676',
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 2,
     },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
   },
   cardHeader: {
     flexDirection: "row",
@@ -1525,12 +1551,12 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     ...typography.title3,
-    color: colors.label.primary,
+    color: COLORS.text.primary,
     marginLeft: 10,
   },
   cardDescription: {
     ...typography.body,
-    color: colors.label.secondary,
+    color: COLORS.text.secondary,
     marginTop: 4,
     marginBottom: 16,
     lineHeight: 20,
@@ -1539,10 +1565,24 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: "center",
     paddingHorizontal: 8,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
   },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
+    backgroundColor: COLORS.cardBackground,
+    // Add glow effect
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
   },
   timeRangeCard: {
     marginBottom: 16,
@@ -1554,16 +1594,18 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   notificationBanner: {
-    backgroundColor: "#FFE94D",
+    backgroundColor: '#1A1A1A',
     marginHorizontal: 16,
     marginVertical: 8,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   notificationHeader: {
     flexDirection: "row",
@@ -1589,7 +1631,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     ...typography.caption1,
-    color: colors.label.secondary,
+    color: COLORS.text.secondary,
   },
   dismissButtonContainer: {
     marginLeft: 8,
@@ -1612,18 +1654,18 @@ const styles = StyleSheet.create({
   },
   notificationMainText: {
     ...typography.title3,
-    color: colors.label.primary,
+    color: COLORS.text.primary,
     marginBottom: 4,
   },
   notificationSubText: {
     ...typography.body,
-    color: colors.label.secondary,
+    color: COLORS.text.secondary,
     marginBottom: 4,
     lineHeight: 20,
   },
   moreDetailsLink: {
     ...typography.body,
-    color: colors.systemBlue,
+    color: COLORS.primary,
   },
   loadingContainer: {
     padding: 20,
@@ -1639,7 +1681,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: "#8E8E93",
+    color: COLORS.text.secondary,
   },
   errorContainer: {
     backgroundColor: "#fff",
@@ -1658,7 +1700,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: "#666",
+    color: COLORS.text.secondary,
     textAlign: "center",
   },
   noDataText: {
@@ -1666,12 +1708,12 @@ const styles = StyleSheet.create({
     color: "#666",
   },
   medicalIdCard: {
-    backgroundColor: colors.background.primary,
+    backgroundColor: COLORS.cardBackground,
     marginHorizontal: 16,
     marginVertical: 8,
     borderRadius: 12,
     padding: 16,
-    shadowColor: colors.label.primary,
+    shadowColor: COLORS.primary,
     shadowOffset: {
       width: 0,
       height: 1,
@@ -1684,14 +1726,48 @@ const styles = StyleSheet.create({
     minHeight: 250,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background.secondary,
+    backgroundColor: COLORS.cardBackground,
   },
   placeholderTitle: {
     width: 120,
     height: 20,
-    backgroundColor: colors.systemGray[4],
+    backgroundColor: COLORS.text.tertiary,
     borderRadius: 4,
     marginLeft: 10,
+  },
+  notificationContainer: {
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  notificationGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  cardIcon: {
+    color: COLORS.primary,
+  },
+  headerIcon: {
+    color: COLORS.primary,
+  },
+  actionIcon: {
+    color: COLORS.primary,
+  },
+  chartGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 16,
   },
 });
 
@@ -1701,7 +1777,8 @@ const styles = StyleSheet.create({
 File: app/(tabs)/trending.tsx
 ================================================================================
 
-import React, { useState, useRef } from 'react';
+// app/(tabs)/trending.tsx
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -1710,421 +1787,637 @@ import {
   StyleSheet, 
   Animated,
   Dimensions,
-  Keyboard,
-  Modal
+  FlatList,
+  Image,
+  StatusBar,
+  Platform,
+  BlurView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height, width } = Dimensions.get('window');
 
-// Sample strain data
-const strains = [
-  { 
-    id: '1', 
-    name: 'Blue Dream', 
-    description: 'Hybrid strain with sweet berry aroma',
-    thcContent: '18-24%',
+// Design constants
+const COLORS = {
+  background: '#000000',
+  cardBackground: '#1A1A1A',
+  primary: '#00E676', // Neon green
+  primaryDark: '#00C853',
+  accent: '#69F0AE', // Light neon green
+  text: {
+    primary: '#FFFFFF',
+    secondary: '#FFFFFFCC', // 80% white
+    tertiary: '#FFFFFF99', // 60% white
+    quaternary: '#FFFFFF66', // 40% white
   },
-  { 
-    id: '2', 
-    name: 'OG Kush', 
-    description: 'Classic strain with earthy pine scent',
-    thcContent: '20-25%',
+  trending: {
+    up: '#69F0AE',
+    down: '#FF5252'
   },
-  { 
-    id: '3', 
-    name: 'Gorilla Glue', 
-    description: 'Powerful hybrid with diesel notes',
-    thcContent: '25-28%',
+  divider: '#333333'
+};
+
+// Sample trending data
+const trendingCategories = [
+  {
+    title: 'Popular Strains',
+    items: [
+      { 
+        id: '1', 
+        name: 'Blue Dream', 
+        description: 'Sweet berry aroma',
+        thcContent: '18-24%',
+        type: 'hybrid',
+        icon: 'cannabis',
+        
+        color: COLORS.accent,
+        percentChange: '+12%'
+      },
+      { 
+        id: '2', 
+        name: 'OG Kush', 
+        description: 'Earthy pine scent',
+        thcContent: '20-25%',
+        type: 'hybrid',
+        icon: 'cannabis',
+      
+        color: COLORS.primary,
+        percentChange: '+8%'
+      },
+      { 
+        id: '3', 
+        name: 'Gorilla Glue', 
+        description: 'Powerful diesel notes',
+        thcContent: '25-28%',
+        type: 'hybrid',
+        icon: 'cannabis',
+        
+        color: COLORS.primaryDark,
+        percentChange: '-3%'
+      },
+    ]
   },
+  {
+    title: 'Trending Accessories',
+    items: [
+      {
+        id: '101',
+        name: 'Something',
+        description: 'ionknowdoessomthing',
+        icon: 'pipe',
+       
+        color: COLORS.accent,
+        percentChange: '+15%'
+      },
+      {
+        id: '102',
+        name: 'Lmao 3',
+        description: 'Hopefullyworks',
+        icon: 'pipe-disconnected',
+      
+        color: COLORS.primary,
+        percentChange: '+10%'
+      }
+    ]
+  },
+  {
+    title: 'Community Favorites',
+    items: [
+      {
+        id: '201',
+        name: 'Strawberry Cough',
+        description: 'Sweet strawberry notes',
+        thcContent: '17-22%',
+        type: 'sativa',
+        icon: 'cannabis',
+        
+        color: COLORS.accent,
+        percentChange: '+5%'
+      },
+      {
+        id: '202',
+        name: 'Wedding Cake',
+        description: 'Sweet and vanilla',
+        thcContent: '22-25%',
+        type: 'hybrid', 
+        icon: 'cannabis',
+       
+        color: COLORS.primary,
+        percentChange: '+7%'
+      }
+    ]
+  }
 ];
 
 export default function TrendingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const searchInputRef = useRef<TextInput>(null);
   
+  // Animation values
   const searchBarWidth = useRef(new Animated.Value(width - 32)).current;
   const cancelOpacity = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const headerOpacity = useRef(new Animated.Value(1)).current;
+  const searchBarY = useRef(new Animated.Value(0)).current;
+  
+  // Scroll animation
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerHeight = useRef(new Animated.Value(insets.top + 100)).current;
   
   const handleSearchFocus = () => {
     setIsSearchFocused(true);
-    searchInputRef.current?.focus();
     
     Animated.parallel([
       Animated.timing(searchBarWidth, {
         toValue: width - 80,
-        duration: 200,
+        duration: 300,
         useNativeDriver: false,
       }),
       Animated.timing(cancelOpacity, {
         toValue: 1,
-        duration: 200,
+        duration: 300,
         useNativeDriver: true,
       }),
-      Animated.timing(contentOpacity, {
-        toValue: 1,
-        duration: 200,
+      Animated.timing(headerOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchBarY, {
+        toValue: -40,
+        duration: 300,
         useNativeDriver: true,
       })
     ]).start();
   };
 
   const handleCancel = () => {
-    Keyboard.dismiss();
+    setIsSearchFocused(false);
+    setSearchQuery('');
     
     Animated.parallel([
       Animated.timing(searchBarWidth, {
         toValue: width - 32,
-        duration: 200,
+        duration: 300,
         useNativeDriver: false,
       }),
       Animated.timing(cancelOpacity, {
         toValue: 0,
-        duration: 200,
+        duration: 300,
         useNativeDriver: true,
       }),
-      Animated.timing(contentOpacity, {
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchBarY, {
         toValue: 0,
-        duration: 200,
+        duration: 300,
         useNativeDriver: true,
       })
-    ]).start(() => {
-      setIsSearchFocused(false);
-      setSearchQuery('');
-    });
+    ]).start();
   };
 
-  const handleOptionPress = (option: string) => {
-    switch(option) {
-      case 'Popular Strains':
-        setIsModalVisible(true);
-        break;
-      case 'Top Rated':
-        // TODO: Implement top rated modal
-        break;
-      case 'New Arrivals':
-        // TODO: Implement new arrivals modal
-        break;
-      case 'My Favorites':
-        // TODO: Implement favorites modal
-        break;
-      default:
-        break;
-    }
-  };
+  // Interpolation for collapsing header
+  const headerScale = scrollY.interpolate({
+    inputRange: [0, 100],
+    outputRange: [1, 0.9],
+    extrapolate: 'clamp',
+  });
+
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, 100],
+    outputRange: [0, -50],
+    extrapolate: 'clamp',
+  });
+
+  const titleOpacity = scrollY.interpolate({
+    inputRange: [0, 60, 90],
+    outputRange: [1, 0.3, 0],
+    extrapolate: 'clamp',
+  });
 
   const renderSearchBar = () => {
     return (
-      <View style={styles.searchContainer}>
-        <Animated.View style={[styles.searchBarContainer, { width: searchBarWidth }]}>
+      <Animated.View 
+        style={[
+          styles.searchContainer,
+          {
+            transform: [{ translateY: searchBarY }],
+            backgroundColor: isSearchFocused ? COLORS.background : 'transparent',
+          }
+        ]}
+      >
+        <Animated.View 
+          style={[
+            styles.searchBarContainer, 
+            { 
+              width: searchBarWidth,
+              borderColor: isSearchFocused ? COLORS.primary : 'transparent',
+              shadowColor: isSearchFocused ? COLORS.primary : 'transparent',
+            }
+          ]}
+        >
           <MaterialCommunityIcons 
             name="magnify" 
-            size={24} 
-            color="#999"
+            size={22} 
+            color={COLORS.primary}
             style={styles.searchIcon}
           />
           <TextInput
-            ref={searchInputRef}
             style={styles.searchInput}
-            placeholder={isSearchFocused ? "Search" : "Search"}
-            placeholderTextColor="#999"
+            placeholder="Search strains, accessories..."
+            placeholderTextColor={COLORS.text.quaternary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onFocus={handleSearchFocus}
+            returnKeyType="search"
+            selectionColor={COLORS.accent}
           />
-          {isSearchFocused && (
-            <MaterialCommunityIcons 
-              name="chevron-double-right" 
-              size={24} 
-              color="#999"
-              style={styles.searchArrow}
-            />
+          {searchQuery !== '' && (
+            <TouchableOpacity 
+              onPress={() => setSearchQuery('')}
+              style={styles.clearButton}
+            >
+              <MaterialCommunityIcons 
+                name="close-circle" 
+                size={18} 
+                color={COLORS.text.quaternary}
+              />
+            </TouchableOpacity>
           )}
         </Animated.View>
         <Animated.View style={{ opacity: cancelOpacity }}>
-          <TouchableOpacity onPress={handleCancel}>
-            <Text style={styles.cancelButton}>Cancel</Text>
+          <TouchableOpacity onPress={handleCancel} style={styles.cancelButton}>
+            <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </Animated.View>
-      </View>
-    );
-  };
-
-  const renderContent = () => {
-    if (!isSearchFocused) return null;
-
-    const options = [
-      { 
-        icon: 'fire' as const, 
-        label: 'Popular Strains', 
-        description: 'Most loved strains this week' 
-      },
-      { 
-        icon: 'star' as const, 
-        label: 'Top Rated', 
-        description: 'Highest rated by users' 
-      },
-      { 
-        icon: 'sprout' as const, 
-        label: 'New Arrivals', 
-        description: 'Recently added strains' 
-      },
-      { 
-        icon: 'heart' as const, 
-        label: 'My Favorites', 
-        description: 'Your saved strains' 
-      },
-    ];
-
-    return (
-      <Animated.View style={[styles.content, { opacity: contentOpacity }]}>
-        {options.map((option, index) => (
-          <TouchableOpacity 
-            key={index} 
-            style={styles.option}
-            onPress={() => handleOptionPress(option.label)}
-          >
-            <View style={styles.iconContainer}>
-              <MaterialCommunityIcons 
-                name={option.icon} 
-                size={24} 
-                color="#fff" 
-              />
-            </View>
-            <View style={styles.optionTextContainer}>
-              <Text style={styles.optionTitle}>{option.label}</Text>
-              <Text style={styles.optionDescription}>
-                {option.description}
-              </Text>
-            </View>
-            <MaterialCommunityIcons 
-              name="chevron-right" 
-              size={24} 
-              color="#8E8E93" 
-            />
-          </TouchableOpacity>
-        ))}
       </Animated.View>
     );
   };
 
-  const renderStrainsList = () => (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={isModalVisible}
-      onRequestClose={() => setIsModalVisible(false)}
+  const TrendingIndicator = ({ isUp, percentChange }) => (
+    <View style={styles.trendingIndicatorContainer}>
+      <MaterialCommunityIcons 
+        name={isUp ? "trending-up" : "trending-down"} 
+        size={14} 
+        color={isUp ? COLORS.trending.up : COLORS.trending.down}
+        style={styles.trendingIcon}
+      />
+      <Text 
+        style={[
+          styles.percentChangeText,
+          { color: isUp ? COLORS.trending.up : COLORS.trending.down }
+        ]}
+      >
+        {percentChange}
+      </Text>
+    </View>
+  );
+
+  const renderTrendingItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.trendingItem}
+      onPress={() => router.push({
+        pathname: "/dataOverviews/strains/strainDetails",
+        params: { id: item.id }
+      })}
+      activeOpacity={0.7}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Popular Strains</Text>
-            <TouchableOpacity 
-              onPress={() => setIsModalVisible(false)}
-              style={styles.closeButton}
-            >
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-          {strains.map((strain) => (
-            <TouchableOpacity 
-              key={strain.id} 
-              style={styles.strainItem}
-              onPress={() => {
-                setIsModalVisible(false);
-                router.push({
-                  pathname: "/dataOverviews/strains/strainDetails",
-                  params: { id: strain.id }
-                });
-              }}
-            >
-              <View style={styles.iconContainer}>
-                <MaterialCommunityIcons 
-                  name="cannabis" 
-                  size={24} 
-                  color="#fff" 
-                />
-              </View>
-              <View style={styles.textContainer}>
-                <Text style={styles.strainName}>{strain.name}</Text>
-                <Text style={styles.strainDescription}>
-                  {strain.description}
-                </Text>
-                {strain.thcContent && (
-                  <Text style={styles.thcContent}>
-                    THC: {strain.thcContent}
-                  </Text>
-                )}
-              </View>
-              <MaterialCommunityIcons 
-                name="chevron-right" 
-                size={24} 
-                color="#8E8E93" 
-              />
-            </TouchableOpacity>
-          ))}
-        </View>
+      <LinearGradient
+        colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.05)', 'rgba(0,230,118,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.itemGradient}
+      />
+      <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
+        <MaterialCommunityIcons name={item.icon} size={24} color={COLORS.background} />
       </View>
-    </Modal>
+      <View style={styles.itemContent}>
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          
+        </View>
+        <Text style={styles.itemDescription}>{item.description}</Text>
+        {item.thcContent && (
+          <View style={styles.badgeContainer}>
+            <Text style={styles.thcBadge}>THC: {item.thcContent}</Text>
+            {item.type && (
+              <Text style={styles.typeBadge}>{item.type}</Text>
+            )}
+          </View>
+        )}
+      </View>
+      <MaterialCommunityIcons 
+        name="chevron-right" 
+        size={20} 
+        color={COLORS.text.quaternary}
+        style={styles.chevronIcon}
+      />
+    </TouchableOpacity>
+  );
+
+  const renderCategorySection = ({ item }) => (
+    <View style={styles.categorySection}>
+      <Text style={styles.categoryTitle}>{item.title}</Text>
+      <FlatList
+        data={item.items}
+        renderItem={renderTrendingItem}
+        keyExtractor={item => item.id}
+        horizontal={false}
+        showsHorizontalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
+        scrollEnabled={false}
+      />
+    </View>
+  );
+
+  const renderHeader = () => (
+    <Animated.View 
+      style={[
+        styles.headerContainer,
+        {
+          opacity: headerOpacity,
+          transform: [
+            { scale: headerScale },
+            { translateY: headerTranslateY }
+          ]
+        }
+      ]}
+    >
+      <LinearGradient
+        colors={['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.1)', 'rgba(0,0,0,0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.headerGradient}
+      />
+      <Animated.Text 
+        style={[
+          styles.headerTitle,
+          { opacity: titleOpacity }
+        ]}
+      >
+        Trending
+      </Animated.Text>
+      <Animated.Text 
+        style={[
+          styles.headerSubtitle,
+          { opacity: titleOpacity }
+        ]}
+      >
+        Discover what's popular right now
+      </Animated.Text>
+    </Animated.View>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Trending</Text>
-      </View>
-      {renderSearchBar()}
-      {renderContent()}
-      {renderStrainsList()}
-    </SafeAreaView>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <SafeAreaView style={styles.safeAreaContainer} edges={['top']}>
+        {renderHeader()}
+        {renderSearchBar()}
+        
+        {isSearchFocused ? (
+          <View style={styles.searchResults}>
+            <MaterialCommunityIcons 
+              name="leaf" 
+              size={40} 
+              color={COLORS.primary}
+              style={styles.leafIcon}
+            />
+            <Text style={styles.searchPrompt}>
+              {searchQuery === '' ? 
+                'Start typing to search...' : 
+                `Search results for "${searchQuery}"`}
+            </Text>
+          </View>
+        ) : (
+          <Animated.FlatList
+            data={trendingCategories}
+            renderItem={renderCategorySection}
+            keyExtractor={(item, index) => `category-${index}`}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: true }
+            )}
+            bounces={true}
+          />
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: COLORS.background,
   },
-  header: {
-    padding: 16,
-    paddingTop: 8,
-    backgroundColor: '#fff',
+  safeAreaContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-  headerText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000',
+  headerContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    overflow: 'hidden',
+  },
+  headerGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 150,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    fontWeight: '400',
+    color: COLORS.text.secondary,
+    letterSpacing: 0.2,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginTop: 8,
+    paddingVertical: 12,
+    zIndex: 10,
   },
   searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    borderRadius: 10,
-    paddingVertical: 8,
+    backgroundColor: 'rgba(40, 40, 40, 0.8)',
+    borderRadius: 12,
     paddingHorizontal: 12,
+    height: 44,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 8,
+    shadowOpacity: 0.2,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
-  searchArrow: {
-    marginLeft: 8,
+  clearButton: {
+    padding: 4,
   },
   searchInput: {
     flex: 1,
-    color: '#fff',
-    fontSize: 17,
+    color: COLORS.text.primary,
+    fontSize: 16,
     padding: 0,
+    height: '100%',
+    fontWeight: '400',
   },
   cancelButton: {
-    color: '#fff',
-    fontSize: 17,
-    marginLeft: 16,
+    paddingLeft: 16,
+    height: 44,
+    justifyContent: 'center',
   },
-  content: {
-    flex: 1,
+  cancelText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  listContainer: {
+    paddingBottom: 40,
+  },
+  categorySection: {
+    marginTop: 28,
     paddingHorizontal: 16,
-    marginTop: 20,
   },
-  option: {
+  categoryTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 16,
+    letterSpacing: 0.2,
+  },
+  trendingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  itemGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1C1C1E',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
-  optionTextContainer: {
+  itemContent: {
     flex: 1,
   },
-  optionTitle: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  optionDescription: {
-    color: '#8E8E93',
-    fontSize: 14,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#1C1C1E',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    minHeight: '50%',
-    maxHeight: '80%',
-    padding: 20,
-  },
-  modalHeader: {
+  itemHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2C2C2E',
+    marginBottom: 6,
   },
-  modalTitle: {
-    fontSize: 20,
+  itemName: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#fff',
+    color: COLORS.text.primary,
+    letterSpacing: 0.1,
   },
-  closeButton: {
-    padding: 8,
+  
+  trendingIcon: {
+    marginRight: 4,
   },
-  closeButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
+  percentChangeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
-  strainItem: {
+  itemDescription: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    marginBottom: 6,
+  },
+  badgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#2C2C2E',
-    borderRadius: 12,
-    marginBottom: 12,
   },
-  textContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  strainName: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  strainDescription: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 2,
-  },
-  thcContent: {
+  thcBadge: {
     fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+    fontWeight: '500',
+    color: COLORS.text.tertiary,
+    backgroundColor: 'rgba(0, 230, 118, 0.15)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginRight: 8,
+  },
+  typeBadge: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: COLORS.text.tertiary,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  chevronIcon: {
+    marginLeft: 8,
+  },
+  itemSeparator: {
+    height: 1,
+    backgroundColor: 'transparent',
+    marginVertical: 4,
+  },
+  searchResults: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leafIcon: {
+    marginBottom: 16,
+  },
+  searchPrompt: {
+    color: COLORS.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
+    marginHorizontal: 24,
   },
 });
 
