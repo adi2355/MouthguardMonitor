@@ -78,18 +78,31 @@ File: app/_layout.tsx
 ================================================================================
 
 import { Stack } from "expo-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BluetoothContext, BluetoothHandler } from "@/src/contexts/BluetoothContext";
+import { useColorScheme } from 'react-native';
 
 export default function RootLayout() {
+  const colorScheme = useColorScheme();
 
   const [bluetoothHandler] = useState<BluetoothHandler>(new BluetoothHandler());
 
   return (
     <BluetoothContext.Provider value={bluetoothHandler}>
       <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
+        <Stack.Screen 
+          name="(tabs)" 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="dataOverviews/strains/strainDetails" 
+          options={{ 
+            headerShown: false,
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }} 
+        />
+        <Stack.Screen name="+not-found" />
       </Stack>  
     </BluetoothContext.Provider>
   );
@@ -522,10 +535,10 @@ const styles = StyleSheet.create({
 File: app/(tabs)/mydata.tsx
 ================================================================================
 
-import { Text, ScrollView, StyleSheet, View, Dimensions, Platform, Pressable, TouchableOpacity } from "react-native";
+import { Text, ScrollView, StyleSheet, View, Dimensions, Platform, Pressable, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SQLiteDatabase, openDatabaseAsync } from "expo-sqlite";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { AverageHourCount, BongHitStats, Datapoint } from "@/src/types";
 import { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "@/src/constants";
 import { Card } from "@/components/Card";
@@ -536,6 +549,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { DailyAverageCard } from "@/components/DailyAverageCard";
 import WeeklyUsageBanner from "@/components/WeeklyUsageBanner";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const windowWidth = Dimensions.get("window").width;
 
@@ -626,34 +640,412 @@ const colors = {
   },
 };
 
-const chartConfig = {
-  backgroundColor: "#ffffff",
-  backgroundGradientFrom: "#ffffff",
-  backgroundGradientTo: "#ffffff",
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-  labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
-  style: {
-    borderRadius: 16,
-  },
-  propsForDots: {
-    r: "4",
-    strokeWidth: "2",
-    stroke: "#007AFF",
-  },
-  propsForBackgroundLines: {
-    stroke: "#e3e3e3",
-    strokeWidth: 1,
-  },
-  barPercentage: 0.7,
-  useShadowColorFromDataset: false,
-};
-
 // Raw data interface for mini chart
 interface RawChartData {
   timestamp: string;
   value: number;
 }
+
+// Add interfaces for type safety
+interface DatabaseResult<T> {
+  rows?: {
+    _array?: T[];
+  };
+}
+
+interface HitCount {
+  day: string;
+  hit_count: number;
+}
+
+// Add database initialization constants and functions
+const FIRST_LAUNCH_KEY = 'app_first_launch';
+const DB_VERSION_KEY = 'db_version';
+const CURRENT_DB_VERSION = '1.0';
+
+const initializeDatabase = async () => {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    
+    // Create tables if they don't exist
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        duration_ms INTEGER NOT NULL,
+        intensity INTEGER DEFAULT 0,
+        notes TEXT
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_timestamp 
+      ON ${BONG_HITS_DATABASE_NAME}(timestamp);
+    `);
+
+    // Store database version
+    await AsyncStorage.setItem(DB_VERSION_KEY, CURRENT_DB_VERSION);
+    
+    console.log('Database initialized successfully');
+    return true;
+  } catch (error) {
+    console.error('Error initializing database:', error);
+    return false;
+  }
+};
+
+export const initializeAppOnFirstLaunch = async () => {
+  try {
+    // Check if this is first launch
+    const hasLaunched = await AsyncStorage.getItem(FIRST_LAUNCH_KEY);
+    if (hasLaunched) {
+      return;
+    }
+
+    // Initialize database on first launch
+    const success = await initializeDatabase();
+    if (!success) {
+      throw new Error('Database initialization failed');
+    }
+
+    // Mark first launch complete
+    await AsyncStorage.setItem(FIRST_LAUNCH_KEY, 'true');
+    console.log('App initialized successfully on first launch');
+  } catch (error) {
+    console.error('Error in initializeAppOnFirstLaunch:', error);
+    throw error;
+  }
+};
+
+// Add data validation helpers
+const validateDatapoint = (point: any): Datapoint => ({
+  label: String(point?.label || ""),
+  value: Number(point?.value || 0)
+});
+
+const processWeeklyData = (weekData: Datapoint[], lastWeekAvg: number) => {
+  if (!Array.isArray(weekData) || weekData.length === 0) {
+    return { average: 0, change: 0 };
+  }
+  
+  const total = weekData.reduce((sum, day) => sum + (day?.value || 0), 0);
+  const average = Math.round(total / 7);
+  return { 
+    average, 
+    change: calculatePercentageChange(average, lastWeekAvg) 
+  };
+};
+
+// Keep the properly defined version outside the component
+const getDailyAverageDatapoints = async () => {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const avgHourCount = await db.getAllAsync(`
+      SELECT strftime('%H', timestamp) AS hourOfDay, 
+             COUNT(*) AS count
+      FROM ${BONG_HITS_DATABASE_NAME}
+      WHERE timestamp >= date('now', '-7 days')
+      GROUP BY hourOfDay
+      ORDER BY hourOfDay
+    `);
+
+    if (!avgHourCount?.length) return null;
+
+    // Fill missing hours with proper validation
+    const allHours = Array.from({ length: 24 }, (_, i) => 
+      i.toString().padStart(2, "0")
+    );
+    
+    const dataMap = new Map(
+      avgHourCount.map(row => [
+        String(row.hourOfDay || ''),
+        Number(row.count || 0)
+      ])
+    );
+
+    const processedData = allHours.map(hour => ({
+      hourOfDay: hour,
+      count: dataMap.get(hour) || 0
+    }));
+
+    return {
+      labels: ["12am", "6am", "12pm", "6pm", "12am"],
+      datasets: [{
+        data: processedData.map(item => item.count),
+        color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+        strokeWidth: 2,
+      }],
+      legend: ["Average daily hits"]
+    };
+  } catch (e) {
+    console.error("Error in getDailyAverageDatapoints:", e);
+    return null;
+  }
+};
+
+const fetchMiniChartData = async () => {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.getAllAsync(`
+      SELECT duration_ms AS value,
+             timestamp
+      FROM ${BONG_HITS_DATABASE_NAME}
+      WHERE timestamp >= date('now', '-7 days')
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `);
+
+    return results.map(row => ({
+      timestamp: String(row.timestamp || ''),
+      value: Number(row.value || 0)
+    }));
+  } catch (e) {
+    console.error("Error fetching mini chart data:", e);
+    return [];
+  }
+};
+
+const getBongHitStatsFromPastWeek = async () => {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const [avgResults, maxResults] = await Promise.all([
+      db.getAllAsync(`
+        SELECT AVG(duration_ms) AS avg_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= date('now', '-7 days')
+      `),
+      db.getAllAsync(`
+        SELECT MAX(duration_ms) AS max_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= date('now', '-7 days')
+      `)
+    ]);
+
+    if (!avgResults?.[0] || !maxResults?.[0]) return null;
+
+    return {
+      averageDuration: Number(avgResults[0].avg_duration || 0),
+      longestHit: Number(maxResults[0].max_duration || 0)
+    };
+  } catch (e) {
+    console.error("Error in getBongHitStatsFromPastWeek:", e);
+    return null;
+  }
+};
+
+// Update calculatePercentageChange to use passed parameters
+const calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {
+  if (!lastWeekAvg) return 0;
+  return Math.round(((currentAvg - lastWeekAvg) / lastWeekAvg) * 100);
+};
+
+// Add helper function for data validation
+const validateHitCount = (row: any): HitCount => ({
+  day: String(row?.day || ''),
+  hit_count: Number(row?.hit_count || 0)
+});
+
+// Add helper function for safe number parsing
+const safeParseInt = (value: any, fallback = 0): number => {
+  const parsed = parseInt(String(value || ''), 10);
+  return isNaN(parsed) ? fallback : parsed;
+};
+
+// Update WeeklyOverview component with chart config
+const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {
+  // Base chart config
+  const baseChartConfig = useMemo(() => ({
+    backgroundColor: "#ffffff",
+    backgroundGradientFrom: "#ffffff",
+    backgroundGradientTo: "#ffffff",
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+    labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
+    barPercentage: 0.7,
+    useShadowColorFromDataset: false,
+    withInnerLines: false,
+    withVerticalLabels: true,
+    withHorizontalLabels: true,
+    withVerticalLines: false,
+    withHorizontalLines: true,
+    propsForBackgroundLines: {
+      stroke: "#e3e3e3",
+      strokeWidth: 1,
+    },
+    propsForDots: {
+      r: "4",
+      strokeWidth: "2",
+      stroke: "#007AFF",
+    },
+    style: {
+      borderRadius: 16,
+    }
+  }), []);
+
+  // Memoize the chart width calculation
+  const chartWidth = useMemo(() => Math.max(windowWidth - 64, 200), [windowWidth]);
+
+  // Memoize the complete chart config
+  const memoizedChartConfig = useMemo(() => ({
+    ...baseChartConfig,
+    style: {
+      ...baseChartConfig.style,
+      width: chartWidth,
+    },
+  }), [baseChartConfig, chartWidth]);
+
+  // Memoize the data transformation
+  const chartData = useMemo(() => ({
+    labels: weeklyHitsBarGraphProps.map((d) => d.label),
+    datasets: [{ 
+      data: weeklyHitsBarGraphProps.map((d) => d.value),
+      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`
+    }]
+  }), [weeklyHitsBarGraphProps]);
+
+  if (!weeklyHitsBarGraphProps?.length) {
+    return (
+      <Card style={styles.card}>
+        <View style={styles.cardHeader}>
+          <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+          <Text style={styles.cardTitle}>Weekly Overview</Text>
+        </View>
+        <View style={styles.chartContainer}>
+          <Text style={styles.noDataText}>No data available</Text>
+        </View>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={styles.card}>
+      <View style={styles.cardHeader}>
+        <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+        <Text style={styles.cardTitle}>Weekly Overview</Text>
+      </View>
+      <Text style={styles.cardDescription}>Compare your usage across different days</Text>
+      <View style={styles.chartContainer}>
+        <BarChart
+          data={chartData}
+          width={chartWidth}
+          height={180}
+          chartConfig={memoizedChartConfig}
+          style={styles.chart}
+          showValuesOnTopOfBars
+          fromZero
+          segments={4}
+          flatColor={true}
+          withCustomBarColorFromData={true}
+        />
+      </View>
+    </Card>
+  );
+};
+
+// Add memoized MonthlyOverview component
+const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {
+  // Memoize the chart width calculation
+  const chartWidth = useMemo(() => Math.max(windowWidth - 48, 200), [windowWidth]);
+  
+  // Base chart config with additional optimizations
+  const baseChartConfig = useMemo(() => ({
+    backgroundColor: "#ffffff",
+    backgroundGradientFrom: "#ffffff",
+    backgroundGradientTo: "#ffffff",
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+    labelColor: (opacity = 0.8) => `rgba(128, 128, 128, ${opacity})`,
+    barPercentage: 0.7,
+    useShadowColorFromDataset: false,
+    withInnerLines: false,
+    withVerticalLabels: true,
+    withHorizontalLabels: true,
+    withVerticalLines: false,
+    withHorizontalLines: true,
+    propsForBackgroundLines: {
+      stroke: "#e3e3e3",
+      strokeWidth: 1,
+    },
+    propsForDots: {
+      r: "4",
+      strokeWidth: "2",
+      stroke: "#007AFF",
+    },
+    style: {
+      borderRadius: 16,
+      width: chartWidth,
+    },
+    // Add these optimizations
+    formatYLabel: (value: string) => Math.round(Number(value)).toString(),
+    formatXLabel: (label: string) => label.substring(0, 3),
+    segments: 4,
+  }), [chartWidth]);
+
+  // Memoize the chart data transformation
+  const chartData = useMemo(() => ({
+    labels: monthlyDataFake.labels.map(label => label.substring(0, 3)),
+    datasets: [{
+      data: monthlyDataFake.datasets[0].data,
+      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+      strokeWidth: 2,
+    }],
+  }), []); // Empty dependency array since monthlyDataFake is constant
+
+  if (!weeklyHitsBarGraphProps?.length) {
+    return (
+      <Card style={styles.card}>
+        <View style={styles.cardHeader}>
+          <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
+          <Text style={styles.cardTitle}>Monthly Overview</Text>
+        </View>
+        <View style={styles.chartContainer}>
+          <Text style={styles.noDataText}>No data available</Text>
+        </View>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={styles.card}>
+      <View style={styles.cardHeader}>
+        <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
+        <Text style={styles.cardTitle}>Monthly Overview</Text>
+      </View>
+      <Text style={styles.cardDescription}>Track your monthly trends</Text>
+      <View style={styles.chartContainer}>
+        <LineChart
+          data={chartData}
+          width={chartWidth}
+          height={220}
+          chartConfig={baseChartConfig}
+          bezier
+          style={styles.chart}
+          withDots={true}
+          withShadow={false}
+          segments={4}
+          fromZero
+          withVerticalLines={false}
+          withHorizontalLines={true}
+          withVerticalLabels={true}
+          withHorizontalLabels={true}
+          hidePointsAtIndex={[]}
+          renderDotContent={({ x, y, index }) => (
+            <Text
+              key={index}
+              style={{
+                position: 'absolute',
+                top: y - 20,
+                left: x - 10,
+                fontSize: 10,
+                color: colors.label.secondary,
+              }}
+            >
+              {chartData.datasets[0].data[index]}
+            </Text>
+          )}
+        />
+      </View>
+    </Card>
+  );
+};
 
 export default function MyData() {
   const router = useRouter();
@@ -665,85 +1057,29 @@ export default function MyData() {
   const [weeklyAverage, setWeeklyAverage] = useState<number>(0);
   const [percentageChange, setPercentageChange] = useState<number>(0);
   const [miniChartData, setMiniChartData] = useState<RawChartData[]>([]);
+  const [isScrolling, setIsScrolling] = useState(false);
 
   /* ------------------------------------------------------------------
-   * Data-fetching helpers using execAsync
+   * Data-fetching helpers using getAllAsync
    * ------------------------------------------------------------------ */
-
-  /**
-   * Example: fetch a daily average data overview and store in dailyStatsOverview state.
-   * Replaces old getAllAsync usage with execAsync.
-   */
-  const getDailyAverageDatapoints = async () => {
-    try {
-      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-
-      // execAsync returns an array of results, 1 for each statement
-      const results = await db.execAsync(`
-        SELECT strftime('%H', timestamp) AS hourOfDay, COUNT(*) AS count
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= '2024-12-24'
-        GROUP BY hourOfDay
-        ORDER BY hourOfDay
-      `);
-
-      const rows = results[0]?.rows?._array || [];
-      let avgHourCount: AverageHourCount[] = rows.map((r: any) => ({
-        hourOfDay: r.hourOfDay,
-        count: r.count,
-      }));
-
-      // Fill missing hours
-      if (avgHourCount.length < 24) {
-        const allHours = Array.from({ length: 24 }, (_, i) =>
-          i.toString().padStart(2, "0")
-        );
-        const dataMap = new Map(
-          avgHourCount.map(item => [item.hourOfDay, item.count])
-        );
-
-        avgHourCount = allHours.map(hour => ({
-          hourOfDay: hour,
-          count: dataMap.get(hour) || 0,
-        }));
-      }
-
-      const dailyAvgData = {
-        labels: ["12am", "6am", "12pm", "6pm", "12am"],
-        datasets: [
-          {
-            data: avgHourCount.map(item => item.count),
-            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-            strokeWidth: 2,
-          },
-        ],
-        legend: ["Average daily hits"],
-      };
-
-      setDailyStatsOverview(dailyAvgData);
-    } catch (e) {
-      console.error("Error in getDailyAverageDatapoints:", e);
-      throw e;
-    }
-  };
 
   /**
    * Fetch a small set of data to show in a "mini chart."
    */
   const fetchMiniChartData = async () => {
     try {
-      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      const results = await db.execAsync(`
+      const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      const results = await db.getAllAsync(`
         SELECT 
           duration_ms AS value,
           timestamp
         FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= '2024-12-24'
+        WHERE timestamp >= date('now', '-7 days')
         ORDER BY timestamp DESC
         LIMIT 10
       `);
 
-      const rows = results[0]?.rows?._array || [];
+      const rows = results?.length ? results : [];
       setMiniChartData(rows); // This array matches your RawChartData interface
     } catch (e) {
       console.error("Error fetching mini chart data:", e);
@@ -756,20 +1092,22 @@ export default function MyData() {
    */
   const getBongHitStatsFromPastWeek = async () => {
     try {
-      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      const avgRes = await db.execAsync(`
-        SELECT AVG(duration_ms) AS avg_duration
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= DATETIME('now', '-7 days')
-      `);
-      const maxRes = await db.execAsync(`
-        SELECT MAX(duration_ms) AS max_duration
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= DATETIME('now', '-7 days')
-      `);
+      const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      const [avgResults, maxResults] = await Promise.all([
+        db.getAllAsync(`
+          SELECT AVG(duration_ms) AS avg_duration
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= date('now', '-7 days')
+        `),
+        db.getAllAsync(`
+          SELECT MAX(duration_ms) AS max_duration
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= date('now', '-7 days')
+        `)
+      ]);
 
-      const avgRow = avgRes[0]?.rows?._array?.[0];
-      const maxRow = maxRes[0]?.rows?._array?.[0];
+      const avgRow = avgResults?.[0]?._array?.[0];
+      const maxRow = maxResults?.[0]?._array?.[0];
 
       const stats: BongHitStats = {
         longestHit: maxRow?.max_duration || 0,
@@ -785,75 +1123,7 @@ export default function MyData() {
   };
 
   /**
-   * For the last 7 days, how many hits occurred on each day of the week?
-   */
-  const queryNumberOfHitsFromPastWeek = async () => {
-    try {
-      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      const results = await db.execAsync(`
-        SELECT
-          strftime('%w', timestamp) AS day,
-          COUNT(*) AS hit_count
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= '2024-12-24'
-        GROUP BY day
-        ORDER BY day
-      `);
-
-      const rows = results[0]?.rows?._array || [];
-      console.log("Weekly query results:", rows);
-
-      const weekData: Datapoint[] = Array.from({ length: 7 }, (_, i) => ({
-        label: dayLookUpTable.get(i) || "",
-        value: 0,
-      }));
-
-      rows.forEach(row => {
-        const dayIndex = parseInt(row.day, 10);
-        if (dayIndex >= 0 && dayIndex < 7) {
-          weekData[dayIndex].value = row.hit_count;
-        }
-      });
-
-      // Update local state
-      setWeeklyHitsBarGraphProps(weekData);
-
-      // Calculate weekly average
-      const total = weekData.reduce((sum, day) => sum + day.value, 0);
-      const average = Math.round(total / 7);
-      setWeeklyAverage(average);
-
-      return weekData;
-    } catch (e) {
-      console.error("Error in queryNumberOfHitsFromPastWeek:", e);
-      throw e;
-    }
-  };
-
-  /**
    * Compare with the previous week's total hits to see how usage changed.
-   */
-  const getLastWeekAverage = async (): Promise<number> => {
-    try {
-      const db: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      const results = await db.execAsync(`
-        SELECT COUNT(*) AS hit_count
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('2024-12-17') -- Previous week start
-          AND timestamp < date('2024-12-24');  -- Start of current week
-      `);
-
-      const row = results[0]?.rows?._array?.[0];
-      const total = row?.hit_count || 0;
-      return Math.round(total / 7); // daily average
-    } catch (e) {
-      console.error("Error getting last week average:", e);
-      return 0;
-    }
-  };
-
-  /**
-   * Helper to compute percentage difference from last week.
    */
   const calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {
     if (!lastWeekAvg) return 0;
@@ -865,63 +1135,143 @@ export default function MyData() {
    */
   useEffect(() => {
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
+    let db: SQLiteDatabase | null = null;
 
     const loadData = async () => {
-      if (!mounted) return;
-
       try {
         setIsLoading(true);
         setError(null);
 
-        console.log("Starting data load...");
-        const lastWeekAvg = await getLastWeekAverage();
-        console.log("Last week average:", lastWeekAvg);
+        // Check database version before proceeding
+        const dbVersion = await AsyncStorage.getItem(DB_VERSION_KEY);
+        if (dbVersion !== CURRENT_DB_VERSION) {
+          await initializeDatabase();
+        }
 
-        // Execute all queries in parallel (with error handling)
-        const results = await Promise.allSettled([
-          getBongHitStatsFromPastWeek(),
-          queryNumberOfHitsFromPastWeek(),
-          getDailyAverageDatapoints(),
-          fetchMiniChartData(),
-        ]);
+        // Create new DB connection
+        db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+        
+        // First verify we have data
+        const checkData = await db.getAllAsync(`
+          SELECT COUNT(*) as count 
+          FROM ${BONG_HITS_DATABASE_NAME}
+        `);
+        console.log("Database record count:", checkData[0]?.count);
 
-        // Safely extract the parallel results
-        const [bongStats, weekData, dailyStats, miniData] = results.map(r =>
-          r.status === "fulfilled" ? r.value : null
-        );
+        // Get weekly data without the 7 day filter first to see all data
+        const weekData = await db.getAllAsync(`
+          SELECT strftime('%w', timestamp) AS day,
+             COUNT(*) AS hit_count
+          FROM ${BONG_HITS_DATABASE_NAME}
+          GROUP BY day
+          ORDER BY day
+        `);
+        
+        console.log("Weekly data raw:", weekData);
+        
+        if (!mounted) return;
 
-        console.log("Data load results:", {
-          bongStats,
-          weekData,
-          dailyStats,
-          miniData,
+        // Initialize array for all days of the week
+        const processedWeekData = Array.from({ length: 7 }, (_, i) => ({
+          label: dayLookUpTable.get(i) || "",
+          value: 0
+        }));
+
+        // Fill in actual data
+        weekData.forEach(row => {
+          const dayIndex = safeParseInt(row.day);
+          if (dayIndex >= 0 && dayIndex < 7) {
+            processedWeekData[dayIndex].value = Number(row.hit_count || 0);
+          }
         });
 
-        // If we actually got weekData from above, compute usage changes
-        if (mounted && weekData) {
-          const total = weekData.reduce((sum: number, day: any) => sum + day.value, 0);
-          const average = Math.round(total / 7);
-          const change = calculatePercentageChange(average, lastWeekAvg);
-          console.log("Setting values:", { average, change });
-          setWeeklyAverage(average);
-          setPercentageChange(change);
+        console.log("Processed week data:", processedWeekData);
+        
+        setWeeklyHitsBarGraphProps(processedWeekData);
+        
+        const total = processedWeekData.reduce((sum, day) => sum + day.value, 0);
+        const average = Math.round(total / 7);
+        
+        // Get last week's data for comparison
+        const lastWeekResults = await db.getAllAsync(`
+          SELECT COUNT(*) AS hit_count
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= date('now', '-14 days')
+            AND timestamp < date('now', '-7 days')
+        `);
+        
+        const lastWeekAvg = Math.round((lastWeekResults[0]?.hit_count || 0) / 7);
+        const change = calculatePercentageChange(average, lastWeekAvg);
+        
+        setWeeklyAverage(average);
+        setPercentageChange(change);
+
+        // Get daily data with proper validation
+        const dailyStats = await getDailyAverageDatapoints();
+        if (mounted && dailyStats) {
+          setDailyStatsOverview(dailyStats);
         }
+
+        // Get remaining data in parallel
+        const [bongStats, miniData] = await Promise.all([
+          getBongHitStatsFromPastWeek(),
+          fetchMiniChartData()
+        ]);
+
+        if (!mounted) return;
+
+        if (bongStats) setBongHitStats(bongStats);
+        if (miniData?.length > 0) setMiniChartData(miniData);
+
       } catch (err) {
         console.error("Error in loadData:", err);
         if (mounted) {
-          setError("Failed to load data. Please try again.");
+          setError("Failed to load data");
         }
       } finally {
         if (mounted) {
           setIsLoading(false);
+        }
+        // Close database connection with delay to ensure queries complete
+        if (db) {
+          timeoutId = setTimeout(() => {
+            if (db) {
+              db.closeAsync().catch(err => 
+                console.error("Error closing database:", err)
+              );
+              db = null;
+            }
+          }, 100);
         }
       }
     };
 
     loadData();
 
+    // Cleanup function
     return () => {
       mounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      // Ensure database is closed on unmount
+      if (db) {
+        db.closeAsync().catch(err => 
+          console.error("Error closing database on unmount:", err)
+        );
+        db = null;
+      }
+    };
+  }, []);
+
+  // Add garbage collection effect
+  useEffect(() => {
+    // Force garbage collection when component unmounts
+    return () => {
+      if (Platform.OS === 'android') {
+        if (global.gc) global.gc();
+      }
     };
   }, []);
 
@@ -972,97 +1322,28 @@ export default function MyData() {
     }
   };
 
-  const renderMonthlyOverview = () => {
-    const chartWidth = Math.max(windowWidth - 48, 200);
+  // Memoize the weekly chart component instance
+  const weeklyOverview = useMemo(() => (
+    <WeeklyOverview weeklyHitsBarGraphProps={weeklyHitsBarGraphProps} />
+  ), [weeklyHitsBarGraphProps]);
 
-    if (!weeklyHitsBarGraphProps?.length) {
-      return (
-        <Card style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
-            <Text style={styles.cardTitle}>Monthly Overview</Text>
-          </View>
-          <View style={styles.chartContainer}>
-            <Text style={styles.noDataText}>No data available</Text>
-          </View>
-        </Card>
-      );
-    }
+  // Memoize the monthly chart component instance
+  const monthlyOverview = useMemo(() => (
+    <MonthlyOverview weeklyHitsBarGraphProps={weeklyHitsBarGraphProps} />
+  ), [weeklyHitsBarGraphProps]);
 
-    return (
-      <Card style={styles.card}>
-        <View style={styles.cardHeader}>
-          <MaterialCommunityIcons name="calendar-month" size={24} color="#007AFF" />
-          <Text style={styles.cardTitle}>Monthly Overview</Text>
-        </View>
-        <Text style={styles.cardDescription}>Track your monthly trends</Text>
-        <View style={styles.chartContainer}>
-          <LineChart
-            data={monthlyDataFake}
-            width={chartWidth}
-            height={220}
-            chartConfig={{
-              ...chartConfig,
-              style: {
-                ...chartConfig.style,
-                width: chartWidth,
-              },
-            }}
-            bezier
-            style={styles.chart}
-          />
-        </View>
-      </Card>
-    );
-  };
-
-  const renderWeeklyOverview = () => {
-    const chartWidth = Math.max(windowWidth - 64, 200);
-
-    if (!weeklyHitsBarGraphProps?.length) {
-      return (
-        <Card style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
-            <Text style={styles.cardTitle}>Weekly Overview</Text>
-          </View>
-          <View style={styles.chartContainer}>
-            <Text style={styles.noDataText}>No data available</Text>
-          </View>
-        </Card>
-      );
-    }
-
-    return (
-      <Card style={styles.card}>
-        <View style={styles.cardHeader}>
-          <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
-          <Text style={styles.cardTitle}>Weekly Overview</Text>
-        </View>
-        <Text style={styles.cardDescription}>Compare your usage across different days</Text>
-        <View style={styles.chartContainer}>
-          <BarChart
-            data={{
-              labels: weeklyHitsBarGraphProps.map((d) => d.label),
-              datasets: [{ data: weeklyHitsBarGraphProps.map((d) => d.value) }],
-            }}
-            width={chartWidth}
-            height={180}
-            chartConfig={{
-              ...chartConfig,
-              style: {
-                ...chartConfig.style,
-                width: chartWidth,
-              },
-            }}
-            style={styles.chart}
-            showValuesOnTopOfBars
-            fromZero
-          />
-        </View>
-      </Card>
-    );
-  };
+  // Memoize placeholder component
+  const placeholderCard = useMemo(() => (
+    <View style={[styles.card, styles.placeholderCard]}>
+      <View style={styles.cardHeader}>
+        <MaterialCommunityIcons name="calendar-week" size={24} color="#007AFF" />
+        <View style={styles.placeholderTitle} />
+      </View>
+      <View style={styles.chartContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    </View>
+  ), []);
 
   const renderNotificationBanner = () => {
     return (
@@ -1105,7 +1386,26 @@ export default function MyData() {
 
   return (
     <SafeAreaProvider>
-      <ScrollView style={styles.container}>
+      <ScrollView 
+        style={styles.container}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        updateCellsBatchingPeriod={50}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+        scrollEventThrottle={16}
+        bounces={false}
+        overScrollMode="never"
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: 10,
+        }}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => setIsScrolling(true)}
+        onScrollEndDrag={() => setIsScrolling(false)}
+        onMomentumScrollEnd={() => setIsScrolling(false)}
+      >
         <LinearGradient
           colors={[colors.gradient.start, colors.gradient.middle, colors.gradient.end]}
           locations={[0, 0.2, 0.4]}
@@ -1114,51 +1414,49 @@ export default function MyData() {
           style={styles.gradientBackground}
         />
 
-        <View style={styles.contentContainer}>
-          {/* Header */}
-          <View style={styles.headerContainer}>
-            <Text style={styles.headerTitle}>Summary</Text>
-            <View style={styles.profilePic} />
-          </View>
-
-          {/* Notification Banner */}
-          <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
-
-          {/* Example "Medical ID" Card */}
-          <View style={styles.medicalIdCard}>
-            {/* ... or your actual MedicalIDCard component ... */}
-          </View>
-
-          {/* Data Content */}
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading data...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : (
-            <>
-              <DailyAverageCard
-                data={weeklyHitsBarGraphProps}
-                averageHits={weeklyAverage}
-                onPress={() => router.push("/dataOverviews/dailyAverageOverview")}
-              />
-              {renderWeeklyUsageBanner()}
-              {renderWeeklyOverview()}
-              {renderMonthlyOverview()}
-            </>
-          )}
-
-          {/* Time Range Selector */}
-          <Card style={[styles.card, styles.timeRangeCard]}>
-            <View style={styles.timeRangeContent}>
-              <Text style={styles.cardTitle}>Pick Time Range</Text>
-              <AntDesign name="calendar" size={24} color="black" />
-            </View>
-          </Card>
+        {/* Header */}
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerTitle}>Summary</Text>
+          <View style={styles.profilePic} />
         </View>
+
+        {/* Notification Banner */}
+        <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
+
+        {/* Example "Medical ID" Card */}
+        <View style={styles.medicalIdCard}>
+          {/* ... or your actual MedicalIDCard component ... */}
+        </View>
+
+        {/* Data Content */}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading data...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : (
+          <>
+            <DailyAverageCard
+              data={weeklyHitsBarGraphProps}
+              averageHits={weeklyAverage}
+              onPress={() => router.push("/dataOverviews/dailyAverageOverview")}
+            />
+            {renderWeeklyUsageBanner()}
+            {isScrolling ? placeholderCard : weeklyOverview}
+            {isScrolling ? placeholderCard : monthlyOverview}
+          </>
+        )}
+
+        {/* Time Range Selector */}
+        <Card style={[styles.card, styles.timeRangeCard]}>
+          <View style={styles.timeRangeContent}>
+            <Text style={styles.cardTitle}>Pick Time Range</Text>
+            <AntDesign name="calendar" size={24} color="black" />
+          </View>
+        </Card>
       </ScrollView>
     </SafeAreaProvider>
   );
@@ -1168,6 +1466,14 @@ export default function MyData() {
  * Styles
  * ------------------------------------------------------------------ */
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.primary,
+  },
+  contentContainer: {
+    paddingBottom: 32,
+    // Remove paddingHorizontal if not needed
+  },
   gradientBackground: {
     position: "absolute",
     left: 0,
@@ -1175,15 +1481,6 @@ const styles = StyleSheet.create({
     top: 0,
     height: "35%",
     zIndex: 0,
-  },
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    flex: 1,
-    position: "relative",
-    zIndex: 1,
-    paddingBottom: 32,
   },
   headerContainer: {
     flexDirection: "row",
@@ -1383,6 +1680,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  placeholderCard: {
+    minHeight: 250,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background.secondary,
+  },
+  placeholderTitle: {
+    width: 120,
+    height: 20,
+    backgroundColor: colors.systemGray[4],
+    borderRadius: 4,
+    marginLeft: 10,
+  },
 });
 
 
@@ -1391,45 +1701,627 @@ const styles = StyleSheet.create({
 File: app/(tabs)/trending.tsx
 ================================================================================
 
-import { Card } from "@/components/Card";
-import Leaderboard from "@/components/Leaderboard";
-import { SafeAreaView, StyleSheet } from "react-native";
+import React, { useState, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Animated,
+  Dimensions,
+  Keyboard,
+  Modal
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
-export default function Trending() {
+const { height, width } = Dimensions.get('window');
 
-    const sampleData = [
-        { id: '1', name: 'Blue Dream', score: 95 },
-        { id: '2', name: 'OG Kush', score: 85 },
-        { id: '3', name: 'Gorilla Glue', score: 70 },
-        { id: '4', name: 'Gelato', score: 60 },
-        { id: '5', name: 'Lemon Haze', score: 85 },
-        { id: '6', name: 'Sour Diesel', score: 70 },
-        { id: '7', name: 'Skywalker OG', score: 60 },
-        { id: '8', name: 'Jack Herrer', score: 5 },
-        { id: '9', name: 'Wedding Cake', score: 20 },
-        { id: '10', name: 'Girl Scout Cookies', score: 9 },
-      ];
+// Sample strain data
+const strains = [
+  { 
+    id: '1', 
+    name: 'Blue Dream', 
+    description: 'Hybrid strain with sweet berry aroma',
+    thcContent: '18-24%',
+  },
+  { 
+    id: '2', 
+    name: 'OG Kush', 
+    description: 'Classic strain with earthy pine scent',
+    thcContent: '20-25%',
+  },
+  { 
+    id: '3', 
+    name: 'Gorilla Glue', 
+    description: 'Powerful hybrid with diesel notes',
+    thcContent: '25-28%',
+  },
+];
+
+export default function TrendingScreen() {
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
+  
+  const searchBarWidth = useRef(new Animated.Value(width - 32)).current;
+  const cancelOpacity = useRef(new Animated.Value(0)).current;
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  
+  const handleSearchFocus = () => {
+    setIsSearchFocused(true);
+    searchInputRef.current?.focus();
     
-      return (
-        <SafeAreaView style={styles.safeAreaViewContainer}>
-            <Card style={styles.cardContainer}>
-                <Leaderboard title={"Trending Strains"}data={sampleData} />
-            </Card>
-        </SafeAreaView>
-      );
+    Animated.parallel([
+      Animated.timing(searchBarWidth, {
+        toValue: width - 80,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+      Animated.timing(cancelOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+
+  const handleCancel = () => {
+    Keyboard.dismiss();
     
-}
-const styles = StyleSheet.create({ 
-    safeAreaViewContainer: {
-        flexDirection: 'column',
-        alignItems: 'center',
-        flex: 1,
-        margin: 30,
-    },
-    cardContainer: {
-        flex: 1
+    Animated.parallel([
+      Animated.timing(searchBarWidth, {
+        toValue: width - 32,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+      Animated.timing(cancelOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      setIsSearchFocused(false);
+      setSearchQuery('');
+    });
+  };
+
+  const handleOptionPress = (option: string) => {
+    switch(option) {
+      case 'Popular Strains':
+        setIsModalVisible(true);
+        break;
+      case 'Top Rated':
+        // TODO: Implement top rated modal
+        break;
+      case 'New Arrivals':
+        // TODO: Implement new arrivals modal
+        break;
+      case 'My Favorites':
+        // TODO: Implement favorites modal
+        break;
+      default:
+        break;
     }
+  };
+
+  const renderSearchBar = () => {
+    return (
+      <View style={styles.searchContainer}>
+        <Animated.View style={[styles.searchBarContainer, { width: searchBarWidth }]}>
+          <MaterialCommunityIcons 
+            name="magnify" 
+            size={24} 
+            color="#999"
+            style={styles.searchIcon}
+          />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            placeholder={isSearchFocused ? "Search" : "Search"}
+            placeholderTextColor="#999"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={handleSearchFocus}
+          />
+          {isSearchFocused && (
+            <MaterialCommunityIcons 
+              name="chevron-double-right" 
+              size={24} 
+              color="#999"
+              style={styles.searchArrow}
+            />
+          )}
+        </Animated.View>
+        <Animated.View style={{ opacity: cancelOpacity }}>
+          <TouchableOpacity onPress={handleCancel}>
+            <Text style={styles.cancelButton}>Cancel</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    );
+  };
+
+  const renderContent = () => {
+    if (!isSearchFocused) return null;
+
+    const options = [
+      { 
+        icon: 'fire' as const, 
+        label: 'Popular Strains', 
+        description: 'Most loved strains this week' 
+      },
+      { 
+        icon: 'star' as const, 
+        label: 'Top Rated', 
+        description: 'Highest rated by users' 
+      },
+      { 
+        icon: 'sprout' as const, 
+        label: 'New Arrivals', 
+        description: 'Recently added strains' 
+      },
+      { 
+        icon: 'heart' as const, 
+        label: 'My Favorites', 
+        description: 'Your saved strains' 
+      },
+    ];
+
+    return (
+      <Animated.View style={[styles.content, { opacity: contentOpacity }]}>
+        {options.map((option, index) => (
+          <TouchableOpacity 
+            key={index} 
+            style={styles.option}
+            onPress={() => handleOptionPress(option.label)}
+          >
+            <View style={styles.iconContainer}>
+              <MaterialCommunityIcons 
+                name={option.icon} 
+                size={24} 
+                color="#fff" 
+              />
+            </View>
+            <View style={styles.optionTextContainer}>
+              <Text style={styles.optionTitle}>{option.label}</Text>
+              <Text style={styles.optionDescription}>
+                {option.description}
+              </Text>
+            </View>
+            <MaterialCommunityIcons 
+              name="chevron-right" 
+              size={24} 
+              color="#8E8E93" 
+            />
+          </TouchableOpacity>
+        ))}
+      </Animated.View>
+    );
+  };
+
+  const renderStrainsList = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={isModalVisible}
+      onRequestClose={() => setIsModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Popular Strains</Text>
+            <TouchableOpacity 
+              onPress={() => setIsModalVisible(false)}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          {strains.map((strain) => (
+            <TouchableOpacity 
+              key={strain.id} 
+              style={styles.strainItem}
+              onPress={() => {
+                setIsModalVisible(false);
+                router.push({
+                  pathname: "/dataOverviews/strains/strainDetails",
+                  params: { id: strain.id }
+                });
+              }}
+            >
+              <View style={styles.iconContainer}>
+                <MaterialCommunityIcons 
+                  name="cannabis" 
+                  size={24} 
+                  color="#fff" 
+                />
+              </View>
+              <View style={styles.textContainer}>
+                <Text style={styles.strainName}>{strain.name}</Text>
+                <Text style={styles.strainDescription}>
+                  {strain.description}
+                </Text>
+                {strain.thcContent && (
+                  <Text style={styles.thcContent}>
+                    THC: {strain.thcContent}
+                  </Text>
+                )}
+              </View>
+              <MaterialCommunityIcons 
+                name="chevron-right" 
+                size={24} 
+                color="#8E8E93" 
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerText}>Trending</Text>
+      </View>
+      {renderSearchBar()}
+      {renderContent()}
+      {renderStrainsList()}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  header: {
+    padding: 16,
+    paddingTop: 8,
+    backgroundColor: '#fff',
+  },
+  headerText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 8,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchArrow: {
+    marginLeft: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 17,
+    padding: 0,
+  },
+  cancelButton: {
+    color: '#fff',
+    fontSize: 17,
+    marginLeft: 16,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    marginTop: 20,
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1C1C1E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  optionDescription: {
+    color: '#8E8E93',
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1C1C1E',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    minHeight: '50%',
+    maxHeight: '80%',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    color: '#007AFF',
+    fontSize: 16,
+  },
+  strainItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#2C2C2E',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  textContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  strainName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  strainDescription: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginBottom: 2,
+  },
+  thcContent: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
 });
+
+================================================================================
+File: app/strains/popular.tsx
+================================================================================
+
+import React from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  FlatList,
+  TouchableOpacity,
+  Platform 
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+
+// Define strain type
+interface Strain {
+  id: string;
+  name: string;
+  description: string;
+  thcContent?: string;
+  type: 'sativa' | 'indica' | 'hybrid';
+}
+
+// Sample data
+const strains: Strain[] = [
+  { 
+    id: '1', 
+    name: 'Blue Dream', 
+    description: 'Hybrid strain with sweet berry aroma',
+    thcContent: '18-24%',
+    type: 'hybrid'
+  },
+  { 
+    id: '2', 
+    name: 'OG Kush', 
+    description: 'Classic strain with earthy pine scent',
+    thcContent: '20-25%',
+    type: 'hybrid'
+  },
+  { 
+    id: '3', 
+    name: 'Gorilla Glue', 
+    description: 'Powerful hybrid with diesel notes',
+    thcContent: '25-28%',
+    type: 'hybrid'
+  },
+  { 
+    id: '4', 
+    name: 'Gelato', 
+    description: 'Sweet and creamy hybrid strain',
+    thcContent: '17-22%',
+    type: 'hybrid'
+  },
+  { 
+    id: '5', 
+    name: 'Sour Diesel', 
+    description: 'Energetic sativa with diesel aroma',
+    thcContent: '19-25%',
+    type: 'sativa'
+  }
+];
+
+const PopularStrains = () => {
+  const router = useRouter();
+
+  const renderItem = ({ item }: { item: Strain }) => (
+    <TouchableOpacity 
+      style={styles.strainItem}
+      onPress={() => router.push(`/strains/${item.id}`)}
+    >
+      <View style={styles.iconContainer}>
+        <MaterialCommunityIcons name="cannabis" size={24} color="#fff" />
+      </View>
+      <View style={styles.textContainer}>
+        <Text style={styles.strainName}>{item.name}</Text>
+        <Text style={styles.strainDescription}>{item.description}</Text>
+        {item.thcContent && (
+          <Text style={styles.thcContent}>THC: {item.thcContent}</Text>
+        )}
+      </View>
+      <MaterialCommunityIcons 
+        name="chevron-right" 
+        size={24} 
+        color={colors.label.secondary} 
+      />
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <MaterialCommunityIcons 
+            name="chevron-left" 
+            size={28} 
+            color={colors.label.primary} 
+          />
+        </TouchableOpacity>
+        <Text style={styles.headerText}>Popular Strains</Text>
+      </View>
+      <FlatList
+        data={strains}
+        renderItem={renderItem}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+      />
+    </SafeAreaView>
+  );
+};
+
+const colors = {
+  label: {
+    primary: "#FFFFFF",
+    secondary: "#8E8E93",
+    tertiary: "#636366",
+  },
+  background: {
+    primary: "#000000",
+    secondary: "#1C1C1E",
+    tertiary: "#2C2C2E",
+  }
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.primary,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background.secondary,
+  },
+  backButton: {
+    marginRight: 8,
+    padding: 4,
+  },
+  headerText: {
+    fontSize: 24,
+    fontWeight: Platform.select({ ios: '600', android: 'bold' }),
+    color: colors.label.primary,
+  },
+  listContainer: {
+    padding: 16,
+  },
+  strainItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: colors.background.secondary,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.background.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  textContainer: {
+    flex: 1,
+  },
+  strainName: {
+    fontSize: 17,
+    fontWeight: Platform.select({ ios: '600', android: 'bold' }),
+    color: colors.label.primary,
+    marginBottom: 4,
+  },
+  strainDescription: {
+    fontSize: 14,
+    color: colors.label.secondary,
+    marginBottom: 4,
+  },
+  thcContent: {
+    fontSize: 12,
+    color: colors.label.tertiary,
+    fontWeight: '500',
+  },
+});
+
+export default PopularStrains; 
 
 ================================================================================
 File: package.json
@@ -1456,12 +2348,13 @@ File: package.json
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
     "expo": "~52.0.23",
-    "expo-blur": "~14.0.1",
+    "expo-blur": "~14.0.3",
     "expo-constants": "~17.0.3",
     "expo-dev-client": "~5.0.8",
     "expo-device": "^7.0.2",
     "expo-font": "~13.0.2",
     "expo-haptics": "~14.0.0",
+    "expo-linear-gradient": "~14.0.2",
     "expo-linking": "~7.0.3",
     "expo-router": "~4.0.15",
     "expo-splash-screen": "~0.29.18",
@@ -1470,6 +2363,7 @@ File: package.json
     "expo-symbols": "~0.2.0",
     "expo-system-ui": "~4.0.6",
     "expo-web-browser": "~14.0.1",
+    "lucide-react": "^0.475.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.5",
@@ -1483,8 +2377,7 @@ File: package.json
     "react-native-screens": "~4.4.0",
     "react-native-svg": "^15.10.1",
     "react-native-web": "~0.19.13",
-    "react-native-webview": "13.12.5",
-    "expo-linear-gradient": "~14.0.2"
+    "react-native-webview": "13.12.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
