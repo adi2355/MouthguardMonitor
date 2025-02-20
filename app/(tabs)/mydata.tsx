@@ -527,6 +527,55 @@ const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps:
   );
 };
 
+// Add MedicalCard component
+const MedicalCard = () => (
+  <View style={styles.medicalCard}>
+    <LinearGradient
+      colors={[
+        'rgba(0,230,118,0.15)',
+        'rgba(0,230,118,0.05)',
+        'transparent'
+      ]}
+      style={styles.cardGradient}
+    />
+    
+    <View style={styles.cardHeader}>
+      <MaterialCommunityIcons 
+        name="medical-bag" 
+        size={24} 
+        color={COLORS.primary}
+      />
+      <Text style={styles.cardHeaderText}>Medical Info</Text>
+    </View>
+
+    <View style={styles.medicalStats}>
+      <View style={styles.statItem}>
+        <Text style={styles.statLabel}>Strain Type</Text>
+        <Text style={styles.statValue}>Hybrid</Text>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statItem}>
+        <Text style={styles.statLabel}>THC Content</Text>
+        <Text style={styles.statValue}>18-24%</Text>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statItem}>
+        <Text style={styles.statLabel}>CBD Content</Text>
+        <Text style={styles.statValue}>0.1%</Text>
+      </View>
+    </View>
+
+    <TouchableOpacity style={styles.moreDetailsButton}>
+      <Text style={styles.moreDetailsText}>View Medical Details</Text>
+      <MaterialCommunityIcons 
+        name="chevron-right" 
+        size={20} 
+        color={COLORS.primary}
+      />
+    </TouchableOpacity>
+  </View>
+);
+
 export default function MyData() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
@@ -538,6 +587,7 @@ export default function MyData() {
   const [percentageChange, setPercentageChange] = useState<number>(0);
   const [miniChartData, setMiniChartData] = useState<RawChartData[]>([]);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [showNotification, setShowNotification] = useState(true);
 
   /* ------------------------------------------------------------------
    * Data-fetching helpers using getAllAsync
@@ -825,51 +875,89 @@ export default function MyData() {
           </View>
   ), []);
 
-  const renderNotificationBanner = () => (
-    <View style={styles.notificationContainer}>
-      <View style={styles.notificationGlow} />
-      <View style={styles.notificationBanner}>
-        <View style={styles.notificationHeader}>
-          <View style={styles.notificationTitle}>
-            <MaterialCommunityIcons 
-              name="bell-outline" 
-              size={16} 
-              color={COLORS.text.primary}
-            />
-            <Text style={styles.notificationTitleText}>Daily Summary</Text>
-          </View>
-          <View style={styles.notificationTime}>
-            <Text style={styles.timeText}>Last 24 hours</Text>
-            <TouchableOpacity style={styles.dismissButtonContainer}>
-              <Text style={[styles.dismissButton, { color: COLORS.text.tertiary }]}>
-                Dismiss
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+  // Add helper function for time formatting
+  const getCurrentTime = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+    return `${formattedHours}:${formattedMinutes} ${ampm}`;
+  };
 
+  // Add time update effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setShowNotification(show => show);
+    }, 60000); // Update every minute
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Update notification banner render function
+  const renderNotificationBanner = () => {
+    if (!showNotification) return null;
+    
+    return (
+      <View style={styles.notificationBanner}>
+        <LinearGradient
+          colors={['#00E676', 'rgba(0,230,118,0.3)', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.15, y: 0 }}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 3,
+          }}
+        />
         <View style={styles.notificationContent}>
-          <MaterialCommunityIcons
-            name="clock-outline"
-            size={32}
-            color={COLORS.text.primary}
-            style={styles.earIcon}
-          />
-          <View style={styles.notificationTextContainer}>
-            <Text style={styles.notificationMainText}>
-              {`Average of ${weeklyAverage} hits per day`}
-            </Text>
-            <Text style={styles.notificationSubText}>
-              Your daily average has increased compared to last week
-            </Text>
-            <TouchableOpacity>
-              <Text style={styles.moreDetailsLink}>More Details</Text>
-            </TouchableOpacity>
+          <View style={styles.notificationHeader}>
+            <View style={styles.notificationTitle}>
+              <MaterialCommunityIcons 
+                name="bell-outline" 
+                size={16} 
+                color={COLORS.text.primary}
+              />
+              <Text style={styles.notificationTitleText}>Daily Summary</Text>
+            </View>
+            <View style={styles.notificationTime}>
+              <Text style={styles.timeText}>{getCurrentTime()}</Text>
+              <TouchableOpacity 
+                style={styles.dismissButtonContainer}
+                onPress={() => setShowNotification(false)}
+              >
+                <Text style={[styles.dismissButton, { color: COLORS.text.tertiary }]}>
+                  Dismiss
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
+          <View style={styles.notificationContent}>
+            <MaterialCommunityIcons
+              name="clock-outline"
+              size={32}
+              color={COLORS.text.primary}
+              style={styles.earIcon}
+            />
+            <View style={styles.notificationTextContainer}>
+              <Text style={styles.notificationMainText}>
+                {`Average of ${weeklyAverage} hits per day`}
+              </Text>
+              <Text style={styles.notificationSubText}>
+                Your daily average has increased compared to last week
+              </Text>
+              <TouchableOpacity>
+                <Text style={styles.moreDetailsLink}>More Details</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
     );
+  };
 
   return (
     <SafeAreaProvider>
@@ -911,9 +999,7 @@ export default function MyData() {
           <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
 
           {/* Example "Medical ID" Card */}
-          <View style={styles.medicalIdCard}>
-            {/* ... or your actual MedicalIDCard component ... */}
-          </View>
+          <MedicalCard />
 
           {/* Data Content */}
           {isLoading ? (
@@ -959,7 +1045,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingBottom: 32,
-    // Remove paddingHorizontal if not needed
+    gap: 12,
   },
   gradientBackground: {
     position: "absolute",
@@ -976,6 +1062,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 52,
     paddingBottom: 20,
+    marginBottom: 8,
     zIndex: 2,
   },
   headerTitle: {
@@ -991,12 +1078,12 @@ const styles = StyleSheet.create({
     borderColor: "rgba(0,0,0,0.1)",
   },
   card: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.cardBackground,
     marginHorizontal: 16,
-    marginVertical: 8,
+    marginVertical: 6,
     borderRadius: 16,
     padding: 16,
-    shadowColor: '#00E676',
+    shadowColor: COLORS.primary,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1010,22 +1097,25 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
   cardTitle: {
-    ...typography.title3,
+    fontSize: 18,
+    fontWeight: '600',
     color: COLORS.text.primary,
-    marginLeft: 10,
+    marginLeft: 12,
+    letterSpacing: 0.3,
   },
   cardDescription: {
-    ...typography.body,
+    fontSize: 15,
     color: COLORS.text.secondary,
-    marginTop: 4,
-    marginBottom: 16,
+    marginTop: 6,
+    marginBottom: 18,
     lineHeight: 20,
   },
   chartContainer: {
-    marginTop: 16,
+    marginTop: 20,
+    marginBottom: 16,
     alignItems: "center",
     paddingHorizontal: 8,
     backgroundColor: COLORS.cardBackground,
@@ -1057,78 +1147,71 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   notificationBanner: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.cardBackground,
     marginHorizontal: 16,
     marginVertical: 8,
+    marginBottom: 12,
     borderRadius: 16,
     padding: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
+    position: 'relative',
+    overflow: 'hidden',
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
   },
+  notificationContent: {
+    flex: 1,
+  },
   notificationHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
   notificationTitle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   notificationTitleText: {
-    ...typography.caption1,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginLeft: 8,
   },
   notificationTime: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   timeText: {
-    ...typography.caption1,
-    color: COLORS.text.secondary,
+    fontSize: 14,
+    color: COLORS.text.tertiary,
+    marginRight: 12,
   },
   dismissButtonContainer: {
-    marginLeft: 8,
-    padding: 2,
+    padding: 4,
   },
   dismissButton: {
     fontSize: 14,
-    color: "#666",
-    fontWeight: "400",
-  },
-  notificationContent: {
-    flexDirection: "row",
-    marginBottom: 16,
-  },
-  earIcon: {
-    marginRight: 12,
-  },
-  notificationTextContainer: {
-    flex: 1,
+    fontWeight: '500',
   },
   notificationMainText: {
-    ...typography.title3,
+    fontSize: 17,
+    fontWeight: '600',
     color: COLORS.text.primary,
     marginBottom: 4,
   },
   notificationSubText: {
-    ...typography.body,
+    fontSize: 15,
     color: COLORS.text.secondary,
-    marginBottom: 4,
+    marginBottom: 8,
     lineHeight: 20,
   },
   moreDetailsLink: {
-    ...typography.body,
+    fontSize: 15,
     color: COLORS.primary,
+    fontWeight: '500',
   },
   loadingContainer: {
     padding: 20,
@@ -1170,20 +1253,71 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
   },
-  medicalIdCard: {
+  medicalCard: {
     backgroundColor: COLORS.cardBackground,
     marginHorizontal: 16,
     marginVertical: 8,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cardGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardHeaderText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginLeft: 8,
+  },
+  medicalStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 8,
+  },
+  moreDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  moreDetailsText: {
+    fontSize: 15,
+    color: COLORS.primary,
   },
   placeholderCard: {
     minHeight: 250,
@@ -1231,6 +1365,25 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: 16,
+  },
+  dailyAverageValue: {
+    fontSize: 64,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginVertical: 8,
+    textAlign: 'center',
+  },
+  dailyAverageSubtext: {
+    fontSize: 14,
+    color: COLORS.text.tertiary,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 8,
+    marginHorizontal: 16,
   },
 });
 
