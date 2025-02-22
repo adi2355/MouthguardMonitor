@@ -1,1043 +1,137 @@
-import { Text, ScrollView, StyleSheet, View, Dimensions, Platform, Pressable, TouchableOpacity, ActivityIndicator } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-import { SQLiteDatabase, openDatabaseAsync } from "expo-sqlite";
-import { useState, useEffect, useMemo } from "react";
-import { AverageHourCount, BongHitStats, Datapoint } from "@/src/types";
-import { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "@/src/constants";
-import { Card } from "@/components/Card";
-import AntDesign from "@expo/vector-icons/AntDesign";
-import { Link, useRouter } from "expo-router";
-import { LineChart, BarChart } from "react-native-chart-kit";
-import { LinearGradient } from "expo-linear-gradient";
-import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-import { DailyAverageCard } from "@/components/DailyAverageCard";
-import WeeklyUsageBanner from "@/components/WeeklyUsageBanner";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { COLORS } from '@/src/constants';
+import { useDataService } from '@/src/hooks/useDataService';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons, AntDesign } from '@expo/vector-icons';
+import { Card } from '@/components/Card';
+import LoadingView from '@/app/components/LoadingView';
+import ErrorView from '@/app/components/ErrorView';
+import NotificationBanner from '@/app/components/NotificationBanner';
+import MedicalCard from '@/app/components/MedicalCard';
+import DailyAverageCard from '@/app/components/DailyAverageCard';
+import WeeklyUsageBanner from '@/app/components/WeeklyUsageBanner';
+import WeeklyOverviewChart from '@/app/components/charts/WeeklyOverviewChart';
+import MonthlyOverviewChart from '@/app/components/charts/MonthlyOverviewChart';
+import StatsOverviewCard from '@/app/components/StatsOverviewCard';
+import TimeDistributionCard from '@/app/components/TimeDistributionCard';
 
-const windowWidth = Dimensions.get("window").width;
-
-const monthlyDataFake = {
-  labels: ["January", "February", "March", "April", "May", "June"],
-  datasets: [
-    {
-      data: [20, 45, 28, 80, 99, 43],
-      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-      strokeWidth: 3,
-    },
-  ],
-  legend: ["Hits Recorded"],
-};
-
-const weeklyDataFake = {
-  labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-  datasets: [
-    {
-      data: [9, 4, 2, 0, 15, 4, 10],
-      color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-      strokeWidth: 3,
-    },
-  ],
-  legend: ["Hits Recorded"],
-};
-
-// Helper for consistent typography
-const typography = {
-  largeTitle: {
-    fontSize: 34,
-    fontWeight: Platform.select({ ios: "700", android: "bold" }),
-    letterSpacing: Platform.select({ ios: 0.41, android: 0.25 }),
-  },
-  title1: {
-    fontSize: 28,
-    fontWeight: Platform.select({ ios: "600", android: "bold" }),
-    letterSpacing: Platform.select({ ios: 0.34, android: 0.25 }),
-  },
-  title2: {
-    fontSize: 22,
-    fontWeight: Platform.select({ ios: "600", android: "bold" }),
-    letterSpacing: Platform.select({ ios: 0.35, android: 0.25 }),
-  },
-  title3: {
-    fontSize: 17,
-    fontWeight: Platform.select({ ios: "600", android: "bold" }),
-    letterSpacing: Platform.select({ ios: -0.41, android: 0.25 }),
-  },
-  body: {
-    fontSize: 15,
-    fontWeight: "400",
-    letterSpacing: Platform.select({ ios: -0.24, android: 0.25 }),
-  },
-  caption1: {
-    fontSize: 13,
-    fontWeight: "400",
-    letterSpacing: Platform.select({ ios: -0.08, android: 0.25 }),
-  },
-};
-
-const COLORS = {
-  background: '#000000',
-  cardBackground: '#1A1A1A',
-  primary: '#00E676',       // Neon green 
-  primaryLight: '#69F0AE',  // Light neon green
-  primaryDark: '#00C853',   // Darker green
-  text: {
-    primary: '#FFFFFF',
-    secondary: '#FFFFFFCC',  // 80% white
-    tertiary: '#FFFFFF99',   // 60% white
-  },
-  chart: {
-    primary: '#00E676',
-    secondary: '#69F0AE',
-    background: '#1A1A1A',
-  },
-  gradientColors: {
-    start: 'rgba(0,230,118,0.4)',
-    middle: 'rgba(105,240,174,0.2)',
-    end: 'rgba(0,0,0,0)',
-  }
-};
-
-// Raw data interface for mini chart
-interface RawChartData {
-  timestamp: string;
-  value: number;
-}
-
-// Add interfaces for type safety
-interface DatabaseResult<T> {
-  rows?: {
-    _array?: T[];
-  };
-}
-
-interface HitCount {
-  day: string;
-  hit_count: number;
-}
-
-// Add database initialization constants and functions
-const FIRST_LAUNCH_KEY = 'app_first_launch';
-const DB_VERSION_KEY = 'db_version';
-const CURRENT_DB_VERSION = '1.0';
-
-const initializeDatabase = async () => {
-  try {
-    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-    
-    // Create tables if they don't exist
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        duration_ms INTEGER NOT NULL,
-        intensity INTEGER DEFAULT 0,
-        notes TEXT
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_timestamp 
-      ON ${BONG_HITS_DATABASE_NAME}(timestamp);
-    `);
-
-    // Store database version
-    await AsyncStorage.setItem(DB_VERSION_KEY, CURRENT_DB_VERSION);
-    
-    console.log('Database initialized successfully');
-    return true;
-  } catch (error) {
-    console.error('Error initializing database:', error);
-    return false;
-  }
-};
-
-export const initializeAppOnFirstLaunch = async () => {
-  try {
-    // Check if this is first launch
-    const hasLaunched = await AsyncStorage.getItem(FIRST_LAUNCH_KEY);
-    if (hasLaunched) {
-      return;
-    }
-
-    // Initialize database on first launch
-    const success = await initializeDatabase();
-    if (!success) {
-      throw new Error('Database initialization failed');
-    }
-
-    // Mark first launch complete
-    await AsyncStorage.setItem(FIRST_LAUNCH_KEY, 'true');
-    console.log('App initialized successfully on first launch');
-  } catch (error) {
-    console.error('Error in initializeAppOnFirstLaunch:', error);
-    throw error;
-  }
-};
-
-// Add data validation helpers
-const validateDatapoint = (point: any): Datapoint => ({
-  label: String(point?.label || ""),
-  value: Number(point?.value || 0)
-});
-
-const processWeeklyData = (weekData: Datapoint[], lastWeekAvg: number) => {
-  if (!Array.isArray(weekData) || weekData.length === 0) {
-    return { average: 0, change: 0 };
-  }
-  
-  const total = weekData.reduce((sum, day) => sum + (day?.value || 0), 0);
-  const average = Math.round(total / 7);
-  return { 
-    average, 
-    change: calculatePercentageChange(average, lastWeekAvg) 
-  };
-};
-
-// Keep the properly defined version outside the component
-const getDailyAverageDatapoints = async () => {
-  try {
-    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-    const avgHourCount = await db.getAllAsync(`
-      SELECT strftime('%H', timestamp) AS hourOfDay, 
-             COUNT(*) AS count
-        FROM ${BONG_HITS_DATABASE_NAME}
-      WHERE timestamp >= date('now', '-7 days')
-        GROUP BY hourOfDay
-        ORDER BY hourOfDay
-      `);
-
-    if (!avgHourCount?.length) return null;
-
-    // Fill missing hours with proper validation
-        const allHours = Array.from({ length: 24 }, (_, i) =>
-          i.toString().padStart(2, "0")
-        );
-    
-        const dataMap = new Map(
-      avgHourCount.map(row => [
-        String(row.hourOfDay || ''),
-        Number(row.count || 0)
-      ])
-        );
-
-    const processedData = allHours.map(hour => ({
-          hourOfDay: hour,
-      count: dataMap.get(hour) || 0
-        }));
-
-    return {
-        labels: ["12am", "6am", "12pm", "6pm", "12am"],
-      datasets: [{
-        data: processedData.map(item => item.count),
-            color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-            strokeWidth: 2,
-      }],
-      legend: ["Average daily hits"]
-      };
-    } catch (e) {
-      console.error("Error in getDailyAverageDatapoints:", e);
-    return null;
-    }
-  };
-
-  const fetchMiniChartData = async () => {
-    try {
-    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-    const results = await db.getAllAsync(`
-      SELECT duration_ms AS value,
-          timestamp
-        FROM ${BONG_HITS_DATABASE_NAME}
-      WHERE timestamp >= date('now', '-7 days')
-        ORDER BY timestamp DESC
-        LIMIT 10
-      `);
-
-    return results.map(row => ({
-      timestamp: String(row.timestamp || ''),
-      value: Number(row.value || 0)
-    }));
-    } catch (e) {
-      console.error("Error fetching mini chart data:", e);
-    return [];
-    }
-  };
-
-  const getBongHitStatsFromPastWeek = async () => {
-    try {
-    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-    const [avgResults, maxResults] = await Promise.all([
-      db.getAllAsync(`
-        SELECT AVG(duration_ms) AS avg_duration
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('now', '-7 days')
-      `),
-      db.getAllAsync(`
-        SELECT MAX(duration_ms) AS max_duration
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('now', '-7 days')
-      `)
-    ]);
-
-    if (!avgResults?.[0] || !maxResults?.[0]) return null;
-
-    return {
-      averageDuration: Number(avgResults[0].avg_duration || 0),
-      longestHit: Number(maxResults[0].max_duration || 0)
-    };
-    } catch (e) {
-      console.error("Error in getBongHitStatsFromPastWeek:", e);
-    return null;
-  }
-};
-
-// Update calculatePercentageChange to use passed parameters
-const calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {
-  if (!lastWeekAvg) return 0;
-  return Math.round(((currentAvg - lastWeekAvg) / lastWeekAvg) * 100);
-};
-
-// Add helper function for data validation
-const validateHitCount = (row: any): HitCount => ({
-  day: String(row?.day || ''),
-  hit_count: Number(row?.hit_count || 0)
-});
-
-// Add helper function for safe number parsing
-const safeParseInt = (value: any, fallback = 0): number => {
-  const parsed = parseInt(String(value || ''), 10);
-  return isNaN(parsed) ? fallback : parsed;
-};
-
-// Update WeeklyOverview component with chart config
-const WeeklyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {
-  // Base chart config
-  const baseChartConfig = useMemo(() => ({
-    backgroundColor: COLORS.chart.background,
-    backgroundGradientFrom: COLORS.chart.background,
-    backgroundGradientTo: COLORS.chart.background,
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,  // Neon green
-    labelColor: (opacity = 0.8) => `rgba(255, 255, 255, ${opacity})`, // White labels
-    barPercentage: 0.7,
-    useShadowColorFromDataset: false,
-    withInnerLines: false,
-    withVerticalLabels: true,
-    withHorizontalLabels: true,
-    withVerticalLines: false,
-    withHorizontalLines: true,
-    propsForBackgroundLines: {
-      stroke: COLORS.text.tertiary,
-      strokeWidth: 1,
-    },
-    propsForDots: {
-      r: "4",
-      strokeWidth: "2",
-      stroke: COLORS.primaryLight,
-    },
-    style: {
-      borderRadius: 16,
-    },
-    // Add optimizations
-    formatYLabel: (value: string) => Math.round(Number(value)).toString(),
-    formatXLabel: (label: string) => label.substring(0, 3),
-    segments: 4,
-  }), []);
-
-  // Memoize the chart width calculation
-  const chartWidth = useMemo(() => Math.max(windowWidth - 64, 200), [windowWidth]);
-
-  // Memoize the complete chart config
-  const memoizedChartConfig = useMemo(() => ({
-    ...baseChartConfig,
-    style: {
-      ...baseChartConfig.style,
-      width: chartWidth,
-    },
-  }), [baseChartConfig, chartWidth]);
-
-  // Memoize the data transformation
-  const chartData = useMemo(() => ({
-    labels: weeklyHitsBarGraphProps.map((d) => d.label),
-    datasets: [{ 
-      data: weeklyHitsBarGraphProps.map((d) => d.value),
-      color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
-      strokeWidth: 2,
-    }]
-  }), [weeklyHitsBarGraphProps]);
-
-  if (!weeklyHitsBarGraphProps?.length) {
-    return (
-      <Card style={styles.card}>
-        <View style={styles.cardHeader}>
-          <MaterialCommunityIcons name="calendar-week" size={24} color={COLORS.primary} />
-          <Text style={styles.cardTitle}>Weekly Overview</Text>
-        </View>
-        <View style={styles.chartContainer}>
-          <Text style={styles.noDataText}>No data available</Text>
-        </View>
-      </Card>
-    );
-  }
-
-  return (
-    <Card style={styles.card}>
-      <View style={styles.cardHeader}>
-        <MaterialCommunityIcons name="calendar-week" size={24} color={COLORS.primary} />
-        <Text style={styles.cardTitle}>Weekly Overview</Text>
-      </View>
-      <Text style={styles.cardDescription}>Compare your usage across different days</Text>
-      <View style={styles.chartContainer}>
-        <LinearGradient
-          colors={[
-            COLORS.gradientColors.start,
-            COLORS.gradientColors.middle,
-            COLORS.gradientColors.end
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.chartGradient}
-        />
-        <BarChart
-          data={chartData}
-          width={chartWidth}
-          height={180}
-          chartConfig={memoizedChartConfig}
-          style={styles.chart}
-          showValuesOnTopOfBars
-          fromZero
-          segments={4}
-          flatColor={true}
-          withCustomBarColorFromData={true}
-        />
-      </View>
-    </Card>
-  );
-};
-
-// Add memoized MonthlyOverview component
-const MonthlyOverview = ({ weeklyHitsBarGraphProps }: { weeklyHitsBarGraphProps: Datapoint[] }) => {
-  // Memoize the chart width calculation
-  const chartWidth = useMemo(() => Math.max(windowWidth - 48, 200), [windowWidth]);
-  
-  // Base chart config with additional optimizations
-  const baseChartConfig = useMemo(() => ({
-    backgroundGradientFrom: COLORS.chart.background,
-    backgroundGradientTo: COLORS.chart.background,
-    color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
-    labelColor: () => COLORS.text.tertiary,
-    barPercentage: 0.7,
-    useShadowColorFromDataset: false,
-    withInnerLines: false,
-    withVerticalLabels: true,
-    withHorizontalLabels: true,
-    withVerticalLines: false,
-    withHorizontalLines: true,
-    propsForBackgroundLines: {
-      stroke: "#e3e3e3",
-      strokeWidth: 1,
-    },
-    propsForDots: {
-      r: "4",
-      strokeWidth: "2",
-      stroke: COLORS.primaryLight
-    },
-    style: {
-      borderRadius: 16,
-      width: chartWidth,
-    },
-    // Add these optimizations
-    formatYLabel: (value: string) => Math.round(Number(value)).toString(),
-    formatXLabel: (label: string) => label.substring(0, 3),
-    segments: 4,
-  }), [chartWidth]);
-
-  // Memoize the chart data transformation
-  const chartData = useMemo(() => ({
-    labels: monthlyDataFake.labels.map(label => label.substring(0, 3)),
-    datasets: [{
-      data: monthlyDataFake.datasets[0].data,
-      color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
-      strokeWidth: 2,
-    }],
-  }), []); // Empty dependency array since monthlyDataFake is constant
-
-  if (!weeklyHitsBarGraphProps?.length) {
-    return (
-      <Card style={styles.card}>
-        <View style={styles.cardHeader}>
-          <MaterialCommunityIcons name="calendar-month" size={24} color={COLORS.primary} />
-          <Text style={styles.cardTitle}>Monthly Overview</Text>
-        </View>
-        <View style={styles.chartContainer}>
-          <Text style={styles.noDataText}>No data available</Text>
-        </View>
-      </Card>
-    );
-  }
-
-  return (
-    <Card style={styles.card}>
-      <View style={styles.cardHeader}>
-        <MaterialCommunityIcons name="calendar-month" size={24} color={COLORS.primary} />
-        <Text style={styles.cardTitle}>Monthly Overview</Text>
-      </View>
-      <Text style={styles.cardDescription}>Track your monthly trends</Text>
-      <View style={styles.chartContainer}>
-        <LinearGradient
-          colors={[
-            COLORS.gradientColors.start,
-            COLORS.gradientColors.middle,
-            COLORS.gradientColors.end
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.chartGradient}
-        />
-        <LineChart
-          data={chartData}
-          width={chartWidth}
-          height={220}
-          chartConfig={baseChartConfig}
-          bezier
-          style={styles.chart}
-          withDots={true}
-          withShadow={false}
-          segments={4}
-          fromZero
-          withVerticalLines={false}
-          withHorizontalLines={true}
-          withVerticalLabels={true}
-          withHorizontalLabels={true}
-          hidePointsAtIndex={[]}
-          renderDotContent={({ x, y, index }) => (
-            <Text
-              key={index}
-              style={{
-                position: 'absolute',
-                top: y - 20,
-                left: x - 10,
-                fontSize: 10,
-                color: COLORS.text.secondary,
-              }}
-            >
-              {chartData.datasets[0].data[index]}
-            </Text>
-          )}
-        />
-      </View>
-    </Card>
-  );
-};
-
-// Add MedicalCard component
-const MedicalCard = () => (
-  <View style={styles.medicalCard}>
-    <LinearGradient
-      colors={[
-        'rgba(0,230,118,0.15)',
-        'rgba(0,230,118,0.05)',
-        'transparent'
-      ]}
-      style={styles.cardGradient}
-    />
-    
-    <View style={styles.cardHeader}>
-      <MaterialCommunityIcons 
-        name="medical-bag" 
-        size={24} 
-        color={COLORS.primary}
-      />
-      <Text style={styles.cardHeaderText}>Medical Info</Text>
-    </View>
-
-    <View style={styles.medicalStats}>
-      <View style={styles.statItem}>
-        <Text style={styles.statLabel}>Strain Type</Text>
-        <Text style={styles.statValue}>Hybrid</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statLabel}>THC Content</Text>
-        <Text style={styles.statValue}>18-24%</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statLabel}>CBD Content</Text>
-        <Text style={styles.statValue}>0.1%</Text>
-      </View>
-    </View>
-
-    <TouchableOpacity style={styles.moreDetailsButton}>
-      <Text style={styles.moreDetailsText}>View Medical Details</Text>
-      <MaterialCommunityIcons 
-        name="chevron-right" 
-        size={20} 
-        color={COLORS.primary}
-      />
-    </TouchableOpacity>
-  </View>
-);
+const ROUTES = {
+  DAILY_AVERAGE: "/dataOverviews/dailyAverageOverview",
+  WEEKLY_AVERAGE: "/dataOverviews/weeklyAverage",
+  WEEKLY_OVERVIEW: "/dataOverviews/weeklyOverview",
+  MONTHLY_OVERVIEW: "/dataOverviews/monthlyOverview",
+} as const;
 
 export default function MyData() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [weeklyHitsBarGraphProps, setWeeklyHitsBarGraphProps] = useState<Datapoint[]>([]);
-  const [dailyStatsOverview, setDailyStatsOverview] = useState<Object>();
-  const [bongHitStats, setBongHitStats] = useState<BongHitStats>();
-  const [weeklyAverage, setWeeklyAverage] = useState<number>(0);
-  const [percentageChange, setPercentageChange] = useState<number>(0);
-  const [miniChartData, setMiniChartData] = useState<RawChartData[]>([]);
-  const [isScrolling, setIsScrolling] = useState(false);
   const [showNotification, setShowNotification] = useState(true);
+  const { 
+    weeklyData, 
+    monthlyData, 
+    usageStats, 
+    timeDistribution,
+    isLoading, 
+    error 
+  } = useDataService();
 
-  /* ------------------------------------------------------------------
-   * Data-fetching helpers using getAllAsync
-   * ------------------------------------------------------------------ */
-
-  /**
-   * Fetch a small set of data to show in a "mini chart."
-   */
-  const fetchMiniChartData = async () => {
-    try {
-      const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      const results = await db.getAllAsync(`
-        SELECT 
-          duration_ms AS value,
-          timestamp
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('now', '-7 days')
-        ORDER BY timestamp DESC
-        LIMIT 10
-      `);
-
-      const rows = results?.length ? results : [];
-      setMiniChartData(rows); // This array matches your RawChartData interface
-    } catch (e) {
-      console.error("Error fetching mini chart data:", e);
-      throw e;
-    }
+  const handleNavigation = (route: keyof typeof ROUTES) => {
+    router.push(ROUTES[route] as any); // Type assertion to fix router.push type error
   };
 
-  /**
-   * Retrieve average & max durations for the last 7 days.
-   */
-  const getBongHitStatsFromPastWeek = async () => {
-    try {
-      const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      const [avgResults, maxResults] = await Promise.all([
-        db.getAllAsync(`
-          SELECT AVG(duration_ms) AS avg_duration
-        FROM ${BONG_HITS_DATABASE_NAME}
-          WHERE timestamp >= date('now', '-7 days')
-        `),
-        db.getAllAsync(`
-          SELECT MAX(duration_ms) AS max_duration
-          FROM ${BONG_HITS_DATABASE_NAME}
-          WHERE timestamp >= date('now', '-7 days')
-        `)
-      ]);
+  if (isLoading) return <LoadingView />;
+  if (error) return <ErrorView error={error} />;
 
-      const avgRow = avgResults?.[0]?._array?.[0];
-      const maxRow = maxResults?.[0]?._array?.[0];
-
-      const stats: BongHitStats = {
-        longestHit: maxRow?.max_duration || 0,
-        averageDuration: avgRow?.avg_duration || 0,
-      };
-
-      setBongHitStats(stats);
-      return stats;
-    } catch (e) {
-      console.error("Error in getBongHitStatsFromPastWeek:", e);
-      throw e;
-    }
-  };
-
-  /**
-   * Compare with the previous week's total hits to see how usage changed.
-   */
-  const calculatePercentageChange = (currentAvg: number, lastWeekAvg: number): number => {
-    if (!lastWeekAvg) return 0;
-    return Math.round(((currentAvg - lastWeekAvg) / lastWeekAvg) * 100);
-  };
-
-  /**
-   * Orchestrate data loading on component mount.
-   */
-  useEffect(() => {
-    let mounted = true;
-    let timeoutId: NodeJS.Timeout;
-    let db: SQLiteDatabase | null = null;
-
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-
-        // Check database version before proceeding
-        const dbVersion = await AsyncStorage.getItem(DB_VERSION_KEY);
-        if (dbVersion !== CURRENT_DB_VERSION) {
-          await initializeDatabase();
-        }
-
-        // Create new DB connection
-        db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-        
-        // First verify we have data
-        const checkData = await db.getAllAsync(`
-          SELECT COUNT(*) as count 
-          FROM ${BONG_HITS_DATABASE_NAME}
-        `);
-        console.log("Database record count:", checkData[0]?.count);
-
-        // Get weekly data without the 7 day filter first to see all data
-        const weekData = await db.getAllAsync(`
-          SELECT strftime('%w', timestamp) AS day,
-             COUNT(*) AS hit_count
-          FROM ${BONG_HITS_DATABASE_NAME}
-          GROUP BY day
-          ORDER BY day
-        `);
-        
-        console.log("Weekly data raw:", weekData);
-        
-        if (!mounted) return;
-
-        // Initialize array for all days of the week
-        const processedWeekData = Array.from({ length: 7 }, (_, i) => ({
-          label: dayLookUpTable.get(i) || "",
-          value: 0
-        }));
-
-        // Fill in actual data
-        weekData.forEach(row => {
-          const dayIndex = safeParseInt(row.day);
-          if (dayIndex >= 0 && dayIndex < 7) {
-            processedWeekData[dayIndex].value = Number(row.hit_count || 0);
-          }
-        });
-
-        console.log("Processed week data:", processedWeekData);
-        
-        setWeeklyHitsBarGraphProps(processedWeekData);
-        
-        const total = processedWeekData.reduce((sum, day) => sum + day.value, 0);
-          const average = Math.round(total / 7);
-        
-        // Get last week's data for comparison
-        const lastWeekResults = await db.getAllAsync(`
-          SELECT COUNT(*) AS hit_count
-          FROM ${BONG_HITS_DATABASE_NAME}
-          WHERE timestamp >= date('now', '-14 days')
-            AND timestamp < date('now', '-7 days')
-        `);
-        
-        const lastWeekAvg = Math.round((lastWeekResults[0]?.hit_count || 0) / 7);
-          const change = calculatePercentageChange(average, lastWeekAvg);
-        
-          setWeeklyAverage(average);
-          setPercentageChange(change);
-
-        // Get daily data with proper validation
-        const dailyStats = await getDailyAverageDatapoints();
-        if (mounted && dailyStats) {
-          setDailyStatsOverview(dailyStats);
-        }
-
-        // Get remaining data in parallel
-        const [bongStats, miniData] = await Promise.all([
-          getBongHitStatsFromPastWeek(),
-          fetchMiniChartData()
-        ]);
-
-        if (!mounted) return;
-
-        if (bongStats) setBongHitStats(bongStats);
-        if (miniData?.length > 0) setMiniChartData(miniData);
-
-      } catch (err) {
-        console.error("Error in loadData:", err);
-        if (mounted) {
-          setError("Failed to load data");
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-        // Close database connection with delay to ensure queries complete
-        if (db) {
-          timeoutId = setTimeout(() => {
-            if (db) {
-              db.closeAsync().catch(err => 
-                console.error("Error closing database:", err)
-              );
-              db = null;
-            }
-          }, 100);
-        }
-      }
-    };
-
-    loadData();
-
-    // Cleanup function
-    return () => {
-      mounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      // Ensure database is closed on unmount
-      if (db) {
-        db.closeAsync().catch(err => 
-          console.error("Error closing database on unmount:", err)
-        );
-        db = null;
-      }
-    };
-  }, []);
-
-  // Add garbage collection effect
-  useEffect(() => {
-    // Force garbage collection when component unmounts
-    return () => {
-      if (Platform.OS === 'android') {
-        if (global.gc) global.gc();
-      }
-    };
-  }, []);
-
-  /* ------------------------------------------------------------------
-   * Render helper functions
-   * ------------------------------------------------------------------ */
-
-  const renderWeeklyUsageBanner = () => {
-    if (isLoading) {
-      return (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading data...</Text>
-        </View>
-      );
-    }
-
-    if (!weeklyHitsBarGraphProps?.length) {
-      console.log("No weekly data available:", weeklyHitsBarGraphProps);
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>No data available</Text>
-        </View>
-      );
-    }
-
-    const bannerProps = {
-      weeklyData: weeklyHitsBarGraphProps,
-      average: weeklyAverage || 0,
-      percentageChange: percentageChange || 0,
-    };
-
-    console.log("Rendering WeeklyUsageBanner with props:", bannerProps);
-
-    try {
-      return (
-        <WeeklyUsageBanner
-          {...bannerProps}
-          onPress={() => router.push("/dataOverviews/weeklyAverage")}
-        />
-      );
-    } catch (error) {
-      console.error("Error rendering WeeklyUsageBanner:", error);
-      return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Error displaying weekly data</Text>
-        </View>
-      );
-    }
-  };
-
-  // Memoize the weekly chart component instance
-  const weeklyOverview = useMemo(() => (
-    <WeeklyOverview weeklyHitsBarGraphProps={weeklyHitsBarGraphProps} />
-  ), [weeklyHitsBarGraphProps]);
-
-  // Memoize the monthly chart component instance
-  const monthlyOverview = useMemo(() => (
-    <MonthlyOverview weeklyHitsBarGraphProps={weeklyHitsBarGraphProps} />
-  ), [weeklyHitsBarGraphProps]);
-
-  // Memoize placeholder component
-  const placeholderCard = useMemo(() => (
-    <View style={[styles.card, styles.placeholderCard]}>
-        <View style={styles.cardHeader}>
-        <MaterialCommunityIcons name="calendar-week" size={24} color={COLORS.primary} />
-        <View style={styles.placeholderTitle} />
-        </View>
-        <View style={styles.chartContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-          </View>
-  ), []);
-
-  // Add helper function for time formatting
-  const getCurrentTime = () => {
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const formattedHours = hours % 12 || 12;
-    const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-    return `${formattedHours}:${formattedMinutes} ${ampm}`;
-  };
-
-  // Add time update effect
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setShowNotification(show => show);
-    }, 60000); // Update every minute
-
-    return () => clearInterval(timer);
-  }, []);
-
-  // Update notification banner render function
-  const renderNotificationBanner = () => {
-    if (!showNotification) return null;
-    
-    return (
-      <View style={styles.notificationBanner}>
-        <LinearGradient
-          colors={['#00E676', 'rgba(0,230,118,0.3)', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.15, y: 0 }}
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 3,
-          }}
-        />
-        <View style={styles.notificationContent}>
-          <View style={styles.notificationHeader}>
-            <View style={styles.notificationTitle}>
-              <MaterialCommunityIcons 
-                name="bell-outline" 
-                size={16} 
-                color={COLORS.text.primary}
-              />
-              <Text style={styles.notificationTitleText}>Daily Summary</Text>
-            </View>
-            <View style={styles.notificationTime}>
-              <Text style={styles.timeText}>{getCurrentTime()}</Text>
-              <TouchableOpacity 
-                style={styles.dismissButtonContainer}
-                onPress={() => setShowNotification(false)}
-              >
-                <Text style={[styles.dismissButton, { color: COLORS.text.tertiary }]}>
-                  Dismiss
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.notificationContent}>
-            <MaterialCommunityIcons
-              name="clock-outline"
-              size={32}
-              color={COLORS.text.primary}
-              style={styles.earIcon}
-            />
-            <View style={styles.notificationTextContainer}>
-              <Text style={styles.notificationMainText}>
-                {`Average of ${weeklyAverage} hits per day`}
-              </Text>
-              <Text style={styles.notificationSubText}>
-                Your daily average has increased compared to last week
-              </Text>
-              <TouchableOpacity>
-                <Text style={styles.moreDetailsLink}>More Details</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  };
+  // Calculate percentage change between weekday and weekend averages
+  const weekdayAvg = usageStats.weekdayStats?.weekday.avg || 0;
+  const weekendAvg = usageStats.weekdayStats?.weekend.avg || 0;
+  const percentageChange = weekdayAvg > 0 ? ((weekendAvg - weekdayAvg) / weekdayAvg) * 100 : 0;
 
   return (
     <SafeAreaProvider>
       <ScrollView 
         style={styles.container}
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        updateCellsBatchingPeriod={50}
-        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
-        scrollEventThrottle={16}
-        bounces={false}
-        overScrollMode="never"
-        maintainVisibleContentPosition={{
-          minIndexForVisible: 0,
-          autoscrollToTopThreshold: 10,
-        }}
-        keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={() => setIsScrolling(true)}
-        onScrollEndDrag={() => setIsScrolling(false)}
-        onMomentumScrollEnd={() => setIsScrolling(false)}
+        showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={['rgba(0,230,118,0.4)', 'rgba(105,240,174,0.2)', 'rgba(0,0,0,0)']}
-          locations={[0, 0.3, 0.7]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.gradientBackground}
-        />
-
-          {/* Header */}
+        {/* Main Header with Gradient */}
+        <View style={styles.headerSection}>
+          <LinearGradient
+            colors={['rgba(0,230,118,0.2)', 'rgba(105,240,174,0.1)', 'rgba(0,0,0,0)']}
+            style={styles.headerGradient}
+          />
           <View style={styles.headerContainer}>
             <Text style={styles.headerTitle}>Summary</Text>
             <View style={styles.profilePic} />
           </View>
+        </View>
 
-          {/* Notification Banner */}
-          <View style={styles.notificationBanner}>{renderNotificationBanner()}</View>
-
-          {/* Example "Medical ID" Card */}
-          <MedicalCard />
-
-          {/* Data Content */}
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading data...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : (
-            <>
-              <DailyAverageCard
-                data={weeklyHitsBarGraphProps}
-                averageHits={weeklyAverage}
-                onPress={() => router.push("/dataOverviews/dailyAverageOverview")}
+        {/* Main Content */}
+        <View style={styles.mainContent}>
+          {/* Top Section - Notification & Medical */}
+          <View style={styles.section}>
+            {showNotification && (
+              <NotificationBanner
+                averageHits={usageStats.averageHitsPerDay}
+                percentageChange={percentageChange}
+                onDismiss={() => setShowNotification(false)}
               />
-              {renderWeeklyUsageBanner()}
-            {isScrolling ? placeholderCard : weeklyOverview}
-            {isScrolling ? placeholderCard : monthlyOverview}
-            </>
-          )}
+            )}
+            <MedicalCard />
+          </View>
 
-          {/* Time Range Selector */}
-          <Card style={[styles.card, styles.timeRangeCard]}>
-            <View style={styles.timeRangeContent}>
-              <Text style={styles.cardTitle}>Pick Time Range</Text>
-              <AntDesign name="calendar" size={24} color="black" />
-            </View>
-          </Card>
+          {/* Usage Overview Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Usage Overview</Text>
+            <DailyAverageCard
+              data={weeklyData}
+              averageHits={usageStats.averageHitsPerDay}
+              onPress={() => handleNavigation("DAILY_AVERAGE")}
+            />
+            <WeeklyUsageBanner
+              weeklyData={weeklyData}
+              average={usageStats.averageHitsPerDay}
+              onPress={() => handleNavigation("WEEKLY_AVERAGE")}
+            />
+          </View>
+
+          {/* Charts Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Usage Analytics</Text>
+            <WeeklyOverviewChart 
+              data={weeklyData}
+              onPress={() => handleNavigation("WEEKLY_OVERVIEW")}
+            />
+            <MonthlyOverviewChart 
+              data={monthlyData}
+              onPress={() => handleNavigation("MONTHLY_OVERVIEW")}
+            />
+          </View>
+
+          {/* Detailed Stats Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Detailed Statistics</Text>
+            <StatsOverviewCard stats={usageStats} />
+            <TimeDistributionCard timeData={timeDistribution} />
+          </View>
+
+          {/* Time Range Section */}
+          <View style={[styles.section, styles.lastSection]}>
+            <Card style={styles.timeRangeCard}>
+              <View style={styles.timeRangeContent}>
+                <Text style={styles.cardTitle}>Pick Time Range</Text>
+                <AntDesign name="calendar" size={24} color={COLORS.primary} />
+              </View>
+            </Card>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaProvider>
   );
 }
 
-/* ------------------------------------------------------------------
- * Styles
- * ------------------------------------------------------------------ */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1045,100 +139,64 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingBottom: 32,
-    gap: 12,
   },
-  gradientBackground: {
-    position: "absolute",
+  headerSection: {
+    paddingTop: 8,
+    marginBottom: 20,
+  },
+  headerGradient: {
+    position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
-    height: "35%",
-    zIndex: 0,
+    height: 150,
   },
   headerContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 52,
-    paddingBottom: 20,
-    marginBottom: 8,
-    zIndex: 2,
+    paddingVertical: 12,
   },
   headerTitle: {
-    ...typography.largeTitle,
-    color: "#000000",
+    fontSize: 34,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    letterSpacing: 0.41,
   },
   profilePic: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#ddd",
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.1)",
-  },
-  card: {
     backgroundColor: COLORS.cardBackground,
-    marginHorizontal: 16,
-    marginVertical: 6,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
+  mainContent: {
+    paddingHorizontal: 16,
   },
-  cardTitle: {
-    fontSize: 18,
+  section: {
+    marginBottom: 24,
+  },
+  lastSection: {
+    marginBottom: 0,
+  },
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: '600',
     color: COLORS.text.primary,
-    marginLeft: 12,
-    letterSpacing: 0.3,
-  },
-  cardDescription: {
-    fontSize: 15,
-    color: COLORS.text.secondary,
-    marginTop: 6,
-    marginBottom: 18,
-    lineHeight: 20,
-  },
-  chartContainer: {
-    marginTop: 20,
-    marginBottom: 16,
-    alignItems: "center",
-    paddingHorizontal: 8,
-    backgroundColor: COLORS.cardBackground,
-    borderRadius: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  chart: {
-    marginVertical: 8,
-    borderRadius: 16,
-    backgroundColor: COLORS.cardBackground,
-    // Add glow effect
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
+    marginBottom: 12,
+    letterSpacing: 0.38,
   },
   timeRangeCard: {
     marginBottom: 16,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
   },
   timeRangeContent: {
     flexDirection: "row",
@@ -1146,244 +204,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
   },
-  notificationBanner: {
-    backgroundColor: COLORS.cardBackground,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    marginBottom: 12,
-    borderRadius: 16,
-    padding: 16,
-    position: 'relative',
-    overflow: 'hidden',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  notificationContent: {
-    flex: 1,
-  },
-  notificationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  notificationTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  notificationTitleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: 8,
-  },
-  notificationTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    marginRight: 12,
-  },
-  dismissButtonContainer: {
-    padding: 4,
-  },
-  dismissButton: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  notificationMainText: {
+  cardTitle: {
     fontSize: 17,
     fontWeight: '600',
     color: COLORS.text.primary,
-    marginBottom: 4,
-  },
-  notificationSubText: {
-    fontSize: 15,
-    color: COLORS.text.secondary,
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  moreDetailsLink: {
-    fontSize: 15,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  loadingContainer: {
-    padding: 20,
-    alignItems: "center",
-    backgroundColor: "white",
-    borderRadius: 12,
-    margin: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-  },
-  errorContainer: {
-    backgroundColor: "#fff",
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  errorText: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    textAlign: "center",
-  },
-  noDataText: {
-    fontSize: 16,
-    color: "#666",
-  },
-  medicalCard: {
-    backgroundColor: COLORS.cardBackground,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 16,
-    padding: 16,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  cardGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardHeaderText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: 8,
-  },
-  medicalStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 8,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statLabel: {
-    fontSize: 13,
-    color: COLORS.text.secondary,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 8,
-  },
-  moreDetailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  moreDetailsText: {
-    fontSize: 15,
-    color: COLORS.primary,
-  },
-  placeholderCard: {
-    minHeight: 250,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.cardBackground,
-  },
-  placeholderTitle: {
-    width: 120,
-    height: 20,
-    backgroundColor: COLORS.text.tertiary,
-    borderRadius: 4,
-    marginLeft: 10,
-  },
-  notificationContainer: {
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  notificationGlow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'transparent',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  cardIcon: {
-    color: COLORS.primary,
-  },
-  headerIcon: {
-    color: COLORS.primary,
-  },
-  actionIcon: {
-    color: COLORS.primary,
-  },
-  chartGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 16,
-  },
-  dailyAverageValue: {
-    fontSize: 64,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    marginVertical: 8,
-    textAlign: 'center',
-  },
-  dailyAverageSubtext: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  sectionDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginVertical: 8,
-    marginHorizontal: 16,
+    letterSpacing: -0.41,
   },
 });
-

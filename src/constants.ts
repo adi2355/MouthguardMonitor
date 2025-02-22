@@ -10,6 +10,28 @@ dayLookUpTable.set(4, "Thu");
 dayLookUpTable.set(5, "Fri");
 dayLookUpTable.set(6, "Sat");
 
+export const COLORS = {
+  background: '#000000',
+  cardBackground: '#1A1A1A',
+  primary: '#00E676',       // Neon green 
+  primaryLight: '#69F0AE',  // Light neon green
+  primaryDark: '#00C853',   // Darker green
+  text: {
+    primary: '#FFFFFF',
+    secondary: '#FFFFFFCC',  // 80% white
+    tertiary: '#FFFFFF99',   // 60% white
+  },
+  chart: {
+    primary: '#00E676',
+    secondary: '#69F0AE',
+    background: '#1A1A1A',
+  },
+  gradientColors: {
+    start: 'rgba(0,230,118,0.4)',
+    middle: 'rgba(105,240,174,0.2)',
+    end: 'rgba(0,0,0,0)',
+  }
+};
 
 /**
  * Stupid goofy hardcoded function for testing

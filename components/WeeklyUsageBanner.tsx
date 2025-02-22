@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -29,12 +29,18 @@ interface WeeklyUsageBannerProps {
     onPress?: () => void;
 }
 
-const WeeklyUsageBanner = ({ 
+const WeeklyUsageBanner = React.memo(({ 
     weeklyData = [], 
     average = 0, 
     percentageChange = 0,
     onPress 
 }: WeeklyUsageBannerProps) => {
+    console.log("WeeklyUsageBanner render with data:", {
+        dataLength: weeklyData.length,
+        average,
+        percentageChange
+    });
+    
     // Use memoization for calculations
     const { safeValues, maxValue, barHeights } = useMemo(() => {
         if (!Array.isArray(weeklyData) || weeklyData.length === 0) {
@@ -75,12 +81,43 @@ const WeeklyUsageBanner = ({
         );
     }, [percentageChange]);
 
+    // Memoize the press handler
+    const handlePress = useCallback(() => {
+        onPress?.();
+    }, [onPress]);
+
+    // Memoize bar rendering function
+    const renderBar = useCallback((day: typeof weeklyData[0], index: number) => {
+        const isHighlighted = safeValues[index] === Math.max(...safeValues);
+        return (
+            <View key={day.label || index} style={styles.barWrapper}>
+                <View style={styles.barContainer}>
+                    <View
+                        style={[
+                            styles.bar, 
+                            { 
+                                height: barHeights[index],
+                                backgroundColor: isHighlighted ? COLORS.primary : 'rgba(255,255,255,0.2)'
+                            }
+                        ]} 
+                    />
+                </View>
+                <Text style={[
+                    styles.dayLabel,
+                    isHighlighted && styles.dayLabelHighlighted
+                ]}>
+                    {day.label || ''}
+                </Text>
+            </View>
+        );
+    }, [safeValues, barHeights]);
+
     // Handle no data case
     if (!Array.isArray(weeklyData) || weeklyData.length === 0) {
         return (
             <TouchableOpacity 
                 style={styles.container}
-                onPress={onPress}
+                onPress={handlePress}
                 activeOpacity={0.9}
             >
                 <Text style={styles.noDataText}>No data available</Text>
@@ -91,7 +128,7 @@ const WeeklyUsageBanner = ({
     return (
         <TouchableOpacity 
             style={styles.container}
-            onPress={onPress}
+            onPress={handlePress}
             activeOpacity={0.8}
         >
             <View style={styles.headerContainer}>
@@ -119,30 +156,7 @@ const WeeklyUsageBanner = ({
             </View>
 
             <View style={styles.chartContainer}>
-                {weeklyData.map((day, index) => {
-                    const isHighlighted = safeValues[index] === Math.max(...safeValues);
-                    return (
-                        <View key={index} style={styles.barWrapper}>
-                            <View style={styles.barContainer}>
-                                <View
-                                    style={[
-                                        styles.bar, 
-                                        { 
-                                            height: barHeights[index],
-                                            backgroundColor: isHighlighted ? COLORS.primary : 'rgba(255,255,255,0.2)'
-                                        }
-                                    ]} 
-                                />
-                            </View>
-                            <Text style={[
-                                styles.dayLabel,
-                                isHighlighted && styles.dayLabelHighlighted
-                            ]}>
-                                {day.label || ''}
-                            </Text>
-                        </View>
-                    );
-                })}
+                {weeklyData.map(renderBar)}
                 
                 {average > 0 && maxValue > 0 && (
                     <View style={[
@@ -167,7 +181,7 @@ const WeeklyUsageBanner = ({
             </View>
         </TouchableOpacity>
     );
-};
+});
 
 const styles = StyleSheet.create({
     container: {
@@ -295,4 +309,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default React.memo(WeeklyUsageBanner);
+export default WeeklyUsageBanner;
