@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Card } from "@/components/Card";
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from "@/src/constants";
 import { TimeDistribution } from "@/src/types";
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface TimeDistributionCardProps {
   timeData: TimeDistribution;
@@ -25,24 +26,32 @@ const ICONS_MAP: Record<TimeSlot, keyof typeof MaterialCommunityIcons.glyphMap> 
   night: 'weather-night',
 };
 
-export default function TimeDistributionCard({ timeData }: TimeDistributionCardProps) {
+const TimeDistributionCard = ({ timeData }: TimeDistributionCardProps) => {
   const total = Object.values(timeData).reduce((sum, val) => sum + val, 0);
 
   const TimeSlotComponent = ({ type, value }: { type: TimeSlot; value: number }) => {
     const percentage = total === 0 ? 0 : (value / total) * 100;
-    const barWidth = Math.max(0, Math.min(100, percentage)); // Ensure between 0-100
+    const barWidth = Math.max(0, Math.min(100, percentage));
 
     return (
-      <View style={styles.timeSlot}>
+      <Animated.View 
+        entering={FadeIn.delay(type === 'morning' ? 200 : type === 'afternoon' ? 400 : type === 'evening' ? 600 : 800)}
+        style={styles.timeSlot}
+      >
         <View style={styles.timeSlotContent}>
           <View style={styles.timeSlotHeader}>
-            <View style={styles.iconContainer}>
+            <LinearGradient
+              colors={[`${COLORS_MAP[type]}40`, `${COLORS_MAP[type]}20`]}
+              style={styles.iconContainer}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
               <MaterialCommunityIcons 
                 name={ICONS_MAP[type]} 
                 size={18} 
                 color={COLORS_MAP[type]} 
               />
-            </View>
+            </LinearGradient>
             <Text style={styles.timeSlotText}>
               {type.charAt(0).toUpperCase() + type.slice(1)}
             </Text>
@@ -51,65 +60,125 @@ export default function TimeDistributionCard({ timeData }: TimeDistributionCardP
             </Text>
           </View>
           <View style={styles.barContainer}>
-            <View 
-              style={[
-                styles.bar, 
-                { 
-                  width: `${barWidth}%`,
-                  backgroundColor: COLORS_MAP[type] 
-                }
-              ]} 
+            <LinearGradient
+              colors={[`${COLORS_MAP[type]}`, `${COLORS_MAP[type]}80`]}
+              style={[styles.bar, { width: `${barWidth}%` }]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
             />
           </View>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
   return (
-    <Card style={styles.card}>
-      <View style={styles.header}>
-        <MaterialCommunityIcons 
-          name="clock-outline" 
-          size={24} 
-          color={COLORS.primary}
-        />
-        <Text style={styles.headerText}>Time Distribution</Text>
-      </View>
-
+    <Animated.View 
+      entering={FadeIn.duration(400)}
+      style={styles.container}
+    >
+      <LinearGradient
+        colors={[
+          'rgba(0,230,118,0.15)',
+          'rgba(0,230,118,0.05)',
+          'transparent'
+        ]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      
       <View style={styles.content}>
-        <TimeSlotComponent type="morning" value={timeData.morning} />
-        <TimeSlotComponent type="afternoon" value={timeData.afternoon} />
-        <TimeSlotComponent type="evening" value={timeData.evening} />
-        <TimeSlotComponent type="night" value={timeData.night} />
+        <View style={styles.headerRow}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Time Distribution</Text>
+            <Text style={styles.subtitle}>
+              Activity patterns throughout the day
+            </Text>
+          </View>
+          
+          <LinearGradient
+            colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.1)']}
+            style={styles.headerIconContainer}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <MaterialCommunityIcons 
+              name="clock-outline" 
+              size={24} 
+              color={COLORS.primary}
+            />
+          </LinearGradient>
+        </View>
+
+        <View style={styles.distributionContent}>
+          <TimeSlotComponent type="morning" value={timeData.morning} />
+          <TimeSlotComponent type="afternoon" value={timeData.afternoon} />
+          <TimeSlotComponent type="evening" value={timeData.evening} />
+          <TimeSlotComponent type="night" value={timeData.night} />
+        </View>
       </View>
-    </Card>
+    </Animated.View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  card: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 20,
-    backgroundColor: COLORS.cardBackground,
+  container: {
     borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: Platform.select({
+      ios: 'rgba(26, 26, 26, 0.8)',
+      android: 'rgba(26, 26, 26, 0.95)',
+    }),
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: 10,
-    letterSpacing: 0.38,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   content: {
+    padding: 20,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+  },
+  titleContainer: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+    letterSpacing: 0.35,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+    letterSpacing: 0.25,
+  },
+  headerIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  distributionContent: {
     gap: 16,
   },
   timeSlot: {
@@ -126,9 +195,10 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   timeSlotText: {
     flex: 1,
@@ -156,4 +226,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
-}); 
+});
+
+export default TimeDistributionCard; 

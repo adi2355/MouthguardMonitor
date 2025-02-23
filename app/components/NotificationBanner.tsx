@@ -1,151 +1,323 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from "@/src/constants";
-import { NotificationProps } from "@/src/types";
+import Animated, { 
+  FadeIn, 
+  FadeInDown, 
+  FadeOutUp,
+  withTiming,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  Layout
+} from 'react-native-reanimated';
 
-export default function NotificationBanner({ averageHits, percentageChange, onDismiss }: NotificationProps) {
-  return (
-    <View style={styles.notificationContainer}>
-      <View style={styles.notificationGlow} />
-      <View style={styles.notificationBanner}>
-        <View style={styles.notificationHeader}>
-          <View style={styles.notificationTitle}>
-            <MaterialCommunityIcons 
-              name="bell-outline" 
-              size={16} 
-              color={COLORS.text.primary}
-            />
-            <Text style={styles.notificationTitleText}>Daily Summary</Text>
-          </View>
-          <View style={styles.notificationTime}>
-            <Text style={styles.timeText}>Last 24 hours</Text>
-            <TouchableOpacity 
-              style={styles.dismissButtonContainer}
-              onPress={onDismiss}
-            >
-              <Text style={[styles.dismissButton, { color: COLORS.text.tertiary }]}>
-                Dismiss
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.notificationContent}>
-          <MaterialCommunityIcons
-            name="clock-outline"
-            size={32}
-            color={COLORS.text.primary}
-            style={styles.earIcon}
-          />
-          <View style={styles.notificationTextContainer}>
-            <Text style={styles.notificationMainText}>
-              {`Average of ${averageHits} hits per day`}
-            </Text>
-            <Text style={styles.notificationSubText}>
-              {percentageChange > 0 
-                ? 'Your daily average has increased compared to last week'
-                : 'Your daily average has decreased compared to last week'
-              }
-            </Text>
-            <TouchableOpacity>
-              <Text style={styles.moreDetailsLink}>More Details</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
+interface NotificationProps {
+  averageHits: number;
+  percentageChange: number;
+  onDismiss: () => void;
 }
 
+const NotificationBanner: React.FC<NotificationProps> = ({ 
+  averageHits, 
+  percentageChange, 
+  onDismiss 
+}) => {
+  const isIncrease = percentageChange > 0;
+  const statusColor = isIncrease ? '#FF5252' : COLORS.primary;
+
+  // Format percentage to 1 decimal place and handle edge cases
+  const formattedPercentage = Math.abs(Number(percentageChange.toFixed(1)));
+
+  // Enhanced gradient combinations with type assertions
+  const gradientBase = isIncrease 
+    ? ['rgba(255,82,82,0.2)', 'rgba(255,82,82,0.08)', 'transparent'] as const
+    : ['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.08)', 'transparent'] as const;
+
+  const accentGradient = isIncrease
+    ? ['rgba(255,82,82,0.3)', 'rgba(255,82,82,0.15)'] as const
+    : ['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.15)'] as const;
+
+  return (
+    <Animated.View 
+      entering={FadeInDown.springify()}
+      exiting={FadeOutUp.springify()}
+      layout={Layout.springify()}
+      style={styles.container}
+    >
+      {/* Enhanced Background Gradient */}
+      <LinearGradient
+        colors={gradientBase}
+        style={styles.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Shimmer Effect Layer */}
+      <LinearGradient
+        colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent'] as const}
+        style={styles.shimmerEffect}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      <View style={styles.content}>
+        {/* Enhanced Header */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <LinearGradient
+              colors={accentGradient}
+              style={styles.iconContainer}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <MaterialCommunityIcons 
+                name="bell-outline" 
+                size={22} 
+                color={statusColor}
+              />
+            </LinearGradient>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>Daily Summary</Text>
+              <Text style={styles.subtitle}>Last 24 hours</Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity 
+            onPress={onDismiss}
+            style={styles.dismissButton}
+          >
+            <LinearGradient
+              colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)'] as const}
+              style={styles.dismissGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <MaterialCommunityIcons 
+                name="close" 
+                size={18} 
+                color={COLORS.text.secondary}
+              />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Enhanced Stats Container */}
+        <View style={styles.statsContainer}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)'] as const}
+            style={styles.statsGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Daily Average</Text>
+              <Text style={styles.statValue}>{averageHits.toFixed(1)}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Change</Text>
+              <Text style={[styles.statValue, { color: statusColor }]}>
+                {isIncrease ? '+' : '-'}{formattedPercentage}%
+              </Text>
+            </View>
+          </LinearGradient>
+        </View>
+
+        {/* Status Message */}
+        <View style={styles.messageContainer}>
+          <LinearGradient
+            colors={accentGradient}
+            style={styles.statusIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <MaterialCommunityIcons
+              name={isIncrease ? "trending-up" : "trending-down"}
+              size={24}
+              color={statusColor}
+            />
+          </LinearGradient>
+
+          <Text style={styles.messageText}>
+            {isIncrease 
+              ? 'Your daily average has increased compared to last week'
+              : 'Your daily average has decreased compared to last week'
+            }
+          </Text>
+        </View>
+
+        {/* Action Button */}
+        <TouchableOpacity style={styles.actionButton}>
+          <LinearGradient
+            colors={[statusColor, `${statusColor}CC`] as const}
+            style={styles.actionGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Text style={styles.actionText}>View Details</Text>
+            <MaterialCommunityIcons 
+              name="chevron-right" 
+              size={18} 
+              color="#FFF"
+            />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+};
+
 const styles = StyleSheet.create({
-  notificationContainer: {
-    position: 'relative',
+  container: {
+    borderRadius: 20,
     overflow: 'hidden',
-    marginHorizontal: 16,
-    marginVertical: 8,
-  },
-  notificationGlow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'transparent',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  notificationBanner: {
     backgroundColor: COLORS.cardBackground,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
-  notificationHeader: {
+  backgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
+  },
+  shimmerEffect: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.4,
+  },
+  content: {
+    padding: 20,
+  },
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 20,
   },
-  notificationTitle: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  notificationTitleText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: 8,
-  },
-  notificationTime: {
-    flexDirection: 'row',
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  timeText: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    marginRight: 12,
-  },
-  dismissButtonContainer: {
-    padding: 4,
-  },
-  dismissButton: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  notificationContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  notificationTextContainer: {
-    flex: 1,
+  titleContainer: {
     marginLeft: 12,
   },
-  notificationMainText: {
-    fontSize: 17,
+  title: {
+    fontSize: 18,
     fontWeight: '600',
     color: COLORS.text.primary,
     marginBottom: 4,
   },
-  notificationSubText: {
-    fontSize: 15,
+  subtitle: {
+    fontSize: 13,
     color: COLORS.text.secondary,
-    marginBottom: 8,
+  },
+  dismissButton: {
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+  dismissGradient: {
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  statsContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  statsGradient: {
+    flexDirection: 'row',
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 16,
+  },
+  messageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    padding: 12,
+    borderRadius: 12,
+  },
+  statusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  messageText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text.secondary,
     lineHeight: 20,
   },
-  moreDetailsLink: {
+  actionButton: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  actionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  actionText: {
     fontSize: 15,
-    color: COLORS.primary,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#FFF',
+    marginRight: 4,
   },
-  earIcon: {
-    marginRight: 12,
-  },
-}); 
+});
+
+export default NotificationBanner;

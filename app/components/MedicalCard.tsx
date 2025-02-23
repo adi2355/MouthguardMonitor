@@ -57,12 +57,14 @@ export default function MedicalCard() {
 const styles = StyleSheet.create({
   medicalCard: {
     backgroundColor: COLORS.cardBackground,
-    marginHorizontal: 16,
+    width: '100%',
+    marginHorizontal: 2,
     marginVertical: 8,
     borderRadius: 16,
     padding: 16,
     overflow: 'hidden',
     position: 'relative',
+    
   },
   cardGradient: {
     position: 'absolute',

@@ -1,9 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from 'expo-linear-gradient';
 import { Card } from "@/components/Card";
 import { COLORS } from "@/src/constants";
 import { UsageStats } from "@/src/types";
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface StatsOverviewCardProps {
   stats: UsageStats;
@@ -16,148 +18,238 @@ function formatDuration(ms: number): string {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
-export default function StatsOverviewCard({ stats }: StatsOverviewCardProps) {
+const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
   return (
-    <Card style={styles.card}>
-      <View style={styles.header}>
-        <MaterialCommunityIcons 
-          name="chart-box-outline" 
-          size={24} 
-          color={COLORS.primary}
-        />
-        <Text style={styles.headerText}>Usage Statistics</Text>
-      </View>
-
-      <View style={styles.statsGrid}>
-        {/* Hit Counts Section */}
-        <View style={styles.statGroup}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.averageHitsPerDay}</Text>
-            <Text style={styles.statLabel}>Daily Average</Text>
+    <Animated.View 
+      entering={FadeIn.duration(400)}
+      style={styles.container}
+    >
+      <LinearGradient
+        colors={[
+          'rgba(0,230,118,0.15)',
+          'rgba(0,230,118,0.05)',
+          'transparent'
+        ]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      
+      <View style={styles.content}>
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Usage Statistics</Text>
+            <Text style={styles.subtitle}>
+              Detailed overview of your usage patterns
+            </Text>
           </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.peakDayHits}</Text>
-            <Text style={styles.statLabel}>Peak Day</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats.totalHits}</Text>
-            <Text style={styles.statLabel}>Total Hits</Text>
-          </View>
+          
+          <LinearGradient
+            colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.1)']}
+            style={styles.iconContainer}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <MaterialCommunityIcons 
+              name="chart-box-outline" 
+              size={24} 
+              color={COLORS.primary}
+            />
+          </LinearGradient>
         </View>
 
-        <View style={styles.divider} />
+        {/* Hit Counts Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Hit Counts</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Daily Average</Text>
+              <Text style={styles.statValue}>{stats.averageHitsPerDay.toFixed(1)}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Peak Day</Text>
+              <Text style={styles.statValue}>{stats.peakDayHits}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Total Hits</Text>
+              <Text style={styles.statValue}>{stats.totalHits}</Text>
+            </View>
+          </View>
+        </View>
 
         {/* Duration Stats Section */}
-        <View style={styles.detailsSection}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Duration</Text>
-          <View style={styles.detailRow}>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Average</Text>
-              <Text style={styles.detailValue}>{formatDuration(stats.averageDuration)}</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Average</Text>
+              <Text style={styles.statValue}>{formatDuration(stats.averageDuration)}</Text>
             </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Longest</Text>
-              <Text style={styles.detailValue}>{formatDuration(stats.longestHit)}</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Longest</Text>
+              <Text style={styles.statValue}>{formatDuration(stats.longestHit)}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Shortest</Text>
+              <Text style={styles.statValue}>{formatDuration(stats.shortestHit)}</Text>
             </View>
           </View>
         </View>
 
-        <View style={styles.divider} />
-
         {/* Time Patterns Section */}
-        <View style={styles.detailsSection}>
-          <Text style={styles.sectionTitle}>Activity</Text>
-          <View style={styles.detailRow}>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Peak Hours</Text>
-              <Text style={styles.detailValue}>{stats.mostActiveHour}:00</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Activity Patterns</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Peak Hours</Text>
+              <Text style={styles.statValue}>{stats.mostActiveHour}:00</Text>
             </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Consistency</Text>
-              <Text style={styles.detailValue}>{stats.consistency.toFixed(1)}</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Quiet Hours</Text>
+              <Text style={styles.statValue}>{stats.leastActiveHour}:00</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Consistency</Text>
+              <Text style={styles.statValue}>{stats.consistency.toFixed(1)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Weekday vs Weekend */}
+        <View style={[styles.section, styles.lastSection]}>
+          <Text style={styles.sectionTitle}>Weekly Distribution</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Weekday Avg</Text>
+              <Text style={styles.statValue}>
+                {stats.weekdayStats.weekday.avg.toFixed(1)}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Weekend Avg</Text>
+              <Text style={styles.statValue}>
+                {stats.weekdayStats.weekend.avg.toFixed(1)}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Difference</Text>
+              <View style={styles.changeContainer}>
+                <MaterialCommunityIcons 
+                  name={stats.weekdayStats.weekend.avg >= stats.weekdayStats.weekday.avg ? "trending-up" : "trending-down"} 
+                  size={16} 
+                  color={stats.weekdayStats.weekend.avg >= stats.weekdayStats.weekday.avg ? COLORS.primary : '#FF5252'} 
+                />
+                <Text style={[
+                  styles.changeText,
+                  { color: stats.weekdayStats.weekend.avg >= stats.weekdayStats.weekday.avg ? COLORS.primary : '#FF5252' }
+                ]}>
+                  {Math.abs(((stats.weekdayStats.weekend.avg - stats.weekdayStats.weekday.avg) / stats.weekdayStats.weekday.avg) * 100).toFixed(1)}%
+                </Text>
+              </View>
             </View>
           </View>
         </View>
       </View>
-    </Card>
+    </Animated.View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  card: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 20,
-    backgroundColor: COLORS.cardBackground,
+  container: {
     borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: Platform.select({
+      ios: 'rgba(26, 26, 26, 0.8)',
+      android: 'rgba(26, 26, 26, 0.95)',
+    }),
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
+  content: {
+    padding: 20,
   },
-  headerText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: 10,
-    letterSpacing: 0.38,
-  },
-  statsGrid: {
-    gap: 20,
-  },
-  statGroup: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 13,
-    color: COLORS.text.secondary,
-    letterSpacing: -0.08,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginVertical: 10,
-  },
-  detailsSection: {
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    letterSpacing: -0.24,
-  },
-  detailRow: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 24,
   },
-  detailItem: {
+  titleContainer: {
     flex: 1,
   },
-  detailLabel: {
-    fontSize: 13,
-    color: COLORS.text.secondary,
-    marginBottom: 4,
-    letterSpacing: -0.08,
+  title: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+    letterSpacing: 0.35,
   },
-  detailValue: {
+  subtitle: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+    letterSpacing: 0.25,
+  },
+  iconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  lastSection: {
+    marginBottom: 0,
+  },
+  sectionTitle: {
     fontSize: 17,
     fontWeight: '600',
     color: COLORS.text.primary,
+    marginBottom: 16,
     letterSpacing: -0.41,
   },
-}); 
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: COLORS.text.tertiary,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  changeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  changeText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+});
+
+export default StatsOverviewCard; 

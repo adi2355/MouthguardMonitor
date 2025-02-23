@@ -114,30 +114,63 @@ File: app/(tabs)/_layout.tsx
 ================================================================================
 
 import { Tabs } from 'expo-router';
-import React from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS } from '@/src/constants';
 
 export default function TabLayout() {
   return (
-    <Tabs>
+    <Tabs
+      screenOptions={{
+        tabBarStyle: {
+          backgroundColor: COLORS.background,
+          borderTopColor: 'rgba(255, 255, 255, 0.1)',
+        },
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.5)',
+        headerShown: false,
+      }}
+    >
       <Tabs.Screen
         name="index"
-        options={{title: 'Home'}}
+        options={{
+          href: null,
+        }}
       />
       <Tabs.Screen
         name="mydata"
-        options={{title: 'My Data'}}
-      />
-      <Tabs.Screen
-        name="trending"
-        options={{title: 'Trending'}}
-      />
-      <Tabs.Screen
-        name="journal"
-        options={{title: 'Journal'}}
+        options={{
+          title: 'My Data',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="chart-box" size={24} color={color} />
+          ),
+        }}
       />
       <Tabs.Screen
         name="devices"
-        options={{title: 'Devices'}}
+        options={{
+          title: 'Devices',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="devices" size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="journal"
+        options={{
+          title: 'Journal',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="notebook" size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="trending"
+        options={{
+          title: 'Trending',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="trending-up" size={24} color={color} />
+          ),
+        }}
       />
     </Tabs>
   );
@@ -326,67 +359,11 @@ const styles = StyleSheet.create({
 File: app/(tabs)/index.tsx
 ================================================================================
 
-import { StyleSheet, View, SafeAreaView, Image, Dimensions, Text } from "react-native";
-import { useEffect } from "react";
-import { initializeAppOnFirstLaunch, isFirstLaunch } from "@/src/dbManager";
+import { Redirect } from 'expo-router';
 
-export default function App() {
-
-  useEffect(() => {
-    const firstLaunchFlag: Promise<boolean> = isFirstLaunch();
-    firstLaunchFlag.then( flag => {
-      if (flag) {
-        initializeAppOnFirstLaunch();
-      }
-    });
-    
-  }, []);
-
-    return (
-    <View style={styles.container}>
-      <Text>Welcome to Canova's App</Text>
-    </View>
-
-  );
+export default function Index() {
+  return <Redirect href="/mydata" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: .5,
-    flexDirection: 'column',
-    justifyContent: 'center',  
-    alignItems: 'center',    
-  },
-  imageContainer: {
-    position: 'absolute', 
-    top: -80, 
-    width: '90%',
-  },
-  masterLogo: { 
-    width: '100%',
-    resizeMode: 'contain',
-  },
-  text: {
-    textAlign: 'center',
-  },
-  horizontalLine: {
-    width: '90%', // Adjust the line width (percentage of the screen width)
-    height: 1, // Line thickness
-    backgroundColor: '#000', // Line color
-    marginTop: 100, // Space above and below the line
-    marginBottom: 20, // Space above and below the line
-  },
-  loginsContainer: {
-    display: 'flex',
-    flex: 0.5,
-    flexDirection: 'row',
-    marginTop: 50,
-  },
-  login: {
-    borderColor: '#000',
-    borderStyle: 'solid',
-  }
-});
 
 ================================================================================
 File: app/(tabs)/journal.tsx
@@ -535,8 +512,8 @@ const styles = StyleSheet.create({
 File: app/(tabs)/mydata.tsx
 ================================================================================
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect, forwardRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '@/src/constants';
@@ -554,6 +531,15 @@ import WeeklyOverviewChart from '@/app/components/charts/WeeklyOverviewChart';
 import MonthlyOverviewChart from '@/app/components/charts/MonthlyOverviewChart';
 import StatsOverviewCard from '@/app/components/StatsOverviewCard';
 import TimeDistributionCard from '@/app/components/TimeDistributionCard';
+import Animated, { 
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  Layout,
+  withSpring,
+  useAnimatedStyle,
+  useSharedValue
+} from 'react-native-reanimated';
 
 const ROUTES = {
   DAILY_AVERAGE: "/dataOverviews/dailyAverageOverview",
@@ -562,9 +548,73 @@ const ROUTES = {
   MONTHLY_OVERVIEW: "/dataOverviews/monthlyOverview",
 } as const;
 
+// Gradient configurations
+const gradients = {
+  header: ['rgba(0,230,118,0.15)', 'rgba(105,240,174,0.05)', 'transparent'] as const,
+  card: ['rgba(0,230,118,0.1)', 'rgba(0,230,118,0.02)', 'transparent'] as const,
+} as const;
+
+// Animation configurations
+const springConfig = {
+  damping: 15,
+  mass: 1,
+  stiffness: 100
+};
+
+// Create animated components
+const TouchableAnimated = Animated.createAnimatedComponent(TouchableOpacity);
+
+// Wrap Card with forwardRef
+const ForwardedCard = forwardRef((props: any, ref) => (
+  <Card {...props} ref={ref} />
+));
+
+const AnimatedCard = Animated.createAnimatedComponent(ForwardedCard);
+
+// Press animation hook
+const useAnimatedPress = () => {
+  const pressed = useSharedValue(false);
+  
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{
+      scale: withSpring(pressed.value ? 0.98 : 1, springConfig)
+    }]
+  }));
+
+  return {
+    animatedStyle,
+    pressHandlers: {
+      onPressIn: () => { pressed.value = true; },
+      onPressOut: () => { pressed.value = false; }
+    }
+  };
+};
+
+// Animated card component
+const AnimatedCardWithPress = ({ children, style, onPress, entering }: any) => {
+  const { animatedStyle, pressHandlers } = useAnimatedPress();
+  
+  return (
+    <Animated.View
+      entering={entering}
+    >
+      <Animated.View style={[animatedStyle]}>
+        <TouchableOpacity
+          onPress={onPress}
+          {...pressHandlers}
+          style={[style]}
+        >
+          {children}
+        </TouchableOpacity>
+      </Animated.View>
+    </Animated.View>
+  );
+};
+
 export default function MyData() {
   const router = useRouter();
   const [showNotification, setShowNotification] = useState(true);
+  const [isReady, setIsReady] = useState(false);
   const { 
     weeklyData, 
     monthlyData, 
@@ -574,88 +624,168 @@ export default function MyData() {
     error 
   } = useDataService();
 
+  useEffect(() => {
+    if (!isLoading && !error) {
+      setIsReady(true);
+    }
+  }, [isLoading, error]);
+
   const handleNavigation = (route: keyof typeof ROUTES) => {
-    router.push(ROUTES[route]);
+    router.push(ROUTES[route] as any);
   };
 
   if (isLoading) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
 
-  // Calculate percentage change between weekday and weekend averages
   const weekdayAvg = usageStats.weekdayStats?.weekday.avg || 0;
   const weekendAvg = usageStats.weekdayStats?.weekend.avg || 0;
   const percentageChange = weekdayAvg > 0 ? ((weekendAvg - weekdayAvg) / weekdayAvg) * 100 : 0;
 
-  return (
+    return (
     <SafeAreaProvider>
-      <ScrollView 
+      <Animated.ScrollView 
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        entering={FadeIn.delay(150)}
       >
+        {/* Enhanced Header Section */}
+        <Animated.View entering={FadeInDown.springify()}>
+          <View style={styles.headerSection}>
         <LinearGradient
-          colors={['rgba(0,230,118,0.4)', 'rgba(105,240,174,0.2)', 'rgba(0,0,0,0)']}
-          locations={[0, 0.3, 0.7]}
+              colors={gradients.header}
+              style={styles.headerGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
-          style={styles.gradientBackground}
-        />
-
-        {/* Header */}
-        <View style={styles.headerContainer}>
-          <Text style={styles.headerTitle}>Summary</Text>
-          <View style={styles.profilePic} />
+            />
+            <View style={styles.headerContainer}>
+              <Animated.Text 
+                style={styles.headerTitle}
+                entering={FadeIn.delay(300)}
+              >
+                Summary
+              </Animated.Text>
+              <Animated.View 
+                style={styles.profilePic}
+                entering={FadeIn.delay(450)}
+              >
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                />
+              </Animated.View>
+      </View>
         </View>
+        </Animated.View>
 
-        {/* Notification Banner */}
-        {showNotification && (
-          <NotificationBanner
-            averageHits={usageStats.averageHitsPerDay}
-            percentageChange={percentageChange}
-            onDismiss={() => setShowNotification(false)}
-          />
-        )}
+        <Animated.View entering={FadeInUp.springify().delay(300)}>
+          <View style={styles.mainContent}>
+            {/* Notification & Medical Section */}
+            <Animated.View layout={Layout.springify()}>
+              <View style={styles.section}>
+                {showNotification && (
+                  <Animated.View
+                    entering={FadeInDown.springify()}
+                    exiting={FadeInUp.springify()}
+                  >
+                    <NotificationBanner
+                      averageHits={usageStats.averageHitsPerDay}
+                      percentageChange={percentageChange}
+                      onDismiss={() => setShowNotification(false)}
+                    />
+                  </Animated.View>
+                )}
+                <Animated.View entering={FadeInUp.delay(450)}>
+                  <MedicalCard />
+                </Animated.View>
+      </View>
+            </Animated.View>
 
-        {/* Medical Card */}
-        <MedicalCard />
+            {/* Usage Overview Section */}
+            <Animated.View entering={FadeInUp.delay(600)}>
+              <View style={styles.section}>
+                <Animated.Text 
+                  style={styles.sectionTitle}
+                  entering={FadeIn.delay(750)}
+                >
+                  Usage Overview
+                </Animated.Text>
+                <View style={styles.cardContainer}>
+                  <DailyAverageCard
+                    data={weeklyData}
+                    averageHits={usageStats.averageHitsPerDay}
+                    onPress={() => handleNavigation("DAILY_AVERAGE")}
+                  />
+                  <WeeklyUsageBanner
+                    weeklyData={weeklyData}
+                    average={usageStats.averageHitsPerDay}
+                    onPress={() => handleNavigation("WEEKLY_AVERAGE")}
+                  />
+    </View>
+      </View>
+            </Animated.View>
 
-        {/* Original Components */}
-        <TouchableOpacity onPress={() => handleNavigation("DAILY_AVERAGE")}>
-          <DailyAverageCard
-            data={weeklyData}
-            averageHits={usageStats.averageHitsPerDay}
-          />
-        </TouchableOpacity>
-
-        <WeeklyUsageBanner
-          weeklyData={weeklyData}
-          average={usageStats.averageHitsPerDay}
-          percentageChange={percentageChange}
-          onPress={() => handleNavigation("WEEKLY_AVERAGE")}
-        />
-
-        <WeeklyOverviewChart 
-          data={weeklyData}
-          onPress={() => handleNavigation("WEEKLY_OVERVIEW")}
-        />
-
-        {/* New Stats Components */}
-        <StatsOverviewCard stats={usageStats} />
-        <TimeDistributionCard timeData={timeDistribution} />
-
-        <MonthlyOverviewChart 
-          data={monthlyData}
-          onPress={() => handleNavigation("MONTHLY_OVERVIEW")}
-        />
-
-        {/* Time Range Selector */}
-        <Card style={[styles.card, styles.timeRangeCard]}>
-          <View style={styles.timeRangeContent}>
-            <Text style={styles.cardTitle}>Pick Time Range</Text>
-            <AntDesign name="calendar" size={24} color={COLORS.primary} />
+            {/* Charts Section */}
+            <Animated.View entering={FadeInUp.delay(1200)}>
+              <View style={styles.section}>
+                <Animated.Text 
+                  style={styles.sectionTitle}
+                  entering={FadeIn.delay(1350)}
+                >
+                  Usage Analytics
+                </Animated.Text>
+                <WeeklyOverviewChart 
+                  data={weeklyData}
+                  onPress={() => handleNavigation("WEEKLY_OVERVIEW")}
+                />
+                <MonthlyOverviewChart 
+                  data={monthlyData}
+                  onPress={() => handleNavigation("MONTHLY_OVERVIEW")}
+                />
           </View>
-        </Card>
-      </ScrollView>
+            </Animated.View>
+
+            {/* Stats Section */}
+            <Animated.View entering={FadeInUp.delay(1800)}>
+              <View style={styles.section}>
+                <Animated.Text 
+                  style={styles.sectionTitle}
+                  entering={FadeIn.delay(1950)}
+                >
+                  Detailed Statistics
+                </Animated.Text>
+                <Animated.View entering={FadeInUp.delay(2100)}>
+                  <StatsOverviewCard stats={usageStats} />
+                </Animated.View>
+                <Animated.View entering={FadeInUp.delay(2250)}>
+                  <TimeDistributionCard timeData={timeDistribution} />
+                </Animated.View>
+          </View>
+            </Animated.View>
+
+            {/* Time Range Section */}
+            <Animated.View 
+              style={[styles.section, styles.lastSection]}
+              entering={FadeInUp.delay(2400)}
+            >
+              <AnimatedCardWithPress style={styles.timeRangeCard}>
+        <LinearGradient
+                  colors={gradients.card}
+                  style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+                />
+            <View style={styles.timeRangeContent}>
+              <Text style={styles.cardTitle}>Pick Time Range</Text>
+                  <AntDesign name="calendar" size={24} color={COLORS.primary} />
+            </View>
+              </AnimatedCardWithPress>
+            </Animated.View>
+          </View>
+        </Animated.View>
+      </Animated.ScrollView>
     </SafeAreaProvider>
   );
 }
@@ -667,67 +797,121 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingBottom: 32,
-    gap: 16,
   },
-  gradientBackground: {
+  headerSection: {
+    paddingTop: 8,
+    marginBottom: 24,
+    backgroundColor: Platform.select({
+      ios: 'rgba(26, 26, 26, 0.8)',
+      android: 'rgba(26, 26, 26, 0.95)',
+    }),
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  headerGradient: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
-    height: '35%',
-    zIndex: 1,
+    height: 180,
+    opacity: 0.8,
   },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '600',
+    fontSize: 34,
+    fontWeight: Platform.select({ ios: '700', android: '700' }),
     color: COLORS.text.primary,
+    letterSpacing: 0.41,
+    ...Platform.select({
+      ios: {
+        fontFamily: 'System',
+      },
+      android: {
+        fontFamily: 'sans-serif',
+      },
+    }),
   },
   profilePic: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: COLORS.cardBackground,
-  },
-  card: {
-    backgroundColor: COLORS.cardBackground,
-    marginHorizontal: 16,
-    marginVertical: 6,
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: 'rgba(26, 26, 26, 0.6)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
     shadowColor: COLORS.primary,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+    shadowRadius: 8,
+      },
+      android: {
     elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
+  },
+    }),
+  },
+  mainContent: {
+    paddingHorizontal: 20,
+  },
+  section: {
+    marginBottom: 32,
+    gap: 16,
+  },
+  lastSection: {
+    marginBottom: 0,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 16,
+    letterSpacing: 0.35,
   },
   timeRangeCard: {
-    marginBottom: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: Platform.select({
+      ios: 'rgba(26, 26, 26, 0.8)',
+      android: 'rgba(26, 26, 26, 0.95)',
+    }),
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
   timeRangeContent: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: COLORS.text.primary,
-    marginLeft: 12,
-    letterSpacing: 0.3,
+    letterSpacing: -0.41,
+  },
+  card: {
+    width: '100%',
+  },
+  cardContainer: {
+    gap: 16,
   },
 });
 

@@ -1,14 +1,14 @@
-import { ReactNode } from "react";
+import React, { forwardRef } from "react";
 import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 
 interface CardProps {
-    children: ReactNode; 
-    style?: StyleProp<ViewStyle>; 
-  }
+    children: React.ReactNode;
+    style?: StyleProp<ViewStyle>;
+}
 
-export const Card: React.FC<CardProps> = ({ children, style }) => {
-    return <View style={[styles.card, style]}>{children}</View>;
-};
+export const Card = forwardRef<View, CardProps>(({ children, style }, ref) => {
+    return <View ref={ref} style={[styles.card, style]}>{children}</View>;
+});
 
 const styles = StyleSheet.create({
     card: {
