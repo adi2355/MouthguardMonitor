@@ -35,11 +35,11 @@ const gradients = {
 // Enhanced Header component
 const Header = memo(() => (
   <View style={styles.headerSection}>
-    <LinearGradient
+        <LinearGradient
       colors={gradients.header}
       style={styles.headerGradient}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0, y: 1 }}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
     />
     <View style={styles.headerContent}>
       <Text style={styles.headerTitle}>Summary</Text>
@@ -50,8 +50,8 @@ const Header = memo(() => (
           color={COLORS.primary}
         />
       </View>
-    </View>
-  </View>
+        </View>
+        </View>
 ));
 
 // Enhanced Section component with divider
@@ -158,7 +158,7 @@ export default memo(function MyData() {
             <StatsOverviewCard stats={usageStats} />
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
-        </View>
+            </View>
       </Animated.ScrollView>
     </SafeAreaProvider>
   );

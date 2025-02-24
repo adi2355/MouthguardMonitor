@@ -512,15 +512,14 @@ const styles = StyleSheet.create({
 File: app/(tabs)/mydata.tsx
 ================================================================================
 
-import React, { useState, useEffect, forwardRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity } from 'react-native';
+import React, { memo, useCallback, useState } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '@/src/constants';
 import { useDataService } from '@/src/hooks/useDataService';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons, AntDesign } from '@expo/vector-icons';
-import { Card } from '@/components/Card';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LoadingView from '@/app/components/LoadingView';
 import ErrorView from '@/app/components/ErrorView';
 import NotificationBanner from '@/app/components/NotificationBanner';
@@ -531,15 +530,7 @@ import WeeklyOverviewChart from '@/app/components/charts/WeeklyOverviewChart';
 import MonthlyOverviewChart from '@/app/components/charts/MonthlyOverviewChart';
 import StatsOverviewCard from '@/app/components/StatsOverviewCard';
 import TimeDistributionCard from '@/app/components/TimeDistributionCard';
-import Animated, { 
-  FadeIn,
-  FadeInDown,
-  FadeInUp,
-  Layout,
-  withSpring,
-  useAnimatedStyle,
-  useSharedValue
-} from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 const ROUTES = {
   DAILY_AVERAGE: "/dataOverviews/dailyAverageOverview",
@@ -548,73 +539,67 @@ const ROUTES = {
   MONTHLY_OVERVIEW: "/dataOverviews/monthlyOverview",
 } as const;
 
-// Gradient configurations
+// Enhanced gradient configurations
 const gradients = {
-  header: ['rgba(0,230,118,0.15)', 'rgba(105,240,174,0.05)', 'transparent'] as const,
-  card: ['rgba(0,230,118,0.1)', 'rgba(0,230,118,0.02)', 'transparent'] as const,
-} as const;
-
-// Animation configurations
-const springConfig = {
-  damping: 15,
-  mass: 1,
-  stiffness: 100
+  header: ['rgba(0,230,118,0.15)', 'rgba(0,230,118,0.05)', 'transparent'] as const,
+  section: ['rgba(0,230,118,0.1)', 'rgba(0,230,118,0.02)', 'transparent'] as const,
+  divider: ['rgba(0,230,118,0.1)', 'transparent'] as const,
 };
 
-// Create animated components
-const TouchableAnimated = Animated.createAnimatedComponent(TouchableOpacity);
-
-// Wrap Card with forwardRef
-const ForwardedCard = forwardRef((props: any, ref) => (
-  <Card {...props} ref={ref} />
+// Enhanced Header component
+const Header = memo(() => (
+  <View style={styles.headerSection}>
+        <LinearGradient
+      colors={gradients.header}
+      style={styles.headerGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+    />
+    <View style={styles.headerContent}>
+      <Text style={styles.headerTitle}>Summary</Text>
+      <View style={styles.profileContainer}>
+        <MaterialCommunityIcons 
+          name="account" 
+          size={24} 
+          color={COLORS.primary}
+        />
+      </View>
+        </View>
+        </View>
 ));
 
-const AnimatedCard = Animated.createAnimatedComponent(ForwardedCard);
+// Enhanced Section component with divider
+const Section = memo(({ title, children }: {
+  title: string;
+  children: React.ReactNode;
+}) => (
+  <View style={styles.sectionWrapper}>
+    <LinearGradient
+      colors={gradients.divider}
+      style={styles.sectionDivider}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+    />
+    <View style={styles.section}>
+      <LinearGradient
+        colors={gradients.section}
+        style={styles.sectionGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      <View style={styles.sectionContent}>
+        {children}
+      </View>
+    </View>
+  </View>
+));
 
-// Press animation hook
-const useAnimatedPress = () => {
-  const pressed = useSharedValue(false);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{
-      scale: withSpring(pressed.value ? 0.98 : 1, springConfig)
-    }]
-  }));
-
-  return {
-    animatedStyle,
-    pressHandlers: {
-      onPressIn: () => { pressed.value = true; },
-      onPressOut: () => { pressed.value = false; }
-    }
-  };
-};
-
-// Animated card component
-const AnimatedCardWithPress = ({ children, style, onPress, entering }: any) => {
-  const { animatedStyle, pressHandlers } = useAnimatedPress();
-  
-  return (
-    <Animated.View
-      entering={entering}
-    >
-      <Animated.View style={[animatedStyle]}>
-        <TouchableOpacity
-          onPress={onPress}
-          {...pressHandlers}
-          style={[style]}
-        >
-          {children}
-        </TouchableOpacity>
-      </Animated.View>
-    </Animated.View>
-  );
-};
-
-export default function MyData() {
+export default memo(function MyData() {
   const router = useRouter();
   const [showNotification, setShowNotification] = useState(true);
-  const [isReady, setIsReady] = useState(false);
   const { 
     weeklyData, 
     monthlyData, 
@@ -624,15 +609,9 @@ export default function MyData() {
     error 
   } = useDataService();
 
-  useEffect(() => {
-    if (!isLoading && !error) {
-      setIsReady(true);
-    }
-  }, [isLoading, error]);
-
-  const handleNavigation = (route: keyof typeof ROUTES) => {
+  const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
-  };
+  }, [router]);
 
   if (isLoading) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
@@ -641,154 +620,63 @@ export default function MyData() {
   const weekendAvg = usageStats.weekdayStats?.weekend.avg || 0;
   const percentageChange = weekdayAvg > 0 ? ((weekendAvg - weekdayAvg) / weekdayAvg) * 100 : 0;
 
-    return (
+  return (
     <SafeAreaProvider>
       <Animated.ScrollView 
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
-        entering={FadeIn.delay(150)}
+        entering={FadeIn.duration(200)}
+        scrollEventThrottle={16}
+        removeClippedSubviews={true}
       >
-        {/* Enhanced Header Section */}
-        <Animated.View entering={FadeInDown.springify()}>
-          <View style={styles.headerSection}>
-        <LinearGradient
-              colors={gradients.header}
-              style={styles.headerGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
+        <Header />
+
+        <View style={styles.mainContent}>
+          <Section title="Notifications & Medical">
+            {showNotification && (
+              <NotificationBanner
+                averageHits={usageStats.averageHitsPerDay}
+                percentageChange={percentageChange}
+                onDismiss={() => setShowNotification(false)}
+              />
+            )}
+            <MedicalCard />
+          </Section>
+
+          <Section title="Usage Overview">
+            <DailyAverageCard
+              data={weeklyData}
+              averageHits={usageStats.averageHitsPerDay}
+              onPress={() => handleNavigation("DAILY_AVERAGE")}
             />
-            <View style={styles.headerContainer}>
-              <Animated.Text 
-                style={styles.headerTitle}
-                entering={FadeIn.delay(300)}
-              >
-                Summary
-              </Animated.Text>
-              <Animated.View 
-                style={styles.profilePic}
-                entering={FadeIn.delay(450)}
-              >
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                />
-              </Animated.View>
-      </View>
-        </View>
-        </Animated.View>
+            <WeeklyUsageBanner
+              weeklyData={weeklyData}
+              average={usageStats.averageHitsPerDay}
+              onPress={() => handleNavigation("WEEKLY_AVERAGE")}
+            />
+          </Section>
 
-        <Animated.View entering={FadeInUp.springify().delay(300)}>
-          <View style={styles.mainContent}>
-            {/* Notification & Medical Section */}
-            <Animated.View layout={Layout.springify()}>
-              <View style={styles.section}>
-                {showNotification && (
-                  <Animated.View
-                    entering={FadeInDown.springify()}
-                    exiting={FadeInUp.springify()}
-                  >
-                    <NotificationBanner
-                      averageHits={usageStats.averageHitsPerDay}
-                      percentageChange={percentageChange}
-                      onDismiss={() => setShowNotification(false)}
-                    />
-                  </Animated.View>
-                )}
-                <Animated.View entering={FadeInUp.delay(450)}>
-                  <MedicalCard />
-                </Animated.View>
-      </View>
-            </Animated.View>
+          <Section title="Usage Analytics">
+            <WeeklyOverviewChart 
+              data={weeklyData}
+              onPress={() => handleNavigation("WEEKLY_OVERVIEW")}
+            />
+            <MonthlyOverviewChart 
+              data={monthlyData}
+              onPress={() => handleNavigation("MONTHLY_OVERVIEW")}
+            />
+          </Section>
 
-            {/* Usage Overview Section */}
-            <Animated.View entering={FadeInUp.delay(600)}>
-              <View style={styles.section}>
-                <Animated.Text 
-                  style={styles.sectionTitle}
-                  entering={FadeIn.delay(750)}
-                >
-                  Usage Overview
-                </Animated.Text>
-                <View style={styles.cardContainer}>
-                  <DailyAverageCard
-                    data={weeklyData}
-                    averageHits={usageStats.averageHitsPerDay}
-                    onPress={() => handleNavigation("DAILY_AVERAGE")}
-                  />
-                  <WeeklyUsageBanner
-                    weeklyData={weeklyData}
-                    average={usageStats.averageHitsPerDay}
-                    onPress={() => handleNavigation("WEEKLY_AVERAGE")}
-                  />
-    </View>
-      </View>
-            </Animated.View>
-
-            {/* Charts Section */}
-            <Animated.View entering={FadeInUp.delay(1200)}>
-              <View style={styles.section}>
-                <Animated.Text 
-                  style={styles.sectionTitle}
-                  entering={FadeIn.delay(1350)}
-                >
-                  Usage Analytics
-                </Animated.Text>
-                <WeeklyOverviewChart 
-                  data={weeklyData}
-                  onPress={() => handleNavigation("WEEKLY_OVERVIEW")}
-                />
-                <MonthlyOverviewChart 
-                  data={monthlyData}
-                  onPress={() => handleNavigation("MONTHLY_OVERVIEW")}
-                />
-          </View>
-            </Animated.View>
-
-            {/* Stats Section */}
-            <Animated.View entering={FadeInUp.delay(1800)}>
-              <View style={styles.section}>
-                <Animated.Text 
-                  style={styles.sectionTitle}
-                  entering={FadeIn.delay(1950)}
-                >
-                  Detailed Statistics
-                </Animated.Text>
-                <Animated.View entering={FadeInUp.delay(2100)}>
-                  <StatsOverviewCard stats={usageStats} />
-                </Animated.View>
-                <Animated.View entering={FadeInUp.delay(2250)}>
-                  <TimeDistributionCard timeData={timeDistribution} />
-                </Animated.View>
-          </View>
-            </Animated.View>
-
-            {/* Time Range Section */}
-            <Animated.View 
-              style={[styles.section, styles.lastSection]}
-              entering={FadeInUp.delay(2400)}
-            >
-              <AnimatedCardWithPress style={styles.timeRangeCard}>
-        <LinearGradient
-                  colors={gradients.card}
-                  style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-                />
-            <View style={styles.timeRangeContent}>
-              <Text style={styles.cardTitle}>Pick Time Range</Text>
-                  <AntDesign name="calendar" size={24} color={COLORS.primary} />
+          <Section title="Detailed Statistics">
+            <StatsOverviewCard stats={usageStats} />
+            <TimeDistributionCard timeData={timeDistribution} />
+          </Section>
             </View>
-              </AnimatedCardWithPress>
-            </Animated.View>
-          </View>
-        </Animated.View>
       </Animated.ScrollView>
     </SafeAreaProvider>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -799,119 +687,81 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   headerSection: {
-    paddingTop: 8,
-    marginBottom: 24,
+    height: 120,
+    position: 'relative',
     backgroundColor: Platform.select({
-      ios: 'rgba(26, 26, 26, 0.8)',
+      ios: 'rgba(26, 26, 26, 0.85)',
       android: 'rgba(26, 26, 26, 0.95)',
     }),
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 24,
   },
   headerGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    height: 180,
+    ...StyleSheet.absoluteFillObject,
     opacity: 0.8,
   },
-  headerContainer: {
+  headerContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
   },
   headerTitle: {
     fontSize: 34,
-    fontWeight: Platform.select({ ios: '700', android: '700' }),
+    fontWeight: '700',
     color: COLORS.text.primary,
-    letterSpacing: 0.41,
-    ...Platform.select({
-      ios: {
-        fontFamily: 'System',
-      },
-      android: {
-        fontFamily: 'sans-serif',
-      },
-    }),
+    letterSpacing: 0.5,
   },
-  profilePic: {
+  profileContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(26, 26, 26, 0.6)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-    shadowRadius: 8,
-      },
-      android: {
-    elevation: 4,
-  },
-    }),
+    backgroundColor: 'rgba(0,230,118,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.2)',
   },
   mainContent: {
     paddingHorizontal: 20,
   },
-  section: {
+  sectionWrapper: {
     marginBottom: 32,
-    gap: 16,
+    position: 'relative',
   },
-  lastSection: {
-    marginBottom: 0,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: COLORS.text.primary,
+  sectionDivider: {
+    height: 1,
+    width: '100%',
     marginBottom: 16,
-    letterSpacing: 0.35,
   },
-  timeRangeCard: {
-    borderRadius: 20,
+  section: {
+    borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: Platform.select({
-      ios: 'rgba(26, 26, 26, 0.8)',
-      android: 'rgba(26, 26, 26, 0.95)',
-    }),
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 6,
-      },
+      ios: 'rgba(26, 26, 26, 0.75)',
+      android: 'rgba(26, 26, 26, 0.9)',
     }),
   },
-  timeRangeContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
+  sectionGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.5,
   },
-  cardTitle: {
-    fontSize: 18,
+  sectionHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 230, 118, 0.1)',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: '600',
     color: COLORS.text.primary,
-    letterSpacing: -0.41,
+    letterSpacing: 0.5,
   },
-  card: {
-    width: '100%',
-  },
-  cardContainer: {
-    gap: 16,
+  sectionContent: {
+    padding: 12,
+    gap: 12,
   },
 });
 
@@ -920,442 +770,289 @@ File: app/(tabs)/trending.tsx
 ================================================================================
 
 // app/(tabs)/trending.tsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
-  TextInput, 
-  TouchableOpacity, 
   StyleSheet, 
-  Animated,
-  Dimensions,
+  TouchableOpacity,
+  TextInput,
   FlatList,
-  Image,
-  StatusBar,
-  Platform,
-  BlurView
+  Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const { height, width } = Dimensions.get('window');
-
-// Design constants
-const COLORS = {
-  background: '#000000',
-  cardBackground: '#1A1A1A',
-  primary: '#00E676', // Neon green
-  primaryDark: '#00C853',
-  accent: '#69F0AE', // Light neon green
-  text: {
-    primary: '#FFFFFF',
-    secondary: '#FFFFFFCC', // 80% white
-    tertiary: '#FFFFFF99', // 60% white
-    quaternary: '#FFFFFF66', // 40% white
-  },
-  trending: {
-    up: '#69F0AE',
-    down: '#FF5252'
-  },
-  divider: '#333333'
-};
-
-// Sample trending data
-const trendingCategories = [
-  {
-    title: 'Popular Strains',
-    items: [
-      { 
-        id: '1', 
-        name: 'Blue Dream', 
-        description: 'Sweet berry aroma',
-        thcContent: '18-24%',
-        type: 'hybrid',
-        icon: 'cannabis',
-        
-        color: COLORS.accent,
-        percentChange: '+12%'
-      },
-      { 
-        id: '2', 
-        name: 'OG Kush', 
-        description: 'Earthy pine scent',
-        thcContent: '20-25%',
-        type: 'hybrid',
-        icon: 'cannabis',
-      
-        color: COLORS.primary,
-        percentChange: '+8%'
-      },
-      { 
-        id: '3', 
-        name: 'Gorilla Glue', 
-        description: 'Powerful diesel notes',
-        thcContent: '25-28%',
-        type: 'hybrid',
-        icon: 'cannabis',
-        
-        color: COLORS.primaryDark,
-        percentChange: '-3%'
-      },
-    ]
-  },
-  {
-    title: 'Trending Accessories',
-    items: [
-      {
-        id: '101',
-        name: 'Something',
-        description: 'ionknowdoessomthing',
-        icon: 'pipe',
-       
-        color: COLORS.accent,
-        percentChange: '+15%'
-      },
-      {
-        id: '102',
-        name: 'Lmao 3',
-        description: 'Hopefullyworks',
-        icon: 'pipe-disconnected',
-      
-        color: COLORS.primary,
-        percentChange: '+10%'
-      }
-    ]
-  },
-  {
-    title: 'Community Favorites',
-    items: [
-      {
-        id: '201',
-        name: 'Strawberry Cough',
-        description: 'Sweet strawberry notes',
-        thcContent: '17-22%',
-        type: 'sativa',
-        icon: 'cannabis',
-        
-        color: COLORS.accent,
-        percentChange: '+5%'
-      },
-      {
-        id: '202',
-        name: 'Wedding Cake',
-        description: 'Sweet and vanilla',
-        thcContent: '22-25%',
-        type: 'hybrid', 
-        icon: 'cannabis',
-       
-        color: COLORS.primary,
-        percentChange: '+7%'
-      }
-    ]
-  }
-];
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useStrains } from '@/src/hooks/useStrains';
+import { COLORS } from '@/src/constants';
+import SearchFilters from '@/app/components/search/SearchFilters';
+import { StrainSearchFilters } from '@/src/services/StrainService';
+import { Strain } from '@/src/dbManager';
+import LoadingView from '@/app/components/LoadingView';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 export default function TrendingScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  
-  // Animation values
-  const searchBarWidth = useRef(new Animated.Value(width - 32)).current;
-  const cancelOpacity = useRef(new Animated.Value(0)).current;
-  const headerOpacity = useRef(new Animated.Value(1)).current;
-  const searchBarY = useRef(new Animated.Value(0)).current;
-  
-  // Scroll animation
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const headerHeight = useRef(new Animated.Value(insets.top + 100)).current;
-  
-  const handleSearchFocus = () => {
-    setIsSearchFocused(true);
-    
-    Animated.parallel([
-      Animated.timing(searchBarWidth, {
-        toValue: width - 80,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-      Animated.timing(cancelOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(headerOpacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(searchBarY, {
-        toValue: -40,
-        duration: 300,
-        useNativeDriver: true,
-      })
-    ]).start();
+  const [showFilters, setShowFilters] = useState(false);
+  const [compareList, setCompareList] = useState<Strain[]>([]);
+  const [filters, setFilters] = useState<StrainSearchFilters>({
+    geneticType: undefined,
+    effects: [],
+    sort: 'rating'
+  });
+
+  const { 
+    strains,
+    popularStrains,
+    categories,
+    isLoading,
+    error,
+    searchStrains,
+    clearSearch,
+    loadMore,
+    toggleFavorite,
+    isFavorite,
+    pagination
+  } = useStrains();
+
+  const handleSearch = useCallback(() => {
+    if (searchQuery.trim()) {
+      searchStrains(searchQuery, filters);
+    } else {
+      clearSearch();
+    }
+  }, [searchQuery, filters, searchStrains, clearSearch]);
+
+  const handleFilterChange = (newFilters: StrainSearchFilters) => {
+    setFilters(newFilters);
   };
 
-  const handleCancel = () => {
-    setIsSearchFocused(false);
+  const handleApplyFilters = useCallback(() => {
+    handleSearch();
+    setShowFilters(false);
+  }, [handleSearch]);
+
+  const handleClearSearch = useCallback(() => {
     setSearchQuery('');
-    
-    Animated.parallel([
-      Animated.timing(searchBarWidth, {
-        toValue: width - 32,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-      Animated.timing(cancelOpacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(headerOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(searchBarY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      })
-    ]).start();
-  };
+    clearSearch();
+  }, [clearSearch]);
 
-  // Interpolation for collapsing header
-  const headerScale = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [1, 0.9],
-    extrapolate: 'clamp',
-  });
+  const handleCompareToggle = useCallback((strain: Strain) => {
+    setCompareList(prev => {
+      if (prev.some(s => s.id === strain.id)) {
+        return prev.filter(s => s.id !== strain.id);
+      }
+      if (prev.length >= 3) return prev;
+      return [...prev, strain];
+    });
+  }, []);
 
-  const headerTranslateY = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0, -50],
-    extrapolate: 'clamp',
-  });
+  const handleCompare = useCallback(() => {
+    if (compareList.length >= 2) {
+      router.push({
+        pathname: "/dataOverviews/compare",
+        params: { ids: compareList.map(s => s.id).join(',') }
+      } as any);
+    }
+  }, [compareList, router]);
 
-  const titleOpacity = scrollY.interpolate({
-    inputRange: [0, 60, 90],
-    outputRange: [1, 0.3, 0],
-    extrapolate: 'clamp',
-  });
-
-  const renderSearchBar = () => {
-    return (
-      <Animated.View 
-        style={[
-          styles.searchContainer,
-          {
-            transform: [{ translateY: searchBarY }],
-            backgroundColor: isSearchFocused ? COLORS.background : 'transparent',
-          }
-        ]}
+  const renderStrainItem = useCallback(({ item: strain }: { item: Strain }) => (
+    <Animated.View 
+      entering={FadeIn.duration(300)}
+      style={styles.strainItem}
+    >
+      <TouchableOpacity
+        onPress={() => router.push({
+          pathname: "/dataOverviews/strains/strainDetails",
+          params: { id: strain.id }
+        } as any)}
       >
-        <Animated.View 
-          style={[
-            styles.searchBarContainer, 
-            { 
-              width: searchBarWidth,
-              borderColor: isSearchFocused ? COLORS.primary : 'transparent',
-              shadowColor: isSearchFocused ? COLORS.primary : 'transparent',
-            }
-          ]}
-        >
+        <LinearGradient
+          colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.05)', 'rgba(0,230,118,0)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        
+        <View style={styles.strainIcon}>
+          <MaterialCommunityIcons 
+            name="cannabis" 
+            size={24} 
+            color={COLORS.background} 
+          />
+        </View>
+
+        <View style={styles.strainContent}>
+          <View style={styles.strainHeader}>
+            <Text style={styles.strainName}>{strain.name}</Text>
+            <Text style={styles.rating}>{strain.combined_rating.toFixed(1)}</Text>
+          </View>
+
+          <Text style={styles.strainType}>{strain.genetic_type}</Text>
+          <Text numberOfLines={2} style={styles.strainDescription}>
+            {strain.overview}
+          </Text>
+
+          <View style={styles.actionButtons}>
+            <TouchableOpacity 
+              onPress={() => toggleFavorite(strain.id!)}
+              style={styles.actionButton}
+            >
+              <MaterialCommunityIcons 
+                name={isFavorite(strain.id!) ? "heart" : "heart-outline"} 
+                size={24} 
+                color={isFavorite(strain.id!) ? COLORS.primary : COLORS.text.secondary} 
+              />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              onPress={() => handleCompareToggle(strain)}
+              style={styles.actionButton}
+              disabled={compareList.length >= 3 && !compareList.some(s => s.id === strain.id)}
+            >
+              <MaterialCommunityIcons 
+                name={compareList.some(s => s.id === strain.id) ? "compare" : "compare-horizontal"} 
+                size={24} 
+                color={compareList.some(s => s.id === strain.id) ? COLORS.primary : COLORS.text.secondary} 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  ), [compareList, isFavorite, router, toggleFavorite, handleCompareToggle]);
+
+  const ListHeaderComponent = useCallback(() => (
+    searchQuery ? (
+      <Text style={styles.resultsText}>
+        {pagination.total} results found
+      </Text>
+    ) : (
+      <Text style={styles.sectionTitle}>Popular Strains</Text>
+    )
+  ), [searchQuery, pagination.total]);
+
+  if (isLoading && !strains.length && !popularStrains.length) {
+    return <LoadingView />;
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Trending</Text>
+        <Text style={styles.subtitle}>Discover popular strains</Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
           <MaterialCommunityIcons 
             name="magnify" 
-            size={22} 
-            color={COLORS.primary}
-            style={styles.searchIcon}
+            size={24} 
+            color={COLORS.text.secondary} 
           />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search strains, accessories..."
-            placeholderTextColor={COLORS.text.quaternary}
+            placeholder="Search strains..."
+            placeholderTextColor={COLORS.text.secondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onFocus={handleSearchFocus}
+            onSubmitEditing={handleSearch}
             returnKeyType="search"
-            selectionColor={COLORS.accent}
           />
           {searchQuery !== '' && (
-            <TouchableOpacity 
-              onPress={() => setSearchQuery('')}
-              style={styles.clearButton}
-            >
+            <TouchableOpacity onPress={handleClearSearch}>
               <MaterialCommunityIcons 
                 name="close-circle" 
-                size={18} 
-                color={COLORS.text.quaternary}
+                size={20} 
+                color={COLORS.text.secondary} 
               />
             </TouchableOpacity>
           )}
-        </Animated.View>
-        <Animated.View style={{ opacity: cancelOpacity }}>
-          <TouchableOpacity onPress={handleCancel} style={styles.cancelButton}>
-            <Text style={styles.cancelText}>Cancel</Text>
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.filterButton, showFilters && styles.filterButtonActive]} 
+          onPress={() => setShowFilters(!showFilters)}
+        >
+          <MaterialCommunityIcons 
+            name="filter-variant" 
+            size={24} 
+            color={showFilters ? COLORS.primary : COLORS.text.secondary} 
+          />
+        </TouchableOpacity>
+      </View>
+
+      {showFilters && (
+        <SearchFilters
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onApplyFilters={handleApplyFilters}
+          categories={categories}
+        />
+      )}
+
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={searchQuery ? strains : popularStrains}
+          renderItem={renderStrainItem}
+          keyExtractor={item => item.id!.toString()}
+          contentContainerStyle={styles.content}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          ListHeaderComponent={ListHeaderComponent}
+          ListFooterComponent={
+            isLoading ? <LoadingView /> : null
+          }
+        />
+      )}
+
+      {/* Compare Bar */}
+      {compareList.length > 0 && (
+        <Animated.View 
+          entering={FadeIn}
+          style={styles.compareBar}
+        >
+          <FlatList
+            horizontal
+            data={compareList}
+            keyExtractor={item => item.id!.toString()}
+            renderItem={({ item }) => (
+              <View style={styles.compareItem}>
+                <Text style={styles.compareItemText}>{item.name}</Text>
+                <TouchableOpacity 
+                  onPress={() => handleCompareToggle(item)}
+                  style={styles.compareItemRemove}
+                >
+                  <MaterialCommunityIcons 
+                    name="close" 
+                    size={20} 
+                    color={COLORS.text.secondary} 
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+          />
+          <TouchableOpacity 
+            style={[
+              styles.compareButton,
+              compareList.length < 2 && styles.compareButtonDisabled
+            ]}
+            onPress={handleCompare}
+            disabled={compareList.length < 2}
+          >
+            <Text style={styles.compareButtonText}>
+              Compare ({compareList.length})
+            </Text>
           </TouchableOpacity>
         </Animated.View>
-      </Animated.View>
-    );
-  };
-
-  const TrendingIndicator = ({ isUp, percentChange }) => (
-    <View style={styles.trendingIndicatorContainer}>
-      <MaterialCommunityIcons 
-        name={isUp ? "trending-up" : "trending-down"} 
-        size={14} 
-        color={isUp ? COLORS.trending.up : COLORS.trending.down}
-        style={styles.trendingIcon}
-      />
-      <Text 
-        style={[
-          styles.percentChangeText,
-          { color: isUp ? COLORS.trending.up : COLORS.trending.down }
-        ]}
-      >
-        {percentChange}
-      </Text>
-    </View>
-  );
-
-  const renderTrendingItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.trendingItem}
-      onPress={() => router.push({
-        pathname: "/dataOverviews/strains/strainDetails",
-        params: { id: item.id }
-      })}
-      activeOpacity={0.7}
-    >
-      <LinearGradient
-        colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.05)', 'rgba(0,230,118,0)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.itemGradient}
-      />
-      <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-        <MaterialCommunityIcons name={item.icon} size={24} color={COLORS.background} />
-      </View>
-      <View style={styles.itemContent}>
-        <View style={styles.itemHeader}>
-          <Text style={styles.itemName}>{item.name}</Text>
-          
-        </View>
-        <Text style={styles.itemDescription}>{item.description}</Text>
-        {item.thcContent && (
-          <View style={styles.badgeContainer}>
-            <Text style={styles.thcBadge}>THC: {item.thcContent}</Text>
-            {item.type && (
-              <Text style={styles.typeBadge}>{item.type}</Text>
-            )}
-          </View>
-        )}
-      </View>
-      <MaterialCommunityIcons 
-        name="chevron-right" 
-        size={20} 
-        color={COLORS.text.quaternary}
-        style={styles.chevronIcon}
-      />
-    </TouchableOpacity>
-  );
-
-  const renderCategorySection = ({ item }) => (
-    <View style={styles.categorySection}>
-      <Text style={styles.categoryTitle}>{item.title}</Text>
-      <FlatList
-        data={item.items}
-        renderItem={renderTrendingItem}
-        keyExtractor={item => item.id}
-        horizontal={false}
-        showsHorizontalScrollIndicator={false}
-        ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
-        scrollEnabled={false}
-      />
-    </View>
-  );
-
-  const renderHeader = () => (
-    <Animated.View 
-      style={[
-        styles.headerContainer,
-        {
-          opacity: headerOpacity,
-          transform: [
-            { scale: headerScale },
-            { translateY: headerTranslateY }
-          ]
-        }
-      ]}
-    >
-      <LinearGradient
-        colors={['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.1)', 'rgba(0,0,0,0)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.headerGradient}
-      />
-      <Animated.Text 
-        style={[
-          styles.headerTitle,
-          { opacity: titleOpacity }
-        ]}
-      >
-        Trending
-      </Animated.Text>
-      <Animated.Text 
-        style={[
-          styles.headerSubtitle,
-          { opacity: titleOpacity }
-        ]}
-      >
-        Discover what's popular right now
-      </Animated.Text>
-    </Animated.View>
-  );
-
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <SafeAreaView style={styles.safeAreaContainer} edges={['top']}>
-        {renderHeader()}
-        {renderSearchBar()}
-        
-        {isSearchFocused ? (
-          <View style={styles.searchResults}>
-            <MaterialCommunityIcons 
-              name="leaf" 
-              size={40} 
-              color={COLORS.primary}
-              style={styles.leafIcon}
-            />
-            <Text style={styles.searchPrompt}>
-              {searchQuery === '' ? 
-                'Start typing to search...' : 
-                `Search results for "${searchQuery}"`}
-            </Text>
-          </View>
-        ) : (
-          <Animated.FlatList
-            data={trendingCategories}
-            renderItem={renderCategorySection}
-            keyExtractor={(item, index) => `category-${index}`}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-              { useNativeDriver: true }
-            )}
-            bounces={true}
-          />
-        )}
-      </SafeAreaView>
-    </View>
+      )}
+    </SafeAreaView>
   );
 }
 
@@ -1364,202 +1061,177 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  safeAreaContainer: {
-    flex: 1,
-    backgroundColor: COLORS.background,
+  header: {
+    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 0 : 20,
   },
-  headerContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    overflow: 'hidden',
-  },
-  headerGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-  },
-  headerTitle: {
+  title: {
     fontSize: 34,
     fontWeight: '700',
     color: COLORS.text.primary,
-    marginBottom: 8,
-    letterSpacing: 0.3,
   },
-  headerSubtitle: {
+  subtitle: {
     fontSize: 16,
-    fontWeight: '400',
     color: COLORS.text.secondary,
-    letterSpacing: 0.2,
+    marginTop: 4,
   },
   searchContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    zIndex: 10,
+    paddingHorizontal: 20,
+    gap: 10,
+    marginBottom: 10,
   },
-  searchBarContainer: {
+  searchBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(40, 40, 40, 0.8)',
+    backgroundColor: COLORS.cardBackground,
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 8,
-    shadowOpacity: 0.2,
-  },
-  searchIcon: {
-    marginRight: 10,
-  },
-  clearButton: {
-    padding: 4,
   },
   searchInput: {
     flex: 1,
     color: COLORS.text.primary,
     fontSize: 16,
+    marginLeft: 8,
     padding: 0,
-    height: '100%',
-    fontWeight: '400',
   },
-  cancelButton: {
-    paddingLeft: 16,
+  filterButton: {
+    width: 44,
     height: 44,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 12,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  cancelText: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '500',
+  filterButtonActive: {
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
   },
-  listContainer: {
-    paddingBottom: 40,
+  content: {
+    paddingHorizontal: 20,
+    paddingBottom: 100,
   },
-  categorySection: {
-    marginTop: 28,
-    paddingHorizontal: 16,
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  categoryTitle: {
-    fontSize: 22,
+  errorText: {
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+  },
+  resultsText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: '600',
     color: COLORS.text.primary,
     marginBottom: 16,
-    letterSpacing: 0.2,
   },
-  trendingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  strainItem: {
     backgroundColor: COLORS.cardBackground,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
   },
-  itemGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  iconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  strainIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    position: 'absolute',
+    top: 16,
+    left: 16,
   },
-  itemContent: {
-    flex: 1,
+  strainContent: {
+    padding: 16,
+    paddingLeft: 68,
   },
-  itemHeader: {
+  strainHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    alignItems: 'center',
   },
-  itemName: {
+  strainName: {
     fontSize: 18,
     fontWeight: '600',
     color: COLORS.text.primary,
-    letterSpacing: 0.1,
   },
-  
-  trendingIcon: {
-    marginRight: 4,
-  },
-  percentChangeText: {
-    fontSize: 12,
+  rating: {
+    fontSize: 16,
     fontWeight: '600',
+    color: COLORS.primary,
   },
-  itemDescription: {
+  strainType: {
     fontSize: 14,
     color: COLORS.text.secondary,
-    marginBottom: 6,
+    marginTop: 2,
   },
-  badgeContainer: {
+  strainDescription: {
+    fontSize: 14,
+    color: COLORS.text.tertiary,
+    marginTop: 4,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 12,
+  },
+  actionButton: {
+    padding: 4,
+  },
+  compareBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.cardBackground,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 12,
+    gap: 12,
   },
-  thcBadge: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: COLORS.text.tertiary,
-    backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginRight: 8,
-  },
-  typeBadge: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: COLORS.text.tertiary,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  chevronIcon: {
-    marginLeft: 8,
-  },
-  itemSeparator: {
-    height: 1,
-    backgroundColor: 'transparent',
-    marginVertical: 4,
-  },
-  searchResults: {
-    flex: 1,
+  compareItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    gap: 8,
   },
-  leafIcon: {
-    marginBottom: 16,
+  compareItemText: {
+    color: COLORS.text.primary,
+    fontSize: 14,
+    maxWidth: 120,
   },
-  searchPrompt: {
-    color: COLORS.text.secondary,
-    fontSize: 16,
-    textAlign: 'center',
-    marginHorizontal: 24,
+  compareItemRemove: {
+    padding: 2,
+  },
+  compareButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  compareButtonDisabled: {
+    opacity: 0.5,
+  },
+  compareButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
 
@@ -1799,6 +1471,7 @@ File: package.json
     "expo-system-ui": "~4.0.6",
     "expo-web-browser": "~14.0.1",
     "lucide-react": "^0.475.0",
+    "papaparse": "^5.5.2",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.5",
@@ -1836,6 +1509,7 @@ File: src/constants.ts
 
 export const BONG_HITS_DATABASE_NAME: string = "BongHits";
 export const SAVED_DEVICES_DATABASE_NAME: string = "SavedDevices";
+export const STRAINS_DATABASE_NAME: string = "Strains";
 
 export const dayLookUpTable = new Map<number, string>()
 dayLookUpTable.set(0, "Sun");
@@ -2379,6 +2053,1715 @@ insert into BongHits (timestamp, duration_ms) values ('2024-12-28 15:13:36', 100
 `)
 }
 
+export function getStrainsCSV(): string {
+  return `"Strain Name","Overview","Genetic Type","Lineage","THC Range","CBD Level","Dominant Terpenes","Qualitative Insights","Effects","Negatives","Uses","THC-Based Potency Rating (1-10)","User Rating (1-10)","Combined Potency / User Rating (1-10)"
+"Trainwreck","Sativa-dominant hybrid known for its explosive cerebral high and rapid onset.","Sativa-dominant Hybrid","Mexican, Thai, Afghani","18-22%","Minimal","Myrcene, Pinene","Spicy, citrus aroma with a hint of pine; dense, energetic buds","Energized, Creative, Uplifted","dry mouth, dry eyes, dizziness","Ideal for creative pursuits, social settings, combating fatigue","7.5","7","7.25"
+"Blue Dream","Balanced sativa-dominant hybrid offering gentle cerebral invigoration and full-body relaxation.","Sativa-dominant Hybrid","Blueberry x Haze","17-24%","Low","Myrcene, Pinene, Caryophyllene","Sweet berry aroma with earthy undertones; smooth buds","Euphoric, Relaxed, Creative","dry mouth, dry eyes","Great for stress relief, daytime use, creative tasks","7.75","7.5","7.63"
+"Girl Scout Cookies","Popular hybrid known for its euphoric and relaxing effects with a sweet, earthy aroma.","Indica-dominant Hybrid","OG Kush x Durban Poison","18-28%","Low","Caryophyllene, Limonene","Sweet, earthy scent with hints of mint; dense, resinous buds","Happy, Relaxed, Euphoric","dry mouth, drowsiness","Effective for pain relief and mood elevation","9","8.5","8.75"
+"Sour Diesel","Energetic sativa-dominant strain with a pungent diesel aroma.","Sativa-dominant","Chemdawg x Super Skunk","20-25%","Low","Limonene, Caryophyllene","Pungent, fuel-like scent with citrus hints; airy buds","Energetic, Uplifted, Focused","dry mouth, anxiety","Ideal for daytime use and creative projects","8.75","8","8.38"
+"OG Kush","Iconic hybrid delivering a balanced high with earthy pine and citrus flavors.","Hybrid","Chemdawg x Hindu Kush","19-26%","Low","Myrcene, Limonene","Earthy, pine aroma with a touch of citrus; dense, resinous buds","Relaxed, Euphoric, Uplifted","dry mouth, dry eyes","Used for stress relief and pain management","8.75","8","8.38"
+"Pineapple Express","Tropical sativa-dominant hybrid offering a sweet, fruity flavor and energetic high.","Sativa-dominant Hybrid","Trainwreck x Hawaiian","19-25%","Low","Limonene, Myrcene","Tropical pineapple aroma with hints of earthiness; vibrant buds","Energetic, Uplifted, Creative","dry mouth, dry eyes","Perfect for social settings and daytime activities","8.5","8","8.25"
+"Granddaddy Purple","Renowned indica-dominant strain with a deep purple hue and grape-like aroma.","Indica-dominant","Purple Urkle x Big Bud","17-23%","Low","Myrcene, Pinene","Sweet, grape aroma with a relaxing, heavy bud structure","Relaxed, Sleepy, Euphoric","dry mouth, drowsiness","Ideal for pain relief and insomnia","7.5","7","7.25"
+"White Widow","Balanced hybrid known for its potent resin production and earthy pine flavor.","Hybrid","Brazilian Sativa x South Indian Indica","18-25%","Low","Myrcene, Caryophyllene","Earthy, woody aroma with a subtle sweet note; frosty buds","Energetic, Euphoric, Creative","dry mouth, dry eyes","Suitable for stress relief and social use","8.25","8","8.13"
+"AK-47","Sativa-dominant hybrid offering a mellow, long-lasting cerebral high with a sweet, sour flavor.","Sativa-dominant Hybrid","Colombian, Mexican, Thai, Afghani","13-20%","Low","Myrcene, Limonene","Sweet and sour aroma with a light, airy bud structure","Relaxed, Uplifted, Creative","dry mouth, fatigue","Great for relaxation and creative inspiration","5.75","6","5.88"
+"Durban Poison","Pure sativa known for its energizing effects and sweet, earthy aroma.","Pure Sativa","South African Landrace","15-25%","Low","Terpinolene, Myrcene","Sweet, earthy scent with hints of pine; light, fluffy buds","Energizing, Uplifting, Focused","dry mouth, insomnia","Ideal for daytime use and outdoor activities","7.5","7","7.25"
+"Purple Haze","Sativa-dominant strain with a distinctive purple hue and uplifting high.","Sativa-dominant Hybrid","Haze lineage","15-20%","Low","Myrcene, Limonene","Fruity, berry aroma with a hint of spice; colorful buds","Uplifted, Creative, Euphoric","dry mouth, dry eyes","Suitable for creative endeavors and social gatherings","6.25","6.5","6.38"
+"Green Crack","Intense sativa-dominant strain known for its energizing and focused high.","Sativa-dominant","Afghani x Skunk #1","15-25%","Low","Myrcene, Pinene","Citrus and tropical fruit aroma; tight, potent buds","Energetic, Focused, Uplifted","dry mouth, anxiety","Perfect for daytime energy and focus","7.5","7.25","7.38"
+"Jack Herer","Award-winning sativa-dominant hybrid celebrated for its clear-headed and creative high.","Sativa-dominant Hybrid","Haze x Northern Lights x Shiva Skunk","18-24%","Low","Terpinolene, Caryophyllene","Spicy, pine aroma with hints of citrus; frosty buds","Uplifted, Creative, Euphoric","dry mouth, paranoia","Ideal for creative tasks and stress relief","8","8","8.00"
+"Chemdawg","Potent hybrid with a strong diesel aroma and robust cerebral high.","Hybrid","Likely Chemdawg #4 x Unknown","15-20%","Low","Myrcene, Caryophyllene","Pungent diesel scent with a hint of spice; dense buds","Focused, Euphoric, Relaxed","dry mouth, dry eyes","Used for mood enhancement and pain relief","6.25","6.5","6.38"
+"Lemon Haze","Sativa-dominant hybrid with a zesty lemon flavor and invigorating high.","Sativa-dominant Hybrid","Lemon Skunk x Silver Haze","15-22%","Low","Limonene, Terpinolene","Bright citrus aroma with a sweet undertone; light, airy buds","Energized, Uplifted, Happy","dry mouth, anxiety","Great for daytime use and creative activities","6.75","6.5","6.63"
+"Northern Lights","Classic indica-dominant strain known for its deeply relaxing and sedative effects.","Indica-dominant","Afghani x Thai","16-21%","Low","Myrcene, Pinene","Sweet and spicy aroma with resinous, compact buds","Relaxed, Sleepy, Euphoric","dry mouth, drowsiness","Ideal for pain relief and insomnia","6.75","6.25","6.50"
+"Critical Mass","Indica-dominant strain famous for its heavy yields and potent body high.","Indica-dominant","Afghani x Skunk #1","19-21%","Low","Myrcene, Caryophyllene","Earthy and sweet aroma; large, dense buds","Relaxed, Sedated, Happy","dry mouth, couch-lock","Suitable for chronic pain and stress relief","7.5","7","7.25"
+"Bubble Gum","Balanced hybrid with a sweet, bubble gum flavor and uplifting effects.","Hybrid","Unknown (landrace blend)","15-20%","Low","Caryophyllene, Limonene","Sweet, fruity aroma reminiscent of bubble gum; soft buds","Happy, Euphoric, Relaxed","dry mouth, dizziness","Good for mood elevation and mild pain relief","6.25","6","6.13"
+"Amnesia Haze","Sativa-dominant hybrid known for its potent, uplifting high and complex flavor profile.","Sativa-dominant Hybrid","Haze lineage","20-25%","Low","Terpinolene, Myrcene","Earthy and citrus aroma with a hint of spice; airy buds","Uplifted, Creative, Euphoric","dry mouth, paranoia","Ideal for creative tasks and social settings","8.75","8.25","8.50"
+"Strawberry Cough","Sativa-dominant strain celebrated for its sweet strawberry aroma and smooth, uplifting high.","Sativa-dominant","Possibly Haze-based","15-20%","Low","Limonene, Myrcene","Sweet berry scent with a subtle herbal note; light buds","Uplifted, Euphoric, Focused","dry mouth, coughing","Great for stress relief and creative pursuits","6.25","6","6.13"
+"Maui Wowie","Tropical sativa-dominant strain delivering an energetic high with a fruity, exotic flavor.","Sativa-dominant","Hawaiian Landrace","15-20%","Low","Limonene, Terpinolene","Tropical pineapple and citrus aroma; light, airy buds","Energizing, Uplifted, Creative","dry mouth, dizziness","Perfect for daytime energy and relaxation","6.25","6.5","6.38"
+"Grape Ape","Indica-dominant strain known for its distinct grape aroma and deeply relaxing effects.","Indica-dominant","Afghani x Mendocino Purps","15-22%","Low","Myrcene, Pinene","Sweet, grape-like aroma; colorful, dense buds","Relaxed, Sedated, Happy","dry mouth, drowsiness","Ideal for stress relief and pain management","6.75","6.5","6.63"
+"Blueberry","Indica-dominant strain with a renowned blueberry aroma and soothing effects.","Indica-dominant","Blueberry x Afghan","16-24%","Low","Myrcene, Pinene","Sweet blueberry scent with earthy undertones; frosty buds","Relaxed, Euphoric, Sleepy","dry mouth, drowsiness","Used for relaxation and mild pain relief","7.5","7","7.25"
+"Cherry Pie","Hybrid strain offering a sweet and tart cherry flavor with balanced effects.","Hybrid","Granddaddy Purple x Durban Poison","16-22%","Low","Limonene, Caryophyllene","Sweet, tart cherry aroma; sticky, dense buds","Happy, Relaxed, Euphoric","dry mouth, dry eyes","Suitable for mood elevation and pain relief","7","7","7.00"
+"Super Silver Haze","Sativa-dominant hybrid with a potent, energetic high and complex citrus-spice profile.","Sativa-dominant Hybrid","Skunk, Northern Lights, Haze","18-23%","Low","Terpinolene, Myrcene","Citrus and earthy aroma with spicy notes; frosty buds","Energized, Uplifted, Focused","dry mouth, anxiety","Ideal for daytime creativity and stress relief","7.75","7.5","7.63"
+"Bruce Banner","Potent hybrid known for its explosive high and pungent, sweet diesel aroma.","Hybrid","OG Kush x Strawberry Diesel","20-25%","Low","Myrcene, Caryophyllene","Sweet, diesel-like aroma with a hint of fruit; dense buds","Euphoric, Energetic, Creative","dry mouth, paranoia","Used for mood enhancement and pain management","8.75","8.5","8.63"
+"Wedding Cake","Indica-dominant hybrid with a rich, tangy flavor and a potent, relaxing high.","Indica-dominant Hybrid","Cherry Pie x Girl Scout Cookies","20-25%","Low","Caryophyllene, Limonene","Sweet, earthy aroma with a hint of vanilla; dense buds","Relaxed, Happy, Euphoric","dry mouth, drowsiness","Ideal for stress relief and pain management","8.75","8.25","8.50"
+"Gelato","Balanced hybrid celebrated for its dessert-like flavor and euphoric, calming effects.","Hybrid","Sunset Sherbet x Thin Mint GSC","20-25%","Low","Limonene, Caryophyllene","Sweet, creamy aroma with hints of citrus; sticky buds","Relaxed, Happy, Uplifted","dry mouth, dizziness","Great for relaxation and mood enhancement","8.75","8.5","8.63"
+"Sunset Sherbet","Indica-dominant hybrid known for its fruity dessert flavor and soothing high.","Indica-dominant Hybrid","Girl Scout Cookies x Pink Panties","18-22%","Low","Limonene, Myrcene","Fruity, sherbet-like aroma; vibrant, dense buds","Relaxed, Euphoric, Happy","dry mouth, drowsiness","Suitable for evening relaxation and stress relief","7.5","7","7.25"
+"GMO (Garlic Cookies)","Indica-dominant hybrid with a pungent garlic aroma and deeply relaxing effects.","Indica-dominant Hybrid","Chemdawg x GSC","18-25%","Low","Caryophyllene, Myrcene","Pungent, savory aroma with earthy undertones; sticky buds","Relaxed, Sedated, Euphoric","dry mouth, dry eyes","Ideal for pain relief and stress reduction","8.25","8","8.13"
+"Do-Si-Dos","Indica-dominant hybrid offering a sweet and earthy flavor with potent relaxing effects.","Indica-dominant Hybrid","Girl Scout Cookies x Face Off OG","18-22%","Low","Limonene, Caryophyllene","Sweet, floral aroma with hints of mint; dense, resinous buds","Relaxed, Euphoric, Sedated","dry mouth, drowsiness","Used for anxiety relief and relaxation","7.5","7","7.25"
+"Runtz","Balanced hybrid known for its sweet, candy-like flavor and powerful, euphoric high.","Hybrid","Zkittlez x Gelato","19-29%","Low","Limonene, Caryophyllene","Fruity, candy-like aroma; vibrant, colorful buds","Happy, Euphoric, Relaxed","dry mouth, dizziness","Ideal for creative pursuits and mood enhancement","9.5","9","9.25"
+"Zkittlez","Indica-dominant hybrid with a sweet, fruity flavor and a relaxing, mellow high.","Indica-dominant Hybrid","Grape Ape x Grapefruit","15-22%","Low","Myrcene, Limonene","Intensely sweet, fruity aroma; compact, resinous buds","Relaxed, Happy, Euphoric","dry mouth, dry eyes","Great for stress relief and relaxation","6.75","6.5","6.63"
+"Biscotti","Hybrid strain offering a rich, cookie-like flavor paired with a balanced high.","Hybrid","Girl Scout Cookies x South Florida OG","18-25%","Low","Limonene, Caryophyllene","Sweet, baked aroma with hints of spice; dense, trichome-rich buds","Happy, Relaxed, Uplifted","dry mouth, drowsiness","Suitable for creative tasks and relaxation","8.25","8","8.13"
+"Tahoe OG","Indica-dominant strain with a robust, earthy pine flavor and potent body effects.","Indica-dominant","OG Kush lineage","20-25%","Low","Myrcene, Limonene","Earthy, pine aroma with a hint of spice; compact, sticky buds","Relaxed, Sedated, Euphoric","dry mouth, couch-lock","Ideal for pain relief and stress management","8.75","8.5","8.63"
+"Forbidden Fruit","Hybrid strain known for its tropical, fruity flavor and deeply relaxing high.","Hybrid","Tangie x Cherry Pie","18-23%","Low","Limonene, Caryophyllene","Tropical, citrusy aroma with sweet undertones; resinous buds","Relaxed, Happy, Euphoric","dry mouth, drowsiness","Great for evening relaxation and mood enhancement","7.75","7.5","7.63"
+"Agent Orange","Sativa-dominant hybrid offering a zesty citrus flavor and uplifting effects.","Sativa-dominant Hybrid","Orange Velvet x Jack the Ripper","18-25%","Low","Limonene, Terpinolene","Vibrant citrus aroma with sweet, tangy notes; frosty buds","Energized, Uplifted, Creative","dry mouth, dry eyes","Ideal for daytime use and creative inspiration","8.25","8","8.13"
+"Sour Tangie","Sativa-dominant hybrid blending sour diesel with tangy citrus flavors for a vibrant high.","Sativa-dominant Hybrid","Sour Diesel x Tangie","18-24%","Low","Limonene, Caryophyllene","Tangy citrus aroma with a hint of sour diesel; dense buds","Energized, Uplifted, Focused","dry mouth, anxiety","Suitable for creative projects and daytime activities","8","7.75","7.88"
+"Critical Kush","Indica-dominant hybrid merging heavy yields with a potent, relaxing high.","Indica-dominant Hybrid","Critical Mass x OG Kush","20-25%","Low","Myrcene, Caryophyllene","Earthy, pine aroma with subtle sweetness; chunky buds","Relaxed, Sedated, Happy","dry mouth, drowsiness","Great for pain relief and evening relaxation","8.75","8.25","8.50"
+"Alaskan Thunder Fuck","Sativa-dominant hybrid known for its strong, uplifting high and pungent, piney aroma.","Sativa-dominant Hybrid","Afghani x Unknown","18-25%","Low","Pinene, Myrcene","Pungent, piney scent with earthy undertones; frosty, energizing buds","Energized, Uplifted, Creative","dry mouth, anxiety","Ideal for boosting energy and focus","8.25","8","8.13"
+"Harlequin","CBD-rich sativa-dominant strain celebrated for its clear-headed, medicinal effects.","Sativa-dominant Hybrid","Colombian Gold x Nepalese","7-15%","High","Myrcene, Pinene","Earthy, herbal aroma with subtle sweetness; lighter buds","Clear-headed, Relaxed, Focused","dry mouth, dizziness","Used for pain relief and anxiety management","3","3.5","3.25"
+"Cannatonic","Balanced hybrid renowned for its low THC and high CBD content, offering gentle relief.","Hybrid","MK Ultra x G13","6-17%","High","Limonene, Caryophyllene","Earthy and citrus aroma; soft, resinous buds","Calm, Relaxed, Focused","dry mouth, fatigue","Ideal for medical use and anxiety relief","3.25","3.5","3.38"
+"Charlotte's Web","CBD-dominant strain with minimal psychoactive effects, designed for therapeutic use.","CBD-dominant","High CBD phenotype of hemp","0-0.3%","Very High","Myrcene, Limonene","Mild, herbal aroma; less resinous buds","Calm, Focused, Clear-headed","none","Used for epilepsy and chronic pain management","0.5","0.5","0.5"
+"Remedy","Balanced hybrid with high CBD content offering mild relaxation without strong psychoactive effects.","Hybrid","CBD-rich phenotype","1-4%","High","Limonene, Caryophyllene","Earthy, citrus notes; soft buds","Relaxed, Clear-headed, Calm","dry mouth, sedation","Ideal for anxiety and pain relief","3.5","3.75","3.63"
+"Pennywise","Indica-dominant strain with a near 1:1 THC to CBD ratio, offering balanced effects.","Indica-dominant Hybrid","Harle-Tsu x Jack the Ripper","4-8%","Balanced","Myrcene, Caryophyllene","Earthy aroma with subtle spice; compact buds","Calm, Focused, Euphoric","dry mouth, dizziness","Suitable for medical use and stress relief","3.5","3.75","3.63"
+"Canna-Tsu","Hybrid strain featuring balanced levels of THC and CBD for a mild, uplifting experience.","Hybrid","Cannatonic x Sour Tsunami","4-8%","Balanced","Limonene, Pinene","Subtle citrus aroma with herbal notes; light buds","Calm, Happy, Clear-headed","dry mouth, fatigue","Used for mild pain and anxiety relief","3.5","3.75","3.63"
+"ACDC","CBD-dominant strain with minimal psychoactive effects, prized for its therapeutic benefits.","CBD-dominant","Cannatonic phenotype","1-6%","Very High","Myrcene, Limonene","Earthy, herbal aroma; non-resinous buds","Clear-headed, Relaxed, Focused","none","Ideal for chronic pain, inflammation, anxiety","1.5","1.75","1.63"
+"Ringo's Gift","Hybrid strain with high CBD offering a balanced and clear-headed experience.","Hybrid","Harle-Tsu x ACDC","Varies (1:1–24:1 ratio)","High","Limonene, Caryophyllene","Mild, earthy aroma with sweet undertones; moderate buds","Calm, Focused, Relaxed","dry mouth, sedation","Used for pain, anxiety, seizure management","2","2.25","2.13"
+"Sour Tsunami","CBD-dominant strain known for its low THC content and effective pain relief properties.","CBD-dominant","Sour Diesel phenotype","6-10%","High","Limonene, Myrcene","Tangy, diesel aroma with earthy notes; less resinous","Calm, Relaxed, Focused","dry mouth, sedation","Ideal for chronic pain and inflammation","1.5","1.75","1.63"
+"Harle-Tsu","Balanced CBD-rich hybrid offering mild euphoria with significant therapeutic benefits.","Hybrid","Harlequin x Canna-Tsu","4-10%","High","Myrcene, Caryophyllene","Earthy, herbal scent with subtle citrus; light buds","Clear-headed, Calm, Relaxed","dry mouth, fatigue","Used for anxiety and pain relief","2","2.25","2.13"
+"Blue Cheese","Indica-dominant hybrid with a pungent, cheese-like aroma and deeply relaxing effects.","Indica-dominant Hybrid","Blueberry x UK Cheese","18-22%","Low","Myrcene, Caryophyllene","Strong cheesy aroma with sweet berry undertones; dense buds","Relaxed, Euphoric, Sedated","dry mouth, drowsiness","Great for stress relief and relaxation","7.5","7.25","7.38"
+"Orange Bud","Sativa-dominant strain celebrated for its vibrant citrus flavor and uplifting effects.","Sativa-dominant","Afghani x Thai","15-22%","Low","Limonene, Terpinolene","Bright citrus aroma with a hint of spice; light, airy buds","Energetic, Uplifted, Happy","dry mouth, dry eyes","Ideal for daytime use and mood elevation","6.75","6.5","6.63"
+"LA Confidential","Indica-dominant strain known for its smooth, pine and spice flavors and calming effects.","Indica-dominant","Afghani x OG Kush","16-22%","Low","Myrcene, Limonene","Earthy, pine aroma with subtle sweetness; resinous buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Used for stress relief and insomnia","7","7","7.00"
+"God's Gift","Indica-dominant hybrid offering a powerful, euphoric high with a sweet, grape aroma.","Indica-dominant Hybrid","Granddaddy Purple x OG Kush","20-25%","Low","Myrcene, Caryophyllene","Rich, sweet grape aroma with sticky, dense buds","Relaxed, Euphoric, Sedated","dry mouth, couch-lock","Ideal for pain relief and stress management","8.75","8.5","8.63"
+"NYC Diesel","Sativa-dominant strain with a strong diesel aroma and uplifting, creative effects.","Sativa-dominant","Diesel x Unknown","18-25%","Low","Limonene, Caryophyllene","Pungent diesel scent with hints of citrus; frosty buds","Energized, Creative, Uplifted","dry mouth, anxiety","Great for daytime creativity and focus","8.25","8","8.13"
+"Skunk #1","Classic hybrid known for its strong, skunky aroma and balanced, long-lasting effects.","Hybrid","Skunk #1 lineage","15-20%","Low","Myrcene, Caryophyllene","Pungent, skunky odor with earthy undertones; sticky buds","Happy, Relaxed, Euphoric","dry mouth, drowsiness","Ideal for stress relief and mood elevation","6.25","6","6.13"
+"Lemon Skunk","Hybrid strain offering a zesty lemon flavor and an energetic, uplifting high.","Hybrid","Skunk x Lemon Thai","15-22%","Low","Limonene, Terpinolene","Bright lemon aroma with skunky undertones; light buds","Energized, Uplifted, Happy","dry mouth, anxiety","Great for daytime use and creative tasks","6.75","6.5","6.63"
+"Master Kush","Indica-dominant strain renowned for its earthy, spicy flavor and deeply calming effects.","Indica-dominant","Afghani lineage","15-22%","Low","Myrcene, Limonene","Earthy, herbal aroma with a subtle spice; dense buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Ideal for stress relief and pain management","6.75","6.5","6.63"
+"Hindu Kush","Pure indica known for its earthy, woody flavors and deeply relaxing effects.","Indica (Pure)","Hindu Kush Landrace","16-21%","Low","Myrcene, Pinene","Earthy, woody aroma with a hint of spice; compact buds","Calm, Relaxed, Sedated","dry mouth, couch-lock","Used for relaxation and pain relief","6.75","6.5","6.63"
+"Afghani","Pure indica landrace with a strong, earthy aroma and heavy, sedative effects.","Indica (Pure)","Afghani Landrace","18-23%","Low","Myrcene, Caryophyllene","Earthy, hash-like aroma; resinous, dense buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Ideal for pain relief and insomnia","7.5","7.25","7.38"
+"Pakistani Chitral Kush","Robust pure indica with a distinct earthy and spicy flavor profile and potent effects.","Indica (Pure)","Pakistani Landrace","18-25%","Low","Myrcene, Pinene","Earthy, spicy aroma with resinous buds","Relaxed, Sedated, Euphoric","dry mouth, couch-lock","Used for chronic pain and insomnia","8.25","8","8.13"
+"Blueberry Kush","Hybrid strain combining fruity blueberry flavors with classic Kush earthiness.","Hybrid","Blueberry x Kush","18-24%","Low","Myrcene, Caryophyllene","Sweet blueberry aroma with earthy, herbal notes; dense buds","Relaxed, Happy, Euphoric","dry mouth, drowsiness","Ideal for stress relief and mood enhancement","8","7.75","7.88"
+"Cherry OG","Hybrid strain known for its sweet cherry flavor and potent, balanced high.","Hybrid","Cherry Pie x OG Kush","20-26%","Low","Limonene, Caryophyllene","Sweet cherry aroma with earthy undertones; sticky buds","Relaxed, Euphoric, Creative","dry mouth, dry eyes","Used for stress relief and pain management","9","8.75","8.88"
+"Jack Flash","Indica-dominant hybrid delivering a potent, sedative high with a spicy, herbal flavor.","Indica-dominant Hybrid","Jack the Ripper x Flashback","20-25%","Low","Myrcene, Caryophyllene","Herbal, spicy aroma with a hint of citrus; dense buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Ideal for nighttime use and pain relief","8.75","8.5","8.63"
+"White Rhino","Indica-dominant strain known for its heavy, resinous buds and powerful body high.","Indica-dominant","Afghani x Unknown","18-22%","Low","Myrcene, Caryophyllene","Earthy, pine aroma with a hint of sweetness; chunky buds","Relaxed, Sedated, Euphoric","dry mouth, couch-lock","Used for severe pain and stress relief","7.5","7.25","7.38"
+"Alien OG","Hybrid strain celebrated for its potent, spacey high and complex pine-citrus flavors.","Hybrid","Tahoe OG x Alien Kush","20-25%","Low","Limonene, Myrcene","Pine and citrus aroma with a touch of earthiness; frosty buds","Euphoric, Creative, Relaxed","dry mouth, dry eyes","Ideal for creative sessions and relaxation","8.75","8.5","8.63"
+"Critical Jack","Hybrid that merges the uplifting effects of Jack Herer with the heavy yields of Critical Mass.","Hybrid","Jack Herer x Critical Mass","18-25%","Low","Myrcene, Caryophyllene","Balanced aroma with hints of spice and earth; robust buds","Happy, Relaxed, Euphoric","dry mouth, drowsiness","Great for stress relief and creative inspiration","8.25","8","8.13"
+"Agent Diesel","Hybrid strain with a robust diesel aroma and a balanced, energizing high.","Hybrid","Diesel x Unknown","18-24%","Low","Limonene, Caryophyllene","Strong diesel scent with citrus hints; resinous buds","Energized, Uplifted, Focused","dry mouth, anxiety","Ideal for daytime focus and creativity","8","7.75","7.88"
+"Candyland","Sativa-dominant hybrid offering a sweet, candy-like flavor with an uplifting high.","Sativa-dominant Hybrid","Unknown (landrace blend)","16-22%","Low","Limonene, Myrcene","Sweet, sugary aroma; light, airy buds","Happy, Euphoric, Energetic","dry mouth, dry eyes","Suitable for daytime energy and creativity","7","7","7.00"
+"Tangie","Sativa-dominant strain famous for its strong citrus aroma and euphoric, uplifting effects.","Sativa-dominant Hybrid","Grapefruit x California Orange","18-25%","Low","Limonene, Terpinolene","Vibrant citrus scent with sweet undertones; frosty buds","Uplifted, Energetic, Creative","dry mouth, anxiety","Perfect for boosting mood and creativity","8.25","8","8.13"
+"Chernobyl","Hybrid strain with an earthy, pungent aroma and a balanced mix of cerebral and body effects.","Hybrid","Unknown (landrace blend)","16-20%","Low","Myrcene, Caryophyllene","Earthy, spicy aroma; compact, dense buds","Balanced, Euphoric, Relaxed","dry mouth, dry eyes","Ideal for daytime use and mild pain relief","6.5","6.25","6.38"
+"LSD","Sativa-dominant hybrid renowned for its psychedelic, mind-bending high and complex flavor profile.","Sativa-dominant Hybrid","Unknown (Haze lineage)","18-25%","Low","Terpinolene, Myrcene","Psychedelic, earthy aroma with hints of citrus; trichome-rich buds","Creative, Euphoric, Uplifted","dry mouth, paranoia","Great for creative exploration and social settings","8.25","8","8.13"
+"Romulan","Indica-dominant strain delivering a potent, sedative high with an earthy, pine flavor.","Indica-dominant Hybrid","Indica landrace","20-26%","Low","Myrcene, Caryophyllene","Earthy, pine aroma with spicy undertones; dense buds","Relaxed, Sedated, Euphoric","dry mouth, couch-lock","Ideal for evening use and pain management","9","8.75","8.88"
+"Berry White","Hybrid strain offering a sweet berry flavor with a balanced, uplifting high.","Hybrid","Unknown (landrace blend)","15-21%","Low","Limonene, Caryophyllene","Sweet berry aroma with subtle earthy notes; light buds","Happy, Euphoric, Relaxed","dry mouth, dry eyes","Great for mood elevation and relaxation","6.5","6.25","6.38"
+"Blackberry Kush","Indica-dominant hybrid known for its rich, blackberry flavor and calming effects.","Indica-dominant Hybrid","Unknown (Kush lineage)","18-25%","Low","Myrcene, Limonene","Sweet, berry aroma with earthy, herbal notes; compact buds","Relaxed, Sedated, Happy","dry mouth, drowsiness","Ideal for stress relief and insomnia","8.25","8","8.13"
+"Forbidden Berry","Hybrid strain combining sweet berry flavors with a potent, relaxing high.","Hybrid","Forbidden Fruit x Blackberry Kush","18-24%","Low","Limonene, Caryophyllene","Fruity, berry aroma with earthy undertones; resinous buds","Relaxed, Euphoric, Happy","dry mouth, dry eyes","Suitable for evening relaxation and mood enhancement","8","7.75","7.88"
+"Sour OG","Hybrid strain featuring a sour, pungent aroma with powerful, sedative effects.","Hybrid","OG Kush x Sour Diesel","20-26%","Low","Myrcene, Caryophyllene","Sour, pungent aroma with earthy undertones; sticky buds","Relaxed, Sedated, Euphoric","dry mouth, couch-lock","Great for pain relief and heavy relaxation","9","8.5","8.75"
+"God Bud","Indica-dominant strain revered for its heavy, sedative high and earthy, herbal flavor.","Indica-dominant Hybrid","Unknown (classic strain)","15-22%","Low","Myrcene, Caryophyllene","Earthy, herbal aroma with a subtle sweetness; dense buds","Relaxed, Sedated, Happy","dry mouth, drowsiness","Ideal for chronic pain and insomnia","6.75","6.5","6.63"
+"Cheese","Indica-dominant hybrid noted for its pungent, cheesy aroma and balanced, relaxing effects.","Indica-dominant Hybrid","UK Cheese Landrace","18-22%","Low","Caryophyllene, Myrcene","Strong cheesy odor with earthy undertones; dense, sticky buds","Relaxed, Euphoric, Happy","dry mouth, dry eyes","Perfect for stress relief and creative pursuits","7.5","7.25","7.38"
+"G13","Potent hybrid with a mysterious lineage offering a powerful, euphoric high.","Hybrid","Urban legend strain","20-26%","Low","Myrcene, Caryophyllene","Pungent, earthy aroma with hints of diesel; compact buds","Euphoric, Creative, Relaxed","dry mouth, dizziness","Ideal for experienced users seeking strong effects","9","8.75","8.88"
+"Blueberry OG","Hybrid strain merging the sweet flavors of Blueberry with the potency of OG Kush.","Hybrid","Blueberry x OG Kush","18-25%","Low","Myrcene, Caryophyllene","Sweet blueberry aroma with earthy, pine undertones; resinous buds","Relaxed, Euphoric, Happy","dry mouth, drowsiness","Great for relaxation and mood enhancement","8.25","8","8.13"
+"Cherry Bomb","Hybrid strain with an explosive cherry flavor and a dynamic, balanced high.","Hybrid","Cherry Pie x Unknown","18-24%","Low","Limonene, Caryophyllene","Bold cherry aroma with a hint of spice; dense buds","Euphoric, Energetic, Creative","dry mouth, dry eyes","Ideal for creative pursuits and social gatherings","8","8","8.00"
+"Mango Kush","Indica-dominant hybrid offering a tropical mango flavor with deeply relaxing effects.","Indica-dominant Hybrid","Afghani x Mango","20-26%","Low","Myrcene, Limonene","Tropical mango aroma with earthy undertones; dense, resinous buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Used for stress relief and relaxation","9","8.75","8.88"
+"Pineapple Chunk","Indica-dominant hybrid featuring a sweet pineapple aroma and a heavy, sedative high.","Indica-dominant Hybrid","Pineapple x Chunk","16-23%","Low","Limonene, Myrcene","Tropical pineapple scent with earthy notes; chunky buds","Relaxed, Sedated, Happy","dry mouth, couch-lock","Ideal for evening use and pain management","7.25","7","7.13"
+"Jillybean","Hybrid strain known for its fruity, floral flavor and uplifting, creative effects.","Hybrid","Unknown (landrace blend)","15-20%","Low","Limonene, Caryophyllene","Fruity, floral aroma with a sweet finish; light buds","Uplifted, Euphoric, Creative","dry mouth, dry eyes","Great for daytime use and creative inspiration","6.25","6","6.13"
+"Strawberry Banana","Hybrid strain combining sweet strawberry and banana flavors with a balanced high.","Hybrid","Unknown (blend)","18-26%","Low","Limonene, Myrcene","Sweet, tropical aroma with a creamy finish; resinous buds","Happy, Relaxed, Euphoric","dry mouth, dizziness","Ideal for mood elevation and relaxation","8.5","8.25","8.38"
+"Tropicana Cookies","Sativa-dominant hybrid delivering a burst of citrus and cookie flavors with an energetic high.","Sativa-dominant Hybrid","Cookie genetics x Tangie","20-28%","Low","Limonene, Caryophyllene","Zesty citrus aroma with a sweet, baked undertone; frosty buds","Energized, Uplifted, Creative","dry mouth, dry eyes","Perfect for daytime creativity and social events","9.5","9","9.25"
+"UK Cheese","Indica-dominant variant of Cheese known for its pungent aroma and relaxing, euphoric effects.","Indica-dominant Hybrid","UK Landrace","15-20%","Low","Caryophyllene, Myrcene","Strong cheesy odor with herbal undertones; sticky buds","Relaxed, Euphoric, Happy","dry mouth, dry eyes","Great for stress relief and relaxation","6.25","6","6.13"
+"Raspberry Kush","Indica-dominant hybrid with a sweet raspberry flavor and a deeply calming high.","Indica-dominant Hybrid","Afghani x Unknown","18-24%","Low","Myrcene, Caryophyllene","Sweet raspberry aroma with earthy notes; dense buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Ideal for evening use and pain relief","8","7.75","7.88"
+"Orange Cookies","Hybrid strain combining citrus and sweet cookie flavors with a balanced, uplifting high.","Hybrid","Girl Scout Cookies x Orange Velvet","18-25%","Low","Limonene, Caryophyllene","Citrus-infused aroma with sweet undertones; resinous buds","Happy, Relaxed, Uplifted","dry mouth, dry eyes","Suitable for mood enhancement and stress relief","8.25","8","8.13"
+"White Tahoe Cookies","Indica-dominant hybrid featuring a sweet, citrusy flavor and potent, relaxing effects.","Indica-dominant Hybrid","Tahoe OG x Cookies","20-25%","Low","Limonene, Caryophyllene","Sweet citrus aroma with earthy hints; dense, sticky buds","Relaxed, Euphoric, Sedated","dry mouth, couch-lock","Ideal for evening relaxation and pain management","8.75","8.5","8.63"
+"Fire OG","Indica-dominant strain known for its intense, spicy pine flavor and powerful sedative effects.","Indica-dominant Hybrid","OG Kush lineage","20-25%","Low","Myrcene, Limonene","Spicy, pine aroma with a hint of earthiness; chunky buds","Relaxed, Sedated, Euphoric","dry mouth, drowsiness","Used for severe pain relief and stress reduction","8.75","8.5","8.63"
+"Headband","Hybrid strain recognized for its tight, band-like effect and a balanced cerebral and body high.","Hybrid","Super Silver Haze x OG Kush","18-22%","Low","Myrcene, Caryophyllene","Subtle, earthy aroma with hints of diesel; compact buds","Euphoric, Relaxed, Focused","dry mouth, fatigue","Great for migraine relief and creative focus","7.5","7.25","7.38"
+"Jack the Ripper","Potent hybrid with a sharp, spicy flavor and a fast-acting, cerebral high.","Hybrid","Jack Herer x Unknown","18-24%","Low","Limonene, Caryophyllene","Spicy, herbal aroma with a hint of citrus; dense buds","Euphoric, Creative, Energetic","dry mouth, dry eyes","Ideal for creative inspiration and stress relief","8","8","8.00"
+"Cinderella 99","Sativa-dominant hybrid known for its uplifting, energetic high and sweet, citrus flavor.","Sativa-dominant Hybrid","Unknown (landrace blend)","18-24%","Low","Limonene, Terpinolene","Sweet citrus aroma with floral hints; airy buds","Energized, Uplifted, Creative","dry mouth, anxiety","Great for daytime energy and creativity","8","8.25","8.13"
+"Blue Cookies","Hybrid strain combining sweet blueberry flavors with a calming, balanced high.","Hybrid","Blueberry x Girl Scout Cookies","20-25%","Low","Myrcene, Caryophyllene","Sweet blueberry aroma with earthy undertones; resinous buds","Relaxed, Euphoric, Happy","dry mouth, drowsiness","Ideal for relaxation and mood enhancement","8.75","8.5","8.63"
+"Mimosa","Sativa-dominant hybrid offering a vibrant citrus and sweet, tangy flavor with an uplifting high.","Sativa-dominant Hybrid","Citrus x Purple Punch","20-25%","Low","Limonene, Caryophyllene","Bright citrus aroma with sweet, fruity notes; light buds","Energized, Uplifted, Happy","dry mouth, dry eyes","Perfect for daytime use and social gatherings","8.75","8.5","8.63"
+"LA Kush","Hybrid strain known for its spicy, earthy flavor and balanced, calming effects.","Hybrid","LA x Kush lineage","17-22%","Low","Myrcene, Limonene","Earthy, spicy aroma with subtle floral hints; moderate buds","Relaxed, Euphoric, Focused","dry mouth, drowsiness","Ideal for stress relief and relaxation","7.25","7","7.13"
+"Amnesia Lemon","Sativa-dominant hybrid blending citrus and earthy flavors for an energizing, creative high.","Sativa-dominant Hybrid","Amnesia x Lemon Skunk","18-24%","Low","Limonene, Terpinolene","Bright lemon aroma with earthy undertones; light, airy buds","Energized, Uplifted, Creative","dry mouth, anxiety","Great for daytime creativity and mood boost","8","8","8.00"
+"Forbidden Jack","Hybrid strain merging tropical fruit notes with a potent, balanced high for a unique experience.","Hybrid","Forbidden Fruit x Jack Herer","19-25%","Low","Limonene, Caryophyllene","Tropical, fruity aroma with spicy hints; resinous buds","Euphoric, Relaxed, Creative","dry mouth, drowsiness","Ideal for creative sessions and stress relief","8.5","8.25","8.38"
+`;
+}
+
+
+export const SAMPLE_STRAINS = [
+  {
+    name: "Trainwreck",
+    overview: "Sativa-dominant hybrid known for its explosive cerebral high and rapid onset.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Mexican, Thai, Afghani",
+    thc_range: "18-22%",
+    cbd_level: "Minimal",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Spicy, citrus aroma with a hint of pine; dense, energetic buds",
+    effects: "Energized, Creative, Uplifted",
+    negatives: "dry mouth, dry eyes, dizziness",
+    uses: "Ideal for creative pursuits, social settings, combating fatigue",
+    thc_rating: 7.5,
+    user_rating: 7.0,
+    combined_rating: 7.25
+  },
+  {
+    name: "Blue Dream",
+    overview: "Balanced sativa-dominant hybrid offering gentle cerebral invigoration and full-body relaxation.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Blueberry x Haze",
+    thc_range: "17-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene, Caryophyllene",
+    qualitative_insights: "Sweet berry aroma with earthy undertones; smooth buds",
+    effects: "Euphoric, Relaxed, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Great for stress relief, daytime use, creative tasks",
+    thc_rating: 7.75,
+    user_rating: 7.5,
+    combined_rating: 7.63
+  },
+  {
+    name: "Girl Scout Cookies",
+    overview: "Popular hybrid known for its euphoric and relaxing effects with a sweet, earthy aroma.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "OG Kush x Durban Poison",
+    thc_range: "18-28%",
+    cbd_level: "Low",
+    dominant_terpenes: "Caryophyllene, Limonene",
+    qualitative_insights: "Sweet, earthy scent with hints of mint; dense, resinous buds",
+    effects: "Happy, Relaxed, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Effective for pain relief and mood elevation",
+    thc_rating: 9,
+    user_rating: 8.5,
+    combined_rating: 8.75
+  },
+  {
+    name: "Sour Diesel",
+    overview: "Energetic sativa-dominant strain with a pungent diesel aroma.",
+    genetic_type: "Sativa-dominant",
+    lineage: "Chemdawg x Super Skunk",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Pungent, fuel-like scent with citrus hints; airy buds",
+    effects: "Energetic, Uplifted, Focused",
+    negatives: "dry mouth, anxiety",
+    uses: "Ideal for daytime use and creative projects",
+    thc_rating: 8.75,
+    user_rating: 8,
+    combined_rating: 8.38
+  },
+  {
+    name: "OG Kush",
+    overview: "Iconic hybrid delivering a balanced high with earthy pine and citrus flavors.",
+    genetic_type: "Hybrid",
+    lineage: "Chemdawg x Hindu Kush",
+    thc_range: "19-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Earthy, pine aroma with a touch of citrus; dense, resinous buds",
+    effects: "Relaxed, Euphoric, Uplifted",
+    negatives: "dry mouth, dry eyes",
+    uses: "Used for stress relief and pain management",
+    thc_rating: 8.75,
+    user_rating: 8,
+    combined_rating: 8.38
+  },
+  {
+    name: "Pineapple Express",
+    overview: "Tropical sativa-dominant hybrid offering a sweet, fruity flavor and energetic high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Trainwreck x Hawaiian",
+    thc_range: "19-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Tropical pineapple aroma with hints of earthiness; vibrant buds",
+    effects: "Energetic, Uplifted, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Perfect for social settings and daytime activities",
+    thc_rating: 8.5,
+    user_rating: 8,
+    combined_rating: 8.25
+  },
+  {
+    name: "Granddaddy Purple",
+    overview: "Renowned indica-dominant strain with a deep purple hue and grape-like aroma.",
+    genetic_type: "Indica-dominant",
+    lineage: "Purple Urkle x Big Bud",
+    thc_range: "17-23%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Sweet, grape aroma with a relaxing, heavy bud structure",
+    effects: "Relaxed, Sleepy, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for pain relief and insomnia",
+    thc_rating: 7.5,
+    user_rating: 7,
+    combined_rating: 7.25
+  },
+  {
+    name: "White Widow",
+    overview: "Balanced hybrid known for its potent resin production and earthy pine flavor.",
+    genetic_type: "Hybrid",
+    lineage: "Brazilian Sativa x South Indian Indica",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, woody aroma with a subtle sweet note; frosty buds",
+    effects: "Energetic, Euphoric, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Suitable for stress relief and social use",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "AK-47",
+    overview: "Sativa-dominant hybrid offering a mellow, long-lasting cerebral high with a sweet, sour flavor.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Colombian, Mexican, Thai, Afghani",
+    thc_range: "13-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Sweet and sour aroma with a light, airy bud structure",
+    effects: "Relaxed, Uplifted, Creative",
+    negatives: "dry mouth, fatigue",
+    uses: "Great for relaxation and creative inspiration",
+    thc_rating: 5.75,
+    user_rating: 6,
+    combined_rating: 5.88
+  },
+  {
+    name: "Durban Poison",
+    overview: "Pure sativa known for its energizing effects and sweet, earthy aroma.",
+    genetic_type: "Pure Sativa",
+    lineage: "South African Landrace",
+    thc_range: "15-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Terpinolene, Myrcene",
+    qualitative_insights: "Sweet, earthy scent with hints of pine; light, fluffy buds",
+    effects: "Energizing, Uplifting, Focused",
+    negatives: "dry mouth, insomnia",
+    uses: "Ideal for daytime use and outdoor activities",
+    thc_rating: 7.5,
+    user_rating: 7,
+    combined_rating: 7.25
+  },
+  {
+    name: "Purple Haze",
+    overview: "Sativa-dominant strain with a distinctive purple hue and uplifting high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Haze lineage",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Fruity, berry aroma with a hint of spice; colorful buds",
+    effects: "Uplifted, Creative, Euphoric",
+    negatives: "dry mouth, dry eyes",
+    uses: "Suitable for creative endeavors and social gatherings",
+    thc_rating: 6.25,
+    user_rating: 6.5,
+    combined_rating: 6.38
+  },
+  {
+    name: "Green Crack",
+    overview: "Intense sativa-dominant strain known for its energizing and focused high.",
+    genetic_type: "Sativa-dominant",
+    lineage: "Afghani x Skunk #1",
+    thc_range: "15-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Citrus and tropical fruit aroma; tight, potent buds",
+    effects: "Energetic, Focused, Uplifted",
+    negatives: "dry mouth, anxiety",
+    uses: "Perfect for daytime energy and focus",
+    thc_rating: 7.5,
+    user_rating: 7.25,
+    combined_rating: 7.38
+  },
+  {
+    name: "Jack Herer",
+    overview: "Award-winning sativa-dominant hybrid celebrated for its clear-headed and creative high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Haze x Northern Lights x Shiva Skunk",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Terpinolene, Caryophyllene",
+    qualitative_insights: "Spicy, pine aroma with hints of citrus; frosty buds",
+    effects: "Uplifted, Creative, Euphoric",
+    negatives: "dry mouth, paranoia",
+    uses: "Ideal for creative tasks and stress relief",
+    thc_rating: 8,
+    user_rating: 8,
+    combined_rating: 8.00
+  },
+  {
+    name: "Chemdawg",
+    overview: "Potent hybrid with a strong diesel aroma and robust cerebral high.",
+    genetic_type: "Hybrid",
+    lineage: "Likely Chemdawg #4 x Unknown",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Pungent diesel scent with a hint of spice; dense buds",
+    effects: "Focused, Euphoric, Relaxed",
+    negatives: "dry mouth, dry eyes",
+    uses: "Used for mood enhancement and pain relief",
+    thc_rating: 6.25,
+    user_rating: 6.5,
+    combined_rating: 6.38
+  },
+  {
+    name: "Lemon Haze",
+    overview: "Sativa-dominant hybrid with a zesty lemon flavor and invigorating high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Lemon Skunk x Silver Haze",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Bright citrus aroma with a sweet undertone; light, airy buds",
+    effects: "Energized, Uplifted, Happy",
+    negatives: "dry mouth, anxiety",
+    uses: "Great for daytime use and creative activities",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Northern Lights",
+    overview: "Classic indica-dominant strain known for its deeply relaxing and sedative effects.",
+    genetic_type: "Indica-dominant",
+    lineage: "Afghani x Thai",
+    thc_range: "16-21%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Sweet and spicy aroma with resinous, compact buds",
+    effects: "Relaxed, Sleepy, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for pain relief and insomnia",
+    thc_rating: 6.75,
+    user_rating: 6.25,
+    combined_rating: 6.50
+  },
+  {
+    name: "Critical Mass",
+    overview: "Indica-dominant strain famous for its heavy yields and potent body high.",
+    genetic_type: "Indica-dominant",
+    lineage: "Afghani x Skunk #1",
+    thc_range: "19-21%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy and sweet aroma; large, dense buds",
+    effects: "Relaxed, Sedated, Happy",
+    negatives: "dry mouth, couch-lock",
+    uses: "Suitable for chronic pain and stress relief",
+    thc_rating: 7.5,
+    user_rating: 7,
+    combined_rating: 7.25
+  },
+  {
+    name: "Bubble Gum",
+    overview: "Balanced hybrid with a sweet, bubble gum flavor and uplifting effects.",
+    genetic_type: "Hybrid",
+    lineage: "Unknown (landrace blend)",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Caryophyllene, Limonene",
+    qualitative_insights: "Sweet, fruity aroma reminiscent of bubble gum; soft buds",
+    effects: "Happy, Euphoric, Relaxed",
+    negatives: "dry mouth, dizziness",
+    uses: "Good for mood elevation and mild pain relief",
+    thc_rating: 6.25,
+    user_rating: 6,
+    combined_rating: 6.13
+  },
+  {
+    name: "Amnesia Haze",
+    overview: "Sativa-dominant hybrid known for its potent, uplifting high and complex flavor profile.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Haze lineage",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Terpinolene, Myrcene",
+    qualitative_insights: "Earthy and citrus aroma with a hint of spice; airy buds",
+    effects: "Uplifted, Creative, Euphoric",
+    negatives: "dry mouth, paranoia",
+    uses: "Ideal for creative tasks and social settings",
+    thc_rating: 8.75,
+    user_rating: 8.25,
+    combined_rating: 8.50
+  },
+  {
+    name: "Strawberry Cough",
+    overview: "Sativa-dominant strain celebrated for its sweet strawberry aroma and smooth, uplifting high.",
+    genetic_type: "Sativa-dominant",
+    lineage: "Possibly Haze-based",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Sweet berry scent with a subtle herbal note; light buds",
+    effects: "Uplifted, Euphoric, Focused",
+    negatives: "dry mouth, coughing",
+    uses: "Great for stress relief and creative pursuits",
+    thc_rating: 6.25,
+    user_rating: 6,
+    combined_rating: 6.13
+  },
+  {
+    name: "Maui Wowie",
+    overview: "Tropical sativa-dominant strain delivering an energetic high with a fruity, exotic flavor.",
+    genetic_type: "Sativa-dominant",
+    lineage: "Hawaiian Landrace",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Tropical pineapple and citrus aroma; light, airy buds",
+    effects: "Energizing, Uplifted, Creative",
+    negatives: "dry mouth, dizziness",
+    uses: "Perfect for daytime energy and relaxation",
+    thc_rating: 6.25,
+    user_rating: 6.5,
+    combined_rating: 6.38
+  },
+  {
+    name: "Grape Ape",
+    overview: "Indica-dominant strain known for its distinct grape aroma and deeply relaxing effects.",
+    genetic_type: "Indica-dominant",
+    lineage: "Afghani x Mendocino Purps",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Sweet, grape-like aroma; colorful, dense buds",
+    effects: "Relaxed, Sedated, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and pain management",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Blueberry",
+    overview: "Indica-dominant strain with a renowned blueberry aroma and soothing effects.",
+    genetic_type: "Indica-dominant",
+    lineage: "Blueberry x Afghan",
+    thc_range: "16-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Sweet blueberry scent with earthy undertones; frosty buds",
+    effects: "Relaxed, Euphoric, Sleepy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Used for relaxation and mild pain relief",
+    thc_rating: 7.5,
+    user_rating: 7,
+    combined_rating: 7.25
+  },
+  {
+    name: "Cherry Pie",
+    overview: "Hybrid strain offering a sweet and tart cherry flavor with balanced effects.",
+    genetic_type: "Hybrid",
+    lineage: "Granddaddy Purple x Durban Poison",
+    thc_range: "16-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet, tart cherry aroma; sticky, dense buds",
+    effects: "Happy, Relaxed, Euphoric",
+    negatives: "dry mouth, dry eyes",
+    uses: "Suitable for mood elevation and pain relief",
+    thc_rating: 7,
+    user_rating: 7,
+    combined_rating: 7.00
+  },
+  {
+    name: "Super Silver Haze",
+    overview: "Sativa-dominant hybrid with a potent, energetic high and complex citrus-spice profile.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Skunk, Northern Lights, Haze",
+    thc_range: "18-23%",
+    cbd_level: "Low",
+    dominant_terpenes: "Terpinolene, Myrcene",
+    qualitative_insights: "Citrus and earthy aroma with spicy notes; frosty buds",
+    effects: "Energized, Uplifted, Focused",
+    negatives: "dry mouth, anxiety",
+    uses: "Ideal for daytime creativity and stress relief",
+    thc_rating: 7.75,
+    user_rating: 7.5,
+    combined_rating: 7.63
+  },
+  {
+    name: "Bruce Banner",
+    overview: "Potent hybrid known for its explosive high and pungent, sweet diesel aroma.",
+    genetic_type: "Hybrid",
+    lineage: "OG Kush x Strawberry Diesel",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Sweet, diesel-like aroma with a hint of fruit; dense buds",
+    effects: "Euphoric, Energetic, Creative",
+    negatives: "dry mouth, paranoia",
+    uses: "Used for mood enhancement and pain management",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Wedding Cake",
+    overview: "Indica-dominant hybrid with a rich, tangy flavor and a potent, relaxing high.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Cherry Pie x Girl Scout Cookies",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Caryophyllene, Limonene",
+    qualitative_insights: "Sweet, earthy aroma with a hint of vanilla; dense buds",
+    effects: "Relaxed, Happy, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and pain management",
+    thc_rating: 8.75,
+    user_rating: 8.25,
+    combined_rating: 8.50
+  },
+  {
+    name: "Gelato",
+    overview: "Balanced hybrid celebrated for its dessert-like flavor and euphoric, calming effects.",
+    genetic_type: "Hybrid",
+    lineage: "Sunset Sherbet x Thin Mint GSC",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet, creamy aroma with hints of citrus; sticky buds",
+    effects: "Relaxed, Happy, Uplifted",
+    negatives: "dry mouth, dizziness",
+    uses: "Great for relaxation and mood enhancement",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Sunset Sherbet",
+    overview: "Indica-dominant hybrid known for its fruity dessert flavor and soothing high.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Girl Scout Cookies x Pink Panties",
+    thc_range: "18-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Fruity, sherbet-like aroma; vibrant, dense buds",
+    effects: "Relaxed, Euphoric, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Suitable for evening relaxation and stress relief",
+    thc_rating: 7.5,
+    user_rating: 7,
+    combined_rating: 7.25
+  },
+  {
+    name: "GMO (Garlic Cookies)",
+    overview: "Indica-dominant hybrid with a pungent garlic aroma and deeply relaxing effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Chemdawg x GSC",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Caryophyllene, Myrcene",
+    qualitative_insights: "Pungent, savory aroma with earthy undertones; sticky buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for pain relief and stress reduction",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Do-Si-Dos",
+    overview: "Indica-dominant hybrid offering a sweet and earthy flavor with potent relaxing effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Girl Scout Cookies x Face Off OG",
+    thc_range: "18-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet, floral aroma with hints of mint; dense, resinous buds",
+    effects: "Relaxed, Euphoric, Sedated",
+    negatives: "dry mouth, drowsiness",
+    uses: "Used for anxiety relief and relaxation",
+    thc_rating: 7.5,
+    user_rating: 7,
+    combined_rating: 7.25
+  },
+  {
+    name: "Runtz",
+    overview: "Balanced hybrid known for its sweet, candy-like flavor and powerful, euphoric high.",
+    genetic_type: "Hybrid",
+    lineage: "Zkittlez x Gelato",
+    thc_range: "19-29%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Fruity, candy-like aroma; vibrant, colorful buds",
+    effects: "Happy, Euphoric, Relaxed",
+    negatives: "dry mouth, dizziness",
+    uses: "Ideal for creative pursuits and mood enhancement",
+    thc_rating: 9.5,
+    user_rating: 9,
+    combined_rating: 9.25
+  },
+  {
+    name: "Zkittlez",
+    overview: "Indica-dominant hybrid with a sweet, fruity flavor and a relaxing, mellow high.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Grape Ape x Grapefruit",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Intensely sweet, fruity aroma; compact, resinous buds",
+    effects: "Relaxed, Happy, Euphoric",
+    negatives: "dry mouth, dry eyes",
+    uses: "Great for stress relief and relaxation",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Biscotti",
+    overview: "Hybrid strain offering a rich, cookie-like flavor paired with a balanced high.",
+    genetic_type: "Hybrid",
+    lineage: "Girl Scout Cookies x South Florida OG",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet, baked aroma with hints of spice; dense, trichome-rich buds",
+    effects: "Happy, Relaxed, Uplifted",
+    negatives: "dry mouth, drowsiness",
+    uses: "Suitable for creative tasks and relaxation",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Tahoe OG",
+    overview: "Indica-dominant strain with a robust, earthy pine flavor and potent body effects.",
+    genetic_type: "Indica-dominant",
+    lineage: "OG Kush lineage",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Earthy, pine aroma with a hint of spice; compact, sticky buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, couch-lock",
+    uses: "Ideal for pain relief and stress management",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Forbidden Fruit",
+    overview: "Hybrid strain known for its tropical, fruity flavor and deeply relaxing high.",
+    genetic_type: "Hybrid",
+    lineage: "Tangie x Cherry Pie",
+    thc_range: "18-23%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Tropical, citrusy aroma with sweet undertones; resinous buds",
+    effects: "Relaxed, Happy, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Great for evening relaxation and mood enhancement",
+    thc_rating: 7.75,
+    user_rating: 7.5,
+    combined_rating: 7.63
+  },
+  {
+    name: "Agent Orange",
+    overview: "Sativa-dominant hybrid offering a zesty citrus flavor and uplifting effects.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Orange Velvet x Jack the Ripper",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Vibrant citrus aroma with sweet, tangy notes; frosty buds",
+    effects: "Energized, Uplifted, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for daytime use and creative inspiration",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Sour Tangie",
+    overview: "Sativa-dominant hybrid blending sour diesel with tangy citrus flavors for a vibrant high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Sour Diesel x Tangie",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Tangy citrus aroma with a hint of sour diesel; dense buds",
+    effects: "Energized, Uplifted, Focused",
+    negatives: "dry mouth, anxiety",
+    uses: "Suitable for creative projects and daytime activities",
+    thc_rating: 8,
+    user_rating: 7.75,
+    combined_rating: 7.88
+  },
+  {
+    name: "Critical Kush",
+    overview: "Indica-dominant hybrid merging heavy yields with a potent, relaxing high.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Critical Mass x OG Kush",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, pine aroma with subtle sweetness; chunky buds",
+    effects: "Relaxed, Sedated, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Great for pain relief and evening relaxation",
+    thc_rating: 8.75,
+    user_rating: 8.25,
+    combined_rating: 8.50
+  },
+  {
+    name: "Alaskan Thunder Fuck",
+    overview: "Sativa-dominant hybrid known for its strong, uplifting high and pungent, piney aroma.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Afghani x Unknown",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Pinene, Myrcene",
+    qualitative_insights: "Pungent, piney scent with earthy undertones; frosty, energizing buds",
+    effects: "Energized, Uplifted, Creative",
+    negatives: "dry mouth, anxiety",
+    uses: "Ideal for boosting energy and focus",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Harlequin",
+    overview: "CBD-rich sativa-dominant strain celebrated for its clear-headed, medicinal effects.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Colombian Gold x Nepalese",
+    thc_range: "7-15%",
+    cbd_level: "High",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Earthy, herbal aroma with subtle sweetness; lighter buds",
+    effects: "Clear-headed, Relaxed, Focused",
+    negatives: "dry mouth, dizziness",
+    uses: "Used for pain relief and anxiety management",
+    thc_rating: 3,
+    user_rating: 3.5,
+    combined_rating: 3.25
+  },
+  {
+    name: "Cannatonic",
+    overview: "Balanced hybrid renowned for its low THC and high CBD content, offering gentle relief.",
+    genetic_type: "Hybrid",
+    lineage: "MK Ultra x G13",
+    thc_range: "6-17%",
+    cbd_level: "High",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Earthy and citrus aroma; soft, resinous buds",
+    effects: "Calm, Relaxed, Focused",
+    negatives: "dry mouth, fatigue",
+    uses: "Ideal for medical use and anxiety relief",
+    thc_rating: 3.25,
+    user_rating: 3.5,
+    combined_rating: 3.38
+  },
+  {
+    name: "Charlotte's Web",
+    overview: "CBD-dominant strain with minimal psychoactive effects, designed for therapeutic use.",
+    genetic_type: "CBD-dominant",
+    lineage: "High CBD phenotype of hemp",
+    thc_range: "0-0.3%",
+    cbd_level: "Very High",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Mild, herbal aroma; less resinous buds",
+    effects: "Calm, Focused, Clear-headed",
+    negatives: "none",
+    uses: "Used for epilepsy and chronic pain management",
+    thc_rating: 0.5,
+    user_rating: 0.5,
+    combined_rating: 0.5
+  },
+  {
+    name: "Remedy",
+    overview: "Balanced hybrid with high CBD content offering mild relaxation without strong psychoactive effects.",
+    genetic_type: "Hybrid",
+    lineage: "CBD-rich phenotype",
+    thc_range: "1-4%",
+    cbd_level: "High",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Earthy, citrus notes; soft buds",
+    effects: "Relaxed, Clear-headed, Calm",
+    negatives: "dry mouth, sedation",
+    uses: "Ideal for anxiety and pain relief",
+    thc_rating: 3.5,
+    user_rating: 3.75,
+    combined_rating: 3.63
+  },
+  {
+    name: "Pennywise",
+    overview: "Indica-dominant strain with a near 1:1 THC to CBD ratio, offering balanced effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Harle-Tsu x Jack the Ripper",
+    thc_range: "4-8%",
+    cbd_level: "Balanced",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy aroma with subtle spice; compact buds",
+    effects: "Calm, Focused, Euphoric",
+    negatives: "dry mouth, dizziness",
+    uses: "Suitable for medical use and stress relief",
+    thc_rating: 3.5,
+    user_rating: 3.75,
+    combined_rating: 3.63
+  },
+  {
+    name: "Canna-Tsu",
+    overview: "Hybrid strain featuring balanced levels of THC and CBD for a mild, uplifting experience.",
+    genetic_type: "Hybrid",
+    lineage: "Cannatonic x Sour Tsunami",
+    thc_range: "4-8%",
+    cbd_level: "Balanced",
+    dominant_terpenes: "Limonene, Pinene",
+    qualitative_insights: "Subtle citrus aroma with herbal notes; light buds",
+    effects: "Calm, Happy, Clear-headed",
+    negatives: "dry mouth, fatigue",
+    uses: "Used for mild pain and anxiety relief",
+    thc_rating: 3.5,
+    user_rating: 3.75,
+    combined_rating: 3.63
+  },
+  {
+    name: "ACDC",
+    overview: "CBD-dominant strain with minimal psychoactive effects, prized for its therapeutic benefits.",
+    genetic_type: "CBD-dominant",
+    lineage: "Cannatonic phenotype",
+    thc_range: "1-6%",
+    cbd_level: "Very High",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Earthy, herbal aroma; non-resinous buds",
+    effects: "Clear-headed, Relaxed, Focused",
+    negatives: "none",
+    uses: "Ideal for chronic pain, inflammation, anxiety",
+    thc_rating: 1.5,
+    user_rating: 1.75,
+    combined_rating: 1.63
+  },
+  {
+    name: "Ringo's Gift",
+    overview: "Hybrid strain with high CBD offering a balanced and clear-headed experience.",
+    genetic_type: "Hybrid",
+    lineage: "Harle-Tsu x ACDC",
+    thc_range: "Varies (1:1–24:1 ratio)",
+    cbd_level: "High",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Mild, earthy aroma with sweet undertones; moderate buds",
+    effects: "Calm, Focused, Relaxed",
+    negatives: "dry mouth, sedation",
+    uses: "Used for pain, anxiety, seizure management",
+    thc_rating: 2,
+    user_rating: 2.25,
+    combined_rating: 2.13
+  },
+  {
+    name: "Sour Tsunami",
+    overview: "CBD-dominant strain known for its low THC content and effective pain relief properties.",
+    genetic_type: "CBD-dominant",
+    lineage: "Sour Diesel phenotype",
+    thc_range: "6-10%",
+    cbd_level: "High",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Tangy, diesel aroma with earthy notes; less resinous",
+    effects: "Calm, Relaxed, Focused",
+    negatives: "dry mouth, sedation",
+    uses: "Ideal for chronic pain and inflammation",
+    thc_rating: 1.5,
+    user_rating: 1.75,
+    combined_rating: 1.63
+  },
+  {
+    name: "Harle-Tsu",
+    overview: "Balanced CBD-rich hybrid offering mild euphoria with significant therapeutic benefits.",
+    genetic_type: "Hybrid",
+    lineage: "Harlequin x Canna-Tsu",
+    thc_range: "4-10%",
+    cbd_level: "High",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, herbal scent with subtle citrus; light buds",
+    effects: "Clear-headed, Calm, Relaxed",
+    negatives: "dry mouth, fatigue",
+    uses: "Used for anxiety and pain relief",
+    thc_rating: 2,
+    user_rating: 2.25,
+    combined_rating: 2.13
+  },
+  {
+    name: "Blue Cheese",
+    overview: "Indica-dominant hybrid with a pungent, cheese-like aroma and deeply relaxing effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Blueberry x UK Cheese",
+    thc_range: "18-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Strong cheesy aroma with sweet berry undertones; dense buds",
+    effects: "Relaxed, Euphoric, Sedated",
+    negatives: "dry mouth, drowsiness",
+    uses: "Great for stress relief and relaxation",
+    thc_rating: 7.5,
+    user_rating: 7.25,
+    combined_rating: 7.38
+  },
+  {
+    name: "Orange Bud",
+    overview: "Sativa-dominant strain celebrated for its vibrant citrus flavor and uplifting effects.",
+    genetic_type: "Sativa-dominant",
+    lineage: "Afghani x Thai",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Bright citrus aroma with a hint of spice; light, airy buds",
+    effects: "Energetic, Uplifted, Happy",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for daytime use and mood elevation",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "LA Confidential",
+    overview: "Indica-dominant strain known for its smooth, pine and spice flavors and calming effects.",
+    genetic_type: "Indica-dominant",
+    lineage: "Afghani x OG Kush",
+    thc_range: "16-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Earthy, pine aroma with subtle sweetness; resinous buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Used for stress relief and insomnia",
+    thc_rating: 7,
+    user_rating: 7,
+    combined_rating: 7.00
+  },
+  {
+    name: "God's Gift",
+    overview: "Indica-dominant hybrid offering a powerful, euphoric high with a sweet, grape aroma.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Granddaddy Purple x OG Kush",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Rich, sweet grape aroma with sticky, dense buds",
+    effects: "Relaxed, Euphoric, Sedated",
+    negatives: "dry mouth, couch-lock",
+    uses: "Ideal for pain relief and stress management",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "NYC Diesel",
+    overview: "Sativa-dominant strain with a strong diesel aroma and uplifting, creative effects.",
+    genetic_type: "Sativa-dominant",
+    lineage: "Diesel x Unknown",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Pungent diesel scent with hints of citrus; frosty buds",
+    effects: "Energized, Creative, Uplifted",
+    negatives: "dry mouth, anxiety",
+    uses: "Great for daytime creativity and focus",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Skunk #1",
+    overview: "Classic hybrid known for its strong, skunky aroma and balanced, long-lasting effects.",
+    genetic_type: "Hybrid",
+    lineage: "Skunk #1 lineage",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Pungent, skunky odor with earthy undertones; sticky buds",
+    effects: "Happy, Relaxed, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and mood elevation",
+    thc_rating: 6.25,
+    user_rating: 6,
+    combined_rating: 6.13
+  },
+  {
+    name: "Lemon Skunk",
+    overview: "Hybrid strain offering a zesty lemon flavor and an energetic, uplifting high.",
+    genetic_type: "Hybrid",
+    lineage: "Skunk x Lemon Thai",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Bright lemon aroma with skunky undertones; light buds",
+    effects: "Energized, Uplifted, Happy",
+    negatives: "dry mouth, anxiety",
+    uses: "Great for daytime use and creative tasks",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Master Kush",
+    overview: "Indica-dominant strain renowned for its earthy, spicy flavor and deeply calming effects.",
+    genetic_type: "Indica-dominant",
+    lineage: "Afghani lineage",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Earthy, herbal aroma with a subtle spice; dense buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and pain management",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Hindu Kush",
+    overview: "Pure indica known for its earthy, woody flavors and deeply relaxing effects.",
+    genetic_type: "Indica (Pure)",
+    lineage: "Hindu Kush Landrace",
+    thc_range: "16-21%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Earthy, woody aroma with a hint of spice; compact buds",
+    effects: "Calm, Relaxed, Sedated",
+    negatives: "dry mouth, couch-lock",
+    uses: "Used for relaxation and pain relief",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Afghani",
+    overview: "Pure indica landrace with a strong, earthy aroma and heavy, sedative effects.",
+    genetic_type: "Indica (Pure)",
+    lineage: "Afghani Landrace",
+    thc_range: "18-23%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, hash-like aroma; resinous, dense buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for pain relief and insomnia",
+    thc_rating: 7.5,
+    user_rating: 7.25,
+    combined_rating: 7.38
+  },
+  {
+    name: "Pakistani Chitral Kush",
+    overview: "Robust pure indica with a distinct earthy and spicy flavor profile and potent effects.",
+    genetic_type: "Indica (Pure)",
+    lineage: "Pakistani Landrace",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Pinene",
+    qualitative_insights: "Earthy, spicy aroma with resinous buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, couch-lock",
+    uses: "Used for chronic pain and insomnia",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Blueberry Kush",
+    overview: "Hybrid strain combining fruity blueberry flavors with classic Kush earthiness.",
+    genetic_type: "Hybrid",
+    lineage: "Blueberry x Kush",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Sweet blueberry aroma with earthy, herbal notes; dense buds",
+    effects: "Relaxed, Happy, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and mood enhancement",
+    thc_rating: 8,
+    user_rating: 7.75,
+    combined_rating: 7.88
+  },
+  {
+    name: "Cherry OG",
+    overview: "Hybrid strain known for its sweet cherry flavor and potent, balanced high.",
+    genetic_type: "Hybrid",
+    lineage: "Cherry Pie x OG Kush",
+    thc_range: "20-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet cherry aroma with earthy undertones; sticky buds",
+    effects: "Relaxed, Euphoric, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Used for stress relief and pain management",
+    thc_rating: 9,
+    user_rating: 8.75,
+    combined_rating: 8.88
+  },
+  {
+    name: "Jack Flash",
+    overview: "Indica-dominant hybrid delivering a potent, sedative high with a spicy, herbal flavor.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Jack the Ripper x Flashback",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Herbal, spicy aroma with a hint of citrus; dense buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for nighttime use and pain relief",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "White Rhino",
+    overview: "Indica-dominant strain known for its heavy, resinous buds and powerful body high.",
+    genetic_type: "Indica-dominant",
+    lineage: "Afghani x Unknown",
+    thc_range: "18-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, pine aroma with a hint of sweetness; chunky buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, couch-lock",
+    uses: "Used for severe pain and stress relief",
+    thc_rating: 7.5,
+    user_rating: 7.25,
+    combined_rating: 7.38
+  },
+  {
+    name: "Alien OG",
+    overview: "Hybrid strain celebrated for its potent, spacey high and complex pine-citrus flavors.",
+    genetic_type: "Hybrid",
+    lineage: "Tahoe OG x Alien Kush",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Pine and citrus aroma with a touch of earthiness; frosty buds",
+    effects: "Euphoric, Creative, Relaxed",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for creative sessions and relaxation",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Critical Jack",
+    overview: "Hybrid that merges the uplifting effects of Jack Herer with the heavy yields of Critical Mass.",
+    genetic_type: "Hybrid",
+    lineage: "Jack Herer x Critical Mass",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Balanced aroma with hints of spice and earth; robust buds",
+    effects: "Happy, Relaxed, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Great for stress relief and creative inspiration",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Agent Diesel",
+    overview: "Hybrid strain with a robust diesel aroma and a balanced, energizing high.",
+    genetic_type: "Hybrid",
+    lineage: "Diesel x Unknown",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Strong diesel scent with citrus hints; resinous buds",
+    effects: "Energized, Uplifted, Focused",
+    negatives: "dry mouth, anxiety",
+    uses: "Ideal for daytime focus and creativity",
+    thc_rating: 8,
+    user_rating: 7.75,
+    combined_rating: 7.88
+  },
+  {
+    name: "Candyland",
+    overview: "Sativa-dominant hybrid offering a sweet, candy-like flavor with an uplifting high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Unknown (landrace blend)",
+    thc_range: "16-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Sweet, sugary aroma; light, airy buds",
+    effects: "Happy, Euphoric, Energetic",
+    negatives: "dry mouth, dry eyes",
+    uses: "Suitable for daytime energy and creativity",
+    thc_rating: 7,
+    user_rating: 7,
+    combined_rating: 7.00
+  },
+  {
+    name: "Tangie",
+    overview: "Sativa-dominant strain famous for its strong citrus aroma and euphoric, uplifting effects.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Grapefruit x California Orange",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Vibrant citrus scent with sweet undertones; frosty buds",
+    effects: "Uplifted, Energetic, Creative",
+    negatives: "dry mouth, anxiety",
+    uses: "Perfect for boosting mood and creativity",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Chernobyl",
+    overview: "Hybrid strain with an earthy, pungent aroma and a balanced mix of cerebral and body effects.",
+    genetic_type: "Hybrid",
+    lineage: "Unknown (landrace blend)",
+    thc_range: "16-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, spicy aroma; compact, dense buds",
+    effects: "Balanced, Euphoric, Relaxed",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for daytime use and mild pain relief",
+    thc_rating: 6.5,
+    user_rating: 6.25,
+    combined_rating: 6.38
+  },
+  {
+    name: "LSD",
+    overview: "Sativa-dominant hybrid renowned for its psychedelic, mind-bending high and complex flavor profile.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Unknown (Haze lineage)",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Terpinolene, Myrcene",
+    qualitative_insights: "Psychedelic, earthy aroma with hints of citrus; trichome-rich buds",
+    effects: "Creative, Euphoric, Uplifted",
+    negatives: "dry mouth, paranoia",
+    uses: "Great for creative exploration and social settings",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Romulan",
+    overview: "Indica-dominant strain delivering a potent, sedative high with an earthy, pine flavor.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Indica landrace",
+    thc_range: "20-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, pine aroma with spicy undertones; dense buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, couch-lock",
+    uses: "Ideal for evening use and pain management",
+    thc_rating: 9,
+    user_rating: 8.75,
+    combined_rating: 8.88
+  },
+  {
+    name: "Berry White",
+    overview: "Hybrid strain offering a sweet berry flavor with a balanced, uplifting high.",
+    genetic_type: "Hybrid",
+    lineage: "Unknown (landrace blend)",
+    thc_range: "15-21%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet berry aroma with subtle earthy notes; light buds",
+    effects: "Happy, Euphoric, Relaxed",
+    negatives: "dry mouth, dry eyes",
+    uses: "Great for mood elevation and relaxation",
+    thc_rating: 6.5,
+    user_rating: 6.25,
+    combined_rating: 6.38
+  },
+  {
+    name: "Blackberry Kush",
+    overview: "Indica-dominant hybrid known for its rich, blackberry flavor and calming effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Unknown (Kush lineage)",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Sweet, berry aroma with earthy, herbal notes; compact buds",
+    effects: "Relaxed, Sedated, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and insomnia",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Forbidden Berry",
+    overview: "Hybrid strain combining sweet berry flavors with a potent, relaxing high.",
+    genetic_type: "Hybrid",
+    lineage: "Forbidden Fruit x Blackberry Kush",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Fruity, berry aroma with earthy undertones; resinous buds",
+    effects: "Relaxed, Euphoric, Happy",
+    negatives: "dry mouth, dry eyes",
+    uses: "Suitable for evening relaxation and mood enhancement",
+    thc_rating: 8,
+    user_rating: 7.75,
+    combined_rating: 7.88
+  },
+  {
+    name: "Sour OG",
+    overview: "Hybrid strain featuring a sour, pungent aroma with powerful, sedative effects.",
+    genetic_type: "Hybrid",
+    lineage: "OG Kush x Sour Diesel",
+    thc_range: "20-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Sour, pungent aroma with earthy undertones; sticky buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, couch-lock",
+    uses: "Great for pain relief and heavy relaxation",
+    thc_rating: 9,
+    user_rating: 8.5,
+    combined_rating: 8.75
+  },
+  {
+    name: "God Bud",
+    overview: "Indica-dominant strain revered for its heavy, sedative high and earthy, herbal flavor.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Unknown (classic strain)",
+    thc_range: "15-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Earthy, herbal aroma with a subtle sweetness; dense buds",
+    effects: "Relaxed, Sedated, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for chronic pain and insomnia",
+    thc_rating: 6.75,
+    user_rating: 6.5,
+    combined_rating: 6.63
+  },
+  {
+    name: "Cheese",
+    overview: "Indica-dominant hybrid noted for its pungent, cheesy aroma and balanced, relaxing effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "UK Cheese Landrace",
+    thc_range: "18-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Caryophyllene, Myrcene",
+    qualitative_insights: "Strong cheesy odor with earthy undertones; dense, sticky buds",
+    effects: "Relaxed, Euphoric, Happy",
+    negatives: "dry mouth, dry eyes",
+    uses: "Perfect for stress relief and creative pursuits",
+    thc_rating: 7.5,
+    user_rating: 7.25,
+    combined_rating: 7.38
+  },
+  {
+    name: "G13",
+    overview: "Potent hybrid with a mysterious lineage offering a powerful, euphoric high.",
+    genetic_type: "Hybrid",
+    lineage: "Urban legend strain",
+    thc_range: "20-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Pungent, earthy aroma with hints of diesel; compact buds",
+    effects: "Euphoric, Creative, Relaxed",
+    negatives: "dry mouth, dizziness",
+    uses: "Ideal for experienced users seeking strong effects",
+    thc_rating: 9,
+    user_rating: 8.75,
+    combined_rating: 8.88
+  },
+  {
+    name: "Blueberry OG",
+    overview: "Hybrid strain merging the sweet flavors of Blueberry with the potency of OG Kush.",
+    genetic_type: "Hybrid",
+    lineage: "Blueberry x OG Kush",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Sweet blueberry aroma with earthy, pine undertones; resinous buds",
+    effects: "Relaxed, Euphoric, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Great for relaxation and mood enhancement",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "Cherry Bomb",
+    overview: "Hybrid strain with an explosive cherry flavor and a dynamic, balanced high.",
+    genetic_type: "Hybrid",
+    lineage: "Cherry Pie x Unknown",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Bold cherry aroma with a hint of spice; dense buds",
+    effects: "Euphoric, Energetic, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for creative pursuits and social gatherings",
+    thc_rating: 8,
+    user_rating: 8,
+    combined_rating: 8.00
+  },
+  {
+    name: "Mango Kush",
+    overview: "Indica-dominant hybrid offering a tropical mango flavor with deeply relaxing effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Afghani x Mango",
+    thc_range: "20-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Tropical mango aroma with earthy undertones; dense, resinous buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Used for stress relief and relaxation",
+    thc_rating: 9,
+    user_rating: 8.75,
+    combined_rating: 8.88
+  },
+  {
+    name: "Pineapple Chunk",
+    overview: "Indica-dominant hybrid featuring a sweet pineapple aroma and a heavy, sedative high.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Pineapple x Chunk",
+    thc_range: "16-23%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Tropical pineapple scent with earthy notes; chunky buds",
+    effects: "Relaxed, Sedated, Happy",
+    negatives: "dry mouth, couch-lock",
+    uses: "Ideal for evening use and pain management",
+    thc_rating: 7.25,
+    user_rating: 7,
+    combined_rating: 7.13
+  },
+  {
+    name: "Jillybean",
+    overview: "Hybrid strain known for its fruity, floral flavor and uplifting, creative effects.",
+    genetic_type: "Hybrid",
+    lineage: "Unknown (landrace blend)",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Fruity, floral aroma with a sweet finish; light buds",
+    effects: "Uplifted, Euphoric, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Great for daytime use and creative inspiration",
+    thc_rating: 6.25,
+    user_rating: 6,
+    combined_rating: 6.13
+  },
+  {
+    name: "Strawberry Banana",
+    overview: "Hybrid strain combining sweet strawberry and banana flavors with a balanced high.",
+    genetic_type: "Hybrid",
+    lineage: "Unknown (blend)",
+    thc_range: "18-26%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Myrcene",
+    qualitative_insights: "Sweet, tropical aroma with a creamy finish; resinous buds",
+    effects: "Happy, Relaxed, Euphoric",
+    negatives: "dry mouth, dizziness",
+    uses: "Ideal for mood elevation and relaxation",
+    thc_rating: 8.5,
+    user_rating: 8.25,
+    combined_rating: 8.38
+  },
+  {
+    name: "Tropicana Cookies",
+    overview: "Sativa-dominant hybrid delivering a burst of citrus and cookie flavors with an energetic high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Cookie genetics x Tangie",
+    thc_range: "20-28%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Zesty citrus aroma with a sweet, baked undertone; frosty buds",
+    effects: "Energized, Uplifted, Creative",
+    negatives: "dry mouth, dry eyes",
+    uses: "Perfect for daytime creativity and social events",
+    thc_rating: 9.5,
+    user_rating: 9,
+    combined_rating: 9.25
+  },
+  {
+    name: "UK Cheese",
+    overview: "Indica-dominant variant of Cheese known for its pungent aroma and relaxing, euphoric effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "UK Landrace",
+    thc_range: "15-20%",
+    cbd_level: "Low",
+    dominant_terpenes: "Caryophyllene, Myrcene",
+    qualitative_insights: "Strong cheesy odor with herbal undertones; sticky buds",
+    effects: "Relaxed, Euphoric, Happy",
+    negatives: "dry mouth, dry eyes",
+    uses: "Great for stress relief and relaxation",
+    thc_rating: 6.25,
+    user_rating: 6,
+    combined_rating: 6.13
+  },
+  {
+    name: "Raspberry Kush",
+    overview: "Indica-dominant hybrid with a sweet raspberry flavor and a deeply calming high.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Afghani x Unknown",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Sweet raspberry aroma with earthy notes; dense buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for evening use and pain relief",
+    thc_rating: 8,
+    user_rating: 7.75,
+    combined_rating: 7.88
+  },
+  {
+    name: "Orange Cookies",
+    overview: "Hybrid strain combining citrus and sweet cookie flavors with a balanced, uplifting high.",
+    genetic_type: "Hybrid",
+    lineage: "Girl Scout Cookies x Orange Velvet",
+    thc_range: "18-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Citrus-infused aroma with sweet undertones; resinous buds",
+    effects: "Happy, Relaxed, Uplifted",
+    negatives: "dry mouth, dry eyes",
+    uses: "Suitable for mood enhancement and stress relief",
+    thc_rating: 8.25,
+    user_rating: 8,
+    combined_rating: 8.13
+  },
+  {
+    name: "White Tahoe Cookies",
+    overview: "Indica-dominant hybrid featuring a sweet, citrusy flavor and potent, relaxing effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "Tahoe OG x Cookies",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Sweet citrus aroma with earthy hints; dense, sticky buds",
+    effects: "Relaxed, Euphoric, Sedated",
+    negatives: "dry mouth, couch-lock",
+    uses: "Ideal for evening relaxation and pain management",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Fire OG",
+    overview: "Indica-dominant strain known for its intense, spicy pine flavor and powerful sedative effects.",
+    genetic_type: "Indica-dominant Hybrid",
+    lineage: "OG Kush lineage",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Spicy, pine aroma with a hint of earthiness; chunky buds",
+    effects: "Relaxed, Sedated, Euphoric",
+    negatives: "dry mouth, drowsiness",
+    uses: "Used for severe pain relief and stress reduction",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Headband",
+    overview: "Hybrid strain recognized for its tight, band-like effect and a balanced cerebral and body high.",
+    genetic_type: "Hybrid",
+    lineage: "Super Silver Haze x OG Kush",
+    thc_range: "18-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Subtle, earthy aroma with hints of diesel; compact buds",
+    effects: "Euphoric, Relaxed, Focused",
+    negatives: "dry mouth, fatigue",
+    uses: "Great for migraine relief and creative focus",
+    thc_rating: 7.5,
+    user_rating: 7.25,
+    combined_rating: 7.38
+  },
+  {
+    name: "Jack the Ripper",
+    overview: "Potent hybrid with a sharp, spicy flavor and a fast-acting, cerebral high.",
+    genetic_type: "Hybrid",
+    lineage: "Jack Herer x Unknown",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Spicy, herbal aroma with a hint of citrus; dense buds",
+    effects: "Euphoric, Creative, Energetic",
+    negatives: "dry mouth, dry eyes",
+    uses: "Ideal for creative inspiration and stress relief",
+    thc_rating: 8,
+    user_rating: 8,
+    combined_rating: 8.00
+  },
+  {
+    name: "Cinderella 99",
+    overview: "Sativa-dominant hybrid known for its uplifting, energetic high and sweet, citrus flavor.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Unknown (landrace blend)",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Sweet citrus aroma with floral hints; airy buds",
+    effects: "Energized, Uplifted, Creative",
+    negatives: "dry mouth, anxiety",
+    uses: "Great for daytime energy and creativity",
+    thc_rating: 8,
+    user_rating: 8.25,
+    combined_rating: 8.13
+  },
+  {
+    name: "Blue Cookies",
+    overview: "Hybrid strain combining sweet blueberry flavors with a calming, balanced high.",
+    genetic_type: "Hybrid",
+    lineage: "Blueberry x Girl Scout Cookies",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Caryophyllene",
+    qualitative_insights: "Sweet blueberry aroma with earthy undertones; resinous buds",
+    effects: "Relaxed, Euphoric, Happy",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for relaxation and mood enhancement",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "Mimosa",
+    overview: "Sativa-dominant hybrid offering a vibrant citrus and sweet, tangy flavor with an uplifting high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Citrus x Purple Punch",
+    thc_range: "20-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Bright citrus aroma with sweet, fruity notes; light buds",
+    effects: "Energized, Uplifted, Happy",
+    negatives: "dry mouth, dry eyes",
+    uses: "Perfect for daytime use and social gatherings",
+    thc_rating: 8.75,
+    user_rating: 8.5,
+    combined_rating: 8.63
+  },
+  {
+    name: "LA Kush",
+    overview: "Hybrid strain known for its spicy, earthy flavor and balanced, calming effects.",
+    genetic_type: "Hybrid",
+    lineage: "LA x Kush lineage",
+    thc_range: "17-22%",
+    cbd_level: "Low",
+    dominant_terpenes: "Myrcene, Limonene",
+    qualitative_insights: "Earthy, spicy aroma with subtle floral hints; moderate buds",
+    effects: "Relaxed, Euphoric, Focused",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for stress relief and relaxation",
+    thc_rating: 7.25,
+    user_rating: 7,
+    combined_rating: 7.13
+  },
+  {
+    name: "Amnesia Lemon",
+    overview: "Sativa-dominant hybrid blending citrus and earthy flavors for an energizing, creative high.",
+    genetic_type: "Sativa-dominant Hybrid",
+    lineage: "Amnesia x Lemon Skunk",
+    thc_range: "18-24%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Terpinolene",
+    qualitative_insights: "Bright lemon aroma with earthy undertones; light, airy buds",
+    effects: "Energized, Uplifted, Creative",
+    negatives: "dry mouth, anxiety",
+    uses: "Great for daytime creativity and mood boost",
+    thc_rating: 8,
+    user_rating: 8,
+    combined_rating: 8.00
+  },
+  {
+    name: "Forbidden Jack",
+    overview: "Hybrid strain merging tropical fruit notes with a potent, balanced high for a unique experience.",
+    genetic_type: "Hybrid",
+    lineage: "Forbidden Fruit x Jack Herer",
+    thc_range: "19-25%",
+    cbd_level: "Low",
+    dominant_terpenes: "Limonene, Caryophyllene",
+    qualitative_insights: "Tropical, fruity aroma with spicy hints; resinous buds",
+    effects: "Euphoric, Relaxed, Creative",
+    negatives: "dry mouth, drowsiness",
+    uses: "Ideal for creative sessions and stress relief",
+    thc_rating: 8.5,
+    user_rating: 8.25,
+    combined_rating: 8.38
+  }
+];
+
 ================================================================================
 File: src/contexts/BluetoothContext.ts
 ================================================================================
@@ -2541,58 +3924,184 @@ import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
 import {
   BONG_HITS_DATABASE_NAME,
   SAVED_DEVICES_DATABASE_NAME,
+  STRAINS_DATABASE_NAME,
   getInsertStatements,
-  dayLookUpTable,
+  getStrainInsertStatements,
+  SAMPLE_STRAINS
 } from "./constants";
 import { BongHitStats, Datapoint, AverageHourCount } from "./types";
 
 const FIRST_LAUNCH_KEY = "hasLaunched";
 
+export interface Strain {
+  id?: number;
+  name: string;
+  overview: string;
+  genetic_type: string;
+  lineage: string;
+  thc_range: string;
+  cbd_level: string;
+  dominant_terpenes: string;
+  qualitative_insights: string;
+  effects: string;
+  negatives: string;
+  uses: string;
+  thc_rating: number;
+  user_rating: number;
+  combined_rating: number;
+  created_at?: string;
+}
+
 /**
  * Checks if the application is launching for the first time.
  */
 export async function isFirstLaunch(): Promise<boolean> {
-  return (await AsyncStorage.getItem(FIRST_LAUNCH_KEY)) === null;
+  try {
+    return (await AsyncStorage.getItem(FIRST_LAUNCH_KEY)) === null;
+  } catch (error) {
+    console.error('[dbManager] Error checking first launch:', error);
+    return false;
+  }
 }
 
 /**
  * Called on first launch to run any initial setup (e.g. DB creation).
  */
 export async function initializeAppOnFirstLaunch() {
-  await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
-  await initializeDatabase();
+  try {
+    await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
+    await initializeDatabase();
+  } catch (error) {
+    console.error('[dbManager] Error initializing app:', error);
+    throw error;
+  }
 }
 
 /**
- * Initializes the BongHits and SavedDevices databases/tables
- * and inserts mock data, using expo-sqlite's newer async methods.
+ * Initializes all databases and tables with initial data.
  */
 async function initializeDatabase(): Promise<void> {
   try {
-    // 1) Open and init BongHits database
-    const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-    // Multi-statement: WAL mode, create table, insert mock data
-    await bongHitsDb.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
+    console.log('[dbManager] Starting database initialization...');
+
+    // Initialize BongHits database
+    const bongHitsDb = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    await bongHitsDb.execAsync(
+      'PRAGMA journal_mode = WAL;' +
+      `CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
         timestamp TIMESTAMP PRIMARY KEY NOT NULL,
         duration_ms INTEGER NOT NULL
-      );
-    `.concat(getInsertStatements()));
+      );` +
+      `CREATE INDEX IF NOT EXISTS idx_timestamp 
+      ON ${BONG_HITS_DATABASE_NAME}(timestamp);` +
+      getInsertStatements()
+    );
+    console.log('[dbManager] BongHits database initialized');
 
-    // 2) Open and init SavedDevices database
-    const savedDevicesDb: SQLiteDatabase = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
-    await savedDevicesDb.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (
+    // Initialize SavedDevices database
+    const savedDevicesDb = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
+    await savedDevicesDb.execAsync(
+      'PRAGMA journal_mode = WAL;' +
+      `CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (
         uuid TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL
-      );
-    `);
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );` +
+      `CREATE INDEX IF NOT EXISTS idx_device_name 
+      ON ${SAVED_DEVICES_DATABASE_NAME}(name);`
+    );
+    console.log('[dbManager] SavedDevices database initialized');
 
-    console.log("Databases initialized successfully.");
+    // Initialize Strains database
+    const strainsDb = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    await strainsDb.execAsync(
+      'PRAGMA journal_mode = WAL;' +
+      `CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        overview TEXT,
+        genetic_type TEXT,
+        lineage TEXT,
+        thc_range TEXT,
+        cbd_level TEXT,
+        dominant_terpenes TEXT,
+        qualitative_insights TEXT,
+        effects TEXT,
+        negatives TEXT,
+        uses TEXT,
+        thc_rating REAL,
+        user_rating REAL,
+        combined_rating REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_name 
+      ON ${STRAINS_DATABASE_NAME}(name);` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_genetic_type 
+      ON ${STRAINS_DATABASE_NAME}(genetic_type);` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_effects 
+      ON ${STRAINS_DATABASE_NAME}(effects);` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_rating 
+      ON ${STRAINS_DATABASE_NAME}(combined_rating DESC);`
+    );
+
+    // Insert sample strain data
+    await insertStrainData(strainsDb);
+    console.log('[dbManager] Strains database initialized');
+
+    console.log('[dbManager] All databases initialized successfully');
   } catch (error) {
-    console.error("Error initializing databases:", error);
+    console.error('[dbManager] Error initializing databases:', error);
+    throw error;
+  }
+}
+
+/**
+ * Inserts sample strain data into the database
+ */
+async function insertStrainData(db: SQLiteDatabase): Promise<void> {
+  try {
+    console.log('[dbManager] Starting strain data insertion...');
+    
+    // Insert strains in batches for better performance
+    const batchSize = 50;
+    for (let i = 0; i < SAMPLE_STRAINS.length; i += batchSize) {
+      const batch = SAMPLE_STRAINS.slice(i, i + batchSize);
+      
+      const placeholders = batch.map(() => 
+        '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).join(',');
+
+      const values = batch.flatMap((strain: Strain) => [
+        strain.name,
+        strain.overview,
+        strain.genetic_type,
+        strain.lineage,
+        strain.thc_range,
+        strain.cbd_level,
+        strain.dominant_terpenes,
+        strain.qualitative_insights,
+        strain.effects,
+        strain.negatives,
+        strain.uses,
+        strain.thc_rating,
+        strain.user_rating,
+        strain.combined_rating
+      ]);
+
+      await db.execAsync(
+        `INSERT OR IGNORE INTO ${STRAINS_DATABASE_NAME} (
+          name, overview, genetic_type, lineage, thc_range,
+          cbd_level, dominant_terpenes, qualitative_insights,
+          effects, negatives, uses, thc_rating,
+          user_rating, combined_rating
+        ) VALUES ${placeholders}`,
+        values
+      );
+    }
+
+    console.log('[dbManager] Strain data insertion completed');
+  } catch (error) {
+    console.error('[dbManager] Error inserting strain data:', error);
     throw error;
   }
 }
@@ -2836,6 +4345,10 @@ export async function getDailyStats(timeRange: string) {
   }
 }
 
+// Export query functions
+export * from './queries/bongHits';
+export * from './queries/strains';
+
 
 ================================================================================
 File: src/hooks/useDataService.ts
@@ -2973,6 +4486,384 @@ export function useDataService() {
   }, []); // Empty dependency array as we only want to run this once
 
   return state;
+} 
+
+================================================================================
+File: src/hooks/useStrains.ts
+================================================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import StrainService, { StrainSearchFilters } from '../services/StrainService';
+import { Strain } from '../dbManager';
+
+export interface UseStrainState {
+  strains: Strain[];
+  popularStrains: Strain[];
+  categories: { [key: string]: number };
+  isLoading: boolean;
+  error: string | null;
+  pagination: {
+    total: number;
+    currentPage: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+}
+
+export interface UseStrainActions {
+  searchStrains: (query: string, filters: StrainSearchFilters) => Promise<void>;
+  loadMore: () => void;
+  toggleFavorite: (strainId: number) => Promise<void>;
+  isFavorite: (strainId: number) => boolean;
+  clearSearch: () => void;
+  getStrainDetails: (id: number) => Promise<Strain | null>;
+  getRelatedStrains: (strain: Strain) => Promise<Strain[]>;
+}
+
+const INITIAL_STATE: UseStrainState = {
+  strains: [],
+  popularStrains: [],
+  categories: {},
+  isLoading: false,
+  error: null,
+  pagination: {
+    total: 0,
+    currentPage: 1,
+    totalPages: 1,
+    hasMore: false
+  }
+};
+
+export function useStrains(): UseStrainState & UseStrainActions {
+  const [state, setState] = useState<UseStrainState>(INITIAL_STATE);
+  const [filters, setFilters] = useState<StrainSearchFilters>({});
+  const [favoriteStrains, setFavoriteStrains] = useState<number[]>([]);
+
+  // Load initial data
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      setState(prev => ({ ...prev, isLoading: true }));
+      
+      const [popularStrains, categories] = await Promise.all([
+        StrainService.getPopularStrains(),
+        StrainService.getStrainCategories()
+      ]);
+
+      setState(prev => ({
+        ...prev,
+        popularStrains,
+        categories,
+        isLoading: false
+      }));
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to load initial data',
+        isLoading: false
+      }));
+    }
+  };
+
+  const searchStrains = useCallback(async (
+    query: string,
+    newFilters: StrainSearchFilters = {},
+    page: number = 1
+  ) => {
+    try {
+      setState(prev => ({ ...prev, isLoading: true }));
+      setFilters(newFilters);
+
+      const result = await StrainService.searchStrains(query, newFilters, { page, limit: 10 });
+
+      setState(prev => ({
+        ...prev,
+        strains: page === 1 ? result.data : [...prev.strains, ...result.data],
+        pagination: {
+          total: result.total,
+          currentPage: result.currentPage,
+          totalPages: result.totalPages,
+          hasMore: result.hasMore
+        },
+        isLoading: false
+      }));
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        error: 'Search failed',
+        isLoading: false
+      }));
+    }
+  }, []);
+
+  const loadMore = useCallback(() => {
+    if (state.pagination.hasMore && !state.isLoading) {
+      const nextPage = state.pagination.currentPage + 1;
+      searchStrains('', filters, nextPage);
+    }
+  }, [state.pagination, state.isLoading, filters, searchStrains]);
+
+  const toggleFavorite = useCallback(async (strainId: number) => {
+    setFavoriteStrains(prev => {
+      const isFavorited = prev.includes(strainId);
+      return isFavorited 
+        ? prev.filter(id => id !== strainId)
+        : [...prev, strainId];
+    });
+  }, []);
+
+  const isFavorite = useCallback((strainId: number) => {
+    return favoriteStrains.includes(strainId);
+  }, [favoriteStrains]);
+
+  const clearSearch = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      strains: [],
+      pagination: {
+        total: 0,
+        currentPage: 1,
+        totalPages: 1,
+        hasMore: false
+      }
+    }));
+  }, []);
+
+  const getStrainDetails = useCallback(async (id: number): Promise<Strain | null> => {
+    try {
+      return await StrainService.getStrainById(id);
+    } catch (error) {
+      console.error('[useStrains] Error getting strain details:', error);
+      return null;
+    }
+  }, []);
+
+  const getRelatedStrains = useCallback(async (strain: Strain): Promise<Strain[]> => {
+    try {
+      return await StrainService.getRelatedStrains(strain);
+    } catch (error) {
+      console.error('[useStrains] Error getting related strains:', error);
+      return [];
+    }
+  }, []);
+
+  return {
+    ...state,
+    searchStrains,
+    loadMore,
+    toggleFavorite,
+    isFavorite,
+    clearSearch,
+    getStrainDetails,
+    getRelatedStrains
+  };
+} 
+
+================================================================================
+File: src/queries/bongHits.ts
+================================================================================
+
+import { openDatabaseAsync } from "expo-sqlite";
+import { BONG_HITS_DATABASE_NAME } from "../constants";
+
+export interface BongHit {
+  timestamp: string;
+  duration_ms: number;
+}
+
+/**
+ * Get all bong hits within a date range
+ */
+export async function getBongHits(startDate: Date, endDate: Date): Promise<BongHit[]> {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.getAllAsync<BongHit>(`
+      SELECT * FROM ${BONG_HITS_DATABASE_NAME}
+      WHERE timestamp BETWEEN ? AND ?
+      ORDER BY timestamp DESC;
+    `, [startDate.toISOString(), endDate.toISOString()]);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/bongHits] Error getting bong hits:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get average duration of bong hits by hour
+ */
+export async function getAverageByHour(): Promise<{ hour: number; average_duration: number; }[]> {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.getAllAsync<{ hour: number; average_duration: number; }>(`
+      SELECT 
+        strftime('%H', timestamp) as hour,
+        AVG(duration_ms) as average_duration
+      FROM ${BONG_HITS_DATABASE_NAME}
+      GROUP BY hour
+      ORDER BY hour;
+    `);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/bongHits] Error getting hourly averages:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get total number of bong hits by day
+ */
+export async function getTotalByDay(): Promise<{ date: string; total: number; }[]> {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.getAllAsync<{ date: string; total: number; }>(`
+      SELECT 
+        date(timestamp) as date,
+        COUNT(*) as total
+      FROM ${BONG_HITS_DATABASE_NAME}
+      GROUP BY date
+      ORDER BY date DESC;
+    `);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/bongHits] Error getting daily totals:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get average duration of bong hits by day of week
+ */
+export async function getAverageByDayOfWeek(): Promise<{ day: number; average_duration: number; }[]> {
+  try {
+    const db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    const results = await db.getAllAsync<{ day: number; average_duration: number; }>(`
+      SELECT 
+        strftime('%w', timestamp) as day,
+        AVG(duration_ms) as average_duration
+      FROM ${BONG_HITS_DATABASE_NAME}
+      GROUP BY day
+      ORDER BY day;
+    `);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/bongHits] Error getting day of week averages:", error);
+    throw error;
+  }
+} 
+
+================================================================================
+File: src/queries/strains.ts
+================================================================================
+
+import { openDatabaseAsync } from "expo-sqlite";
+import { STRAINS_DATABASE_NAME } from "../constants";
+import { Strain } from "../dbManager";
+
+/**
+ * Search strains by name, effects, or genetic type
+ */
+export async function searchStrains(query: string): Promise<Strain[]> {
+  try {
+    const db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    const searchQuery = `%${query}%`;
+    
+    const results = await db.getAllAsync<Strain>(`
+      SELECT * FROM ${STRAINS_DATABASE_NAME}
+      WHERE name LIKE ?
+      OR effects LIKE ?
+      OR genetic_type LIKE ?
+      ORDER BY combined_rating DESC
+      LIMIT 20;
+    `, [searchQuery, searchQuery, searchQuery]);
+
+    return results;
+  } catch (error) {
+    console.error("[queries/strains] Error searching strains:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get a specific strain by ID
+ */
+export async function getStrainById(id: number): Promise<Strain | null> {
+  try {
+    const db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    const [result] = await db.getAllAsync<Strain>(`
+      SELECT * FROM ${STRAINS_DATABASE_NAME}
+      WHERE id = ?;
+    `, [id]);
+    
+    return result || null;
+  } catch (error) {
+    console.error("[queries/strains] Error getting strain:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get all strains sorted by rating
+ */
+export async function getTopStrains(limit: number = 20): Promise<Strain[]> {
+  try {
+    const db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    const results = await db.getAllAsync<Strain>(`
+      SELECT * FROM ${STRAINS_DATABASE_NAME}
+      ORDER BY combined_rating DESC
+      LIMIT ?;
+    `, [limit]);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/strains] Error getting top strains:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get strains by genetic type
+ */
+export async function getStrainsByType(geneticType: string): Promise<Strain[]> {
+  try {
+    const db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    const results = await db.getAllAsync<Strain>(`
+      SELECT * FROM ${STRAINS_DATABASE_NAME}
+      WHERE genetic_type LIKE ?
+      ORDER BY combined_rating DESC;
+    `, [`%${geneticType}%`]);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/strains] Error getting strains by type:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get strains by effect
+ */
+export async function getStrainsByEffect(effect: string): Promise<Strain[]> {
+  try {
+    const db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    const results = await db.getAllAsync<Strain>(`
+      SELECT * FROM ${STRAINS_DATABASE_NAME}
+      WHERE effects LIKE ?
+      ORDER BY combined_rating DESC;
+    `, [`%${effect}%`]);
+    
+    return results;
+  } catch (error) {
+    console.error("[queries/strains] Error getting strains by effect:", error);
+    throw error;
+  }
 } 
 
 ================================================================================
@@ -3394,6 +5285,357 @@ export class DataService {
 } 
 
 ================================================================================
+File: src/services/StrainService.ts
+================================================================================
+
+import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
+import { STRAINS_DATABASE_NAME, SAMPLE_STRAINS } from "../constants";
+import { Strain } from "../dbManager";
+
+export interface StrainSearchFilters {
+  geneticType?: string;
+  effects?: string[];
+  minTHC?: number;
+  maxTHC?: number;
+  sort?: 'rating' | 'name' | 'thc';
+}
+
+export interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
+export interface StrainSearchResult {
+  success: boolean;
+  data: Strain[];
+  error?: string;
+  total: number;
+  currentPage: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
+export class StrainService {
+  private static instance: StrainService;
+  private db: SQLiteDatabase | null = null;
+  private initializationPromise: Promise<void> | null = null;
+
+  private constructor() {}
+
+  static getInstance(): StrainService {
+    if (!StrainService.instance) {
+      StrainService.instance = new StrainService();
+    }
+    return StrainService.instance;
+  }
+
+  private async initialize(): Promise<void> {
+    try {
+      console.log('[StrainService] Initializing database...');
+      this.db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+
+      // Drop existing table to ensure clean state
+      await this.db.execAsync(`DROP TABLE IF EXISTS ${STRAINS_DATABASE_NAME};`);
+
+      // Create table and indexes
+      await this.db.execAsync(`
+        PRAGMA journal_mode = WAL;
+        
+        CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          overview TEXT,
+          genetic_type TEXT,
+          lineage TEXT,
+          thc_range TEXT,
+          cbd_level TEXT,
+          dominant_terpenes TEXT,
+          qualitative_insights TEXT,
+          effects TEXT,
+          negatives TEXT,
+          uses TEXT,
+          thc_rating REAL,
+          user_rating REAL,
+          combined_rating REAL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_strain_name 
+        ON ${STRAINS_DATABASE_NAME}(name);
+        
+        CREATE INDEX IF NOT EXISTS idx_strain_genetic_type 
+        ON ${STRAINS_DATABASE_NAME}(genetic_type);
+        
+        CREATE INDEX IF NOT EXISTS idx_strain_effects 
+        ON ${STRAINS_DATABASE_NAME}(effects);
+        
+        CREATE INDEX IF NOT EXISTS idx_strain_rating 
+        ON ${STRAINS_DATABASE_NAME}(combined_rating DESC);
+      `);
+
+      // Insert all sample strains
+      console.log('[StrainService] Inserting', SAMPLE_STRAINS.length, 'sample strains...');
+      
+      for (const strain of SAMPLE_STRAINS) {
+        try {
+          await this.db.runAsync(
+            `INSERT INTO ${STRAINS_DATABASE_NAME} (
+              name, overview, genetic_type, lineage, thc_range,
+              cbd_level, dominant_terpenes, qualitative_insights,
+              effects, negatives, uses, thc_rating,
+              user_rating, combined_rating
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            [
+              strain.name,
+              strain.overview,
+              strain.genetic_type,
+              strain.lineage,
+              strain.thc_range,
+              strain.cbd_level,
+              strain.dominant_terpenes,
+              strain.qualitative_insights,
+              strain.effects,
+              strain.negatives,
+              strain.uses,
+              strain.thc_rating,
+              strain.user_rating,
+              strain.combined_rating
+            ]
+          );
+        } catch (insertError) {
+          console.error(`[StrainService] Failed to insert strain ${strain.name}:`, insertError);
+          // Continue with next strain instead of failing completely
+        }
+      }
+
+      // Verify the data
+      const [finalCount] = await this.db.getAllAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM ${STRAINS_DATABASE_NAME}`
+      );
+      console.log('[StrainService] Database initialized with', finalCount?.count || 0, 'strains');
+
+    } catch (error) {
+      console.error('[StrainService] Failed to initialize database:', error);
+      this.db = null;
+      throw error;
+    }
+  }
+
+  private async getDatabase(): Promise<SQLiteDatabase> {
+    if (!this.db) {
+      if (!this.initializationPromise) {
+        this.initializationPromise = this.initialize();
+      }
+      await this.initializationPromise;
+      this.initializationPromise = null;
+    }
+
+    if (!this.db) {
+      throw new Error('Database initialization failed');
+    }
+
+    return this.db;
+  }
+
+  private parseTHCRange(thcRange: string): { min: number; max: number } {
+    const matches = thcRange.match(/(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/);
+    if (matches) {
+      return {
+        min: parseFloat(matches[1]),
+        max: parseFloat(matches[2])
+      };
+    }
+    return { min: 0, max: 0 };
+  }
+
+  async searchStrains(
+    query: string = '',
+    filters: StrainSearchFilters = {},
+    pagination: PaginationParams = { page: 1, limit: 20 }
+  ): Promise<StrainSearchResult> {
+    try {
+      const db = await this.getDatabase();
+      const { page, limit } = pagination;
+      const offset = (page - 1) * limit;
+      const searchTerms = query.split(' ').map(term => `%${term}%`);
+      
+      let whereClause = searchTerms.length > 0 
+        ? 'WHERE ' + searchTerms.map(() => 
+            '(name LIKE ? OR effects LIKE ? OR genetic_type LIKE ?)'
+          ).join(' AND ')
+        : '';
+      
+      let params: (string | number)[] = [];
+      
+      // Add search terms to params
+      searchTerms.forEach(term => {
+        params.push(term, term, term);
+      });
+
+      // Add filters
+      if (filters.geneticType) {
+        whereClause += whereClause ? ' AND ' : 'WHERE ';
+        whereClause += 'genetic_type LIKE ?';
+        params.push(`%${filters.geneticType}%`);
+      }
+
+      if (filters.effects?.length) {
+        whereClause += whereClause ? ' AND ' : 'WHERE ';
+        whereClause += filters.effects.map(() => 'effects LIKE ?').join(' AND ');
+        params.push(...filters.effects.map(effect => `%${effect}%`));
+      }
+
+      if (filters.minTHC !== undefined || filters.maxTHC !== undefined) {
+        whereClause += whereClause ? ' AND ' : 'WHERE ';
+        whereClause += 'CAST(SUBSTR(thc_range, 1, INSTR(thc_range, "-")-1) AS FLOAT) >= ?';
+        if (filters.maxTHC !== undefined) {
+          whereClause += ' AND CAST(SUBSTR(thc_range, INSTR(thc_range, "-")+1) AS FLOAT) <= ?';
+        }
+        params.push(filters.minTHC || 0);
+        if (filters.maxTHC !== undefined) params.push(filters.maxTHC);
+      }
+
+      // Determine sort order
+      let orderBy = 'ORDER BY ';
+      switch (filters.sort) {
+        case 'name':
+          orderBy += 'name ASC';
+          break;
+        case 'thc':
+          orderBy += 'CAST(SUBSTR(thc_range, 1, INSTR(thc_range, "-")-1) AS FLOAT) DESC';
+          break;
+        case 'rating':
+        default:
+          orderBy += 'combined_rating DESC';
+      }
+
+      // Get total count
+      const [countResult] = await db.getAllAsync<{ total: number }>(
+        `SELECT COUNT(*) as total FROM ${STRAINS_DATABASE_NAME} ${whereClause}`,
+        params
+      );
+
+      const total = countResult?.total || 0;
+      const totalPages = Math.ceil(total / limit);
+
+      // Get paginated results
+      const results = await db.getAllAsync<Strain>(
+        `SELECT * FROM ${STRAINS_DATABASE_NAME} ${whereClause} ${orderBy} LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+      );
+
+      return {
+        success: true,
+        data: results || [],
+        total,
+        currentPage: page,
+        totalPages,
+        hasMore: page < totalPages
+      };
+
+    } catch (error) {
+      console.error('[StrainService] Error searching strains:', error);
+      return {
+        success: false,
+        data: [],
+        error: error instanceof Error ? error.message : 'Failed to search strains',
+        total: 0,
+        currentPage: 1,
+        totalPages: 1,
+        hasMore: false
+      };
+    }
+  }
+
+  async getStrainById(id: number): Promise<Strain | null> {
+    try {
+      const db = await this.getDatabase();
+      const [strain] = await db.getAllAsync<Strain>(
+        `SELECT * FROM ${STRAINS_DATABASE_NAME} WHERE id = ? LIMIT 1`,
+        [id]
+      );
+      return strain || null;
+    } catch (error) {
+      console.error('[StrainService] Error getting strain by id:', error);
+      return null;
+    }
+  }
+
+  async getPopularStrains(limit: number = 10): Promise<Strain[]> {
+    try {
+      const db = await this.getDatabase();
+      const results = await db.getAllAsync<Strain>(
+        `SELECT * FROM ${STRAINS_DATABASE_NAME} ORDER BY combined_rating DESC LIMIT ?`,
+        [limit]
+      );
+      return results || [];
+    } catch (error) {
+      console.error('[StrainService] Error getting popular strains:', error);
+      return [];
+    }
+  }
+
+  async getRelatedStrains(strain: Strain): Promise<Strain[]> {
+    try {
+      const db = await this.getDatabase();
+      // Get strains with similar genetic type and effects
+      const results = await db.getAllAsync<Strain>(
+        `SELECT * FROM ${STRAINS_DATABASE_NAME}
+         WHERE id != ? 
+         AND (
+           genetic_type = ? 
+           OR effects LIKE ?
+         )
+         ORDER BY combined_rating DESC
+         LIMIT 5`,
+        [strain.id!, strain.genetic_type, `%${strain.effects.split(',')[0]}%`]
+      );
+      return results || [];
+    } catch (error) {
+      console.error('[StrainService] Error getting related strains:', error);
+      return [];
+    }
+  }
+
+  async getStrainCategories(): Promise<{ [key: string]: number }> {
+    try {
+      const db = await this.getDatabase();
+      const results = await db.getAllAsync<{ genetic_type: string; count: number }>(
+        `SELECT genetic_type, COUNT(*) as count
+         FROM ${STRAINS_DATABASE_NAME}
+         GROUP BY genetic_type`
+      );
+      
+      return results.reduce((acc, { genetic_type, count }) => {
+        if (genetic_type) {
+          acc[genetic_type] = count;
+        }
+        return acc;
+      }, {} as { [key: string]: number });
+    } catch (error) {
+      console.error('[StrainService] Error getting strain categories:', error);
+      return {};
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    if (this.db) {
+      try {
+        await this.db.closeAsync();
+        this.db = null;
+        this.initializationPromise = null;
+      } catch (error) {
+        console.error('[StrainService] Error during cleanup:', error);
+        throw error;
+      }
+    }
+  }
+}
+
+// Export a default instance
+export default StrainService.getInstance(); 
+
+================================================================================
 File: src/types.ts
 ================================================================================
 
@@ -3571,6 +5813,109 @@ export interface DataState {
     isLoading: boolean;
     error: string | null;
 }
+
+================================================================================
+File: src/utils/animations.ts
+================================================================================
+
+import { useCallback } from 'react';
+import { Platform } from 'react-native';
+import {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  withSpring,
+  withTiming,
+  WithTimingConfig,
+  Easing,
+  useSharedValue,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
+
+// Optimized spring configuration
+export const SPRING_CONFIG = {
+  damping: 10,
+  mass: 0.3,
+  stiffness: 100,
+  restDisplacementThreshold: 0.01,
+  restSpeedThreshold: 0.01,
+} as const;
+
+// Optimized timing configuration
+export const TIMING_CONFIG: WithTimingConfig = {
+  duration: 300,
+  easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+} as const;
+
+// Shared animation factory
+export const createSharedAnimation = (delay: number = 0) => {
+  return Platform.select({
+    ios: FadeInDown.duration(300)
+      .springify()
+      .delay(delay)
+      .damping(SPRING_CONFIG.damping)
+      .mass(SPRING_CONFIG.mass),
+    android: FadeIn.duration(250)
+      .delay(delay)
+  });
+};
+
+// Optimized press animation hook
+export const useAnimatedPress = (scale: number = 0.98) => {
+  const pressed = useSharedValue(false);
+  
+  const animatedStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      transform: [{
+        scale: withSpring(
+          pressed.value ? scale : 1, 
+          SPRING_CONFIG
+        )
+      }]
+    };
+  });
+
+  return {
+    animatedStyle,
+    pressHandlers: {
+      onPressIn: useCallback(() => {
+        pressed.value = true;
+      }, []),
+      onPressOut: useCallback(() => {
+        pressed.value = false;
+      }, [])
+    }
+  };
+};
+
+// Gradient optimization utilities
+export const GRADIENT_PROPS = Platform.select({
+  ios: {
+    shouldRasterizeIOS: true,
+  },
+  android: {
+    renderToHardwareTextureAndroid: true,
+  },
+});
+
+// Chart animation configuration
+export const CHART_ANIMATION_CONFIG = {
+  animationEnabled: true,
+  animationDuration: 300,
+  animationEasing: Easing.ease,
+  propsForLabels: {
+    fontSize: 10,
+    fontWeight: '400'
+  }
+} as const;
+
+// Optimized layout animation configuration
+export const LAYOUT_ANIMATION_CONFIG = {
+  damping: 10,
+  mass: 0.3,
+  stiffness: 100
+} as const; 
 
 ================================================================================
 File: tsconfig.json

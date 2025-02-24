@@ -5,58 +5,184 @@ import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
 import {
   BONG_HITS_DATABASE_NAME,
   SAVED_DEVICES_DATABASE_NAME,
+  STRAINS_DATABASE_NAME,
   getInsertStatements,
-  dayLookUpTable,
+  getStrainInsertStatements,
+  SAMPLE_STRAINS
 } from "./constants";
 import { BongHitStats, Datapoint, AverageHourCount } from "./types";
 
 const FIRST_LAUNCH_KEY = "hasLaunched";
 
+export interface Strain {
+  id?: number;
+  name: string;
+  overview: string;
+  genetic_type: string;
+  lineage: string;
+  thc_range: string;
+  cbd_level: string;
+  dominant_terpenes: string;
+  qualitative_insights: string;
+  effects: string;
+  negatives: string;
+  uses: string;
+  thc_rating: number;
+  user_rating: number;
+  combined_rating: number;
+  created_at?: string;
+}
+
 /**
  * Checks if the application is launching for the first time.
  */
 export async function isFirstLaunch(): Promise<boolean> {
-  return (await AsyncStorage.getItem(FIRST_LAUNCH_KEY)) === null;
+  try {
+    return (await AsyncStorage.getItem(FIRST_LAUNCH_KEY)) === null;
+  } catch (error) {
+    console.error('[dbManager] Error checking first launch:', error);
+    return false;
+  }
 }
 
 /**
  * Called on first launch to run any initial setup (e.g. DB creation).
  */
 export async function initializeAppOnFirstLaunch() {
-  await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
-  await initializeDatabase();
+  try {
+    await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
+    await initializeDatabase();
+  } catch (error) {
+    console.error('[dbManager] Error initializing app:', error);
+    throw error;
+  }
 }
 
 /**
- * Initializes the BongHits and SavedDevices databases/tables
- * and inserts mock data, using expo-sqlite's newer async methods.
+ * Initializes all databases and tables with initial data.
  */
 async function initializeDatabase(): Promise<void> {
   try {
-    // 1) Open and init BongHits database
-    const bongHitsDb: SQLiteDatabase = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-    // Multi-statement: WAL mode, create table, insert mock data
-    await bongHitsDb.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
+    console.log('[dbManager] Starting database initialization...');
+
+    // Initialize BongHits database
+    const bongHitsDb = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+    await bongHitsDb.execAsync(
+      'PRAGMA journal_mode = WAL;' +
+      `CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
         timestamp TIMESTAMP PRIMARY KEY NOT NULL,
         duration_ms INTEGER NOT NULL
-      );
-    `.concat(getInsertStatements()));
+      );` +
+      `CREATE INDEX IF NOT EXISTS idx_timestamp 
+      ON ${BONG_HITS_DATABASE_NAME}(timestamp);` +
+      getInsertStatements()
+    );
+    console.log('[dbManager] BongHits database initialized');
 
-    // 2) Open and init SavedDevices database
-    const savedDevicesDb: SQLiteDatabase = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
-    await savedDevicesDb.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (
+    // Initialize SavedDevices database
+    const savedDevicesDb = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
+    await savedDevicesDb.execAsync(
+      'PRAGMA journal_mode = WAL;' +
+      `CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (
         uuid TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL
-      );
-    `);
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );` +
+      `CREATE INDEX IF NOT EXISTS idx_device_name 
+      ON ${SAVED_DEVICES_DATABASE_NAME}(name);`
+    );
+    console.log('[dbManager] SavedDevices database initialized');
 
-    console.log("Databases initialized successfully.");
+    // Initialize Strains database
+    const strainsDb = await openDatabaseAsync(STRAINS_DATABASE_NAME);
+    await strainsDb.execAsync(
+      'PRAGMA journal_mode = WAL;' +
+      `CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        overview TEXT,
+        genetic_type TEXT,
+        lineage TEXT,
+        thc_range TEXT,
+        cbd_level TEXT,
+        dominant_terpenes TEXT,
+        qualitative_insights TEXT,
+        effects TEXT,
+        negatives TEXT,
+        uses TEXT,
+        thc_rating REAL,
+        user_rating REAL,
+        combined_rating REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_name 
+      ON ${STRAINS_DATABASE_NAME}(name);` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_genetic_type 
+      ON ${STRAINS_DATABASE_NAME}(genetic_type);` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_effects 
+      ON ${STRAINS_DATABASE_NAME}(effects);` +
+      `CREATE INDEX IF NOT EXISTS idx_strain_rating 
+      ON ${STRAINS_DATABASE_NAME}(combined_rating DESC);`
+    );
+
+    // Insert sample strain data
+    await insertStrainData(strainsDb);
+    console.log('[dbManager] Strains database initialized');
+
+    console.log('[dbManager] All databases initialized successfully');
   } catch (error) {
-    console.error("Error initializing databases:", error);
+    console.error('[dbManager] Error initializing databases:', error);
+    throw error;
+  }
+}
+
+/**
+ * Inserts sample strain data into the database
+ */
+async function insertStrainData(db: SQLiteDatabase): Promise<void> {
+  try {
+    console.log('[dbManager] Starting strain data insertion...');
+    
+    // Insert strains in batches for better performance
+    const batchSize = 50;
+    for (let i = 0; i < SAMPLE_STRAINS.length; i += batchSize) {
+      const batch = SAMPLE_STRAINS.slice(i, i + batchSize);
+      
+      const placeholders = batch.map(() => 
+        '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).join(',');
+
+      const values = batch.flatMap((strain: Strain) => [
+        strain.name,
+        strain.overview,
+        strain.genetic_type,
+        strain.lineage,
+        strain.thc_range,
+        strain.cbd_level,
+        strain.dominant_terpenes,
+        strain.qualitative_insights,
+        strain.effects,
+        strain.negatives,
+        strain.uses,
+        strain.thc_rating,
+        strain.user_rating,
+        strain.combined_rating
+      ]);
+
+      await db.execAsync(
+        `INSERT OR IGNORE INTO ${STRAINS_DATABASE_NAME} (
+          name, overview, genetic_type, lineage, thc_range,
+          cbd_level, dominant_terpenes, qualitative_insights,
+          effects, negatives, uses, thc_rating,
+          user_rating, combined_rating
+        ) VALUES ${placeholders}`,
+        values
+      );
+    }
+
+    console.log('[dbManager] Strain data insertion completed');
+  } catch (error) {
+    console.error('[dbManager] Error inserting strain data:', error);
     throw error;
   }
 }
@@ -299,3 +425,7 @@ export async function getDailyStats(timeRange: string) {
     throw error;
   }
 }
+
+// Export query functions
+export * from './queries/bongHits';
+export * from './queries/strains';
