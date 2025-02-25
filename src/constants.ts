@@ -11,6 +11,11 @@ dayLookUpTable.set(4, "Thu");
 dayLookUpTable.set(5, "Fri");
 dayLookUpTable.set(6, "Sat");
 
+// Function to generate strain insert statements
+export function getStrainInsertStatements(): string {
+  return '';  // Empty implementation for now
+}
+
 export const COLORS = {
   background: '#000000',
   cardBackground: '#1A1A1A',

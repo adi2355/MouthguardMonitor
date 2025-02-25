@@ -1,8 +1,8 @@
 import React, { memo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '@/src/constants';
-import { Strain } from '@/src/dbManager';
+import { COLORS } from '../../../src/constants';
+import { Strain } from '../../../src/dbManager';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface CompareBarProps {

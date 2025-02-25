@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '@/src/constants';
-import { StrainSearchFilters } from '@/src/services/StrainService';
+import { COLORS } from '../../../src/constants';
+import { StrainSearchFilters } from '../../../src/services/StrainService';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface SearchFiltersProps {
@@ -182,8 +182,6 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.cardBackground,
     borderRadius: 12,
-    margin: 20,
-    marginTop: 0,
     padding: 16,
   },
   section: {
@@ -270,8 +268,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 2,
+    padding: 16,
     borderRadius: 8,
+    width: '100%',
   },
   applyButtonText: {
     fontSize: 16,
@@ -279,4 +278,4 @@ const styles = StyleSheet.create({
     color: '#FFF',
     marginRight: 8,
   },
-}); 
+});

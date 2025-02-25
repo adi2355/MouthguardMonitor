@@ -1,5 +1,6 @@
 import React, { forwardRef } from "react";
 import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
+import { COLORS } from '../../../src/constants';
 
 interface CardProps {
     children: React.ReactNode;
@@ -12,17 +13,18 @@ export const Card = forwardRef<View, CardProps>(({ children, style }, ref) => {
 
 const styles = StyleSheet.create({
     card: {
-        width: 350,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 8,
+        backgroundColor: COLORS.cardBackground,
+        borderRadius: 16,
         elevation: 6,
-        shadowColor: '#000',
+        shadowColor: COLORS.primary,
         shadowOffset: {
             width: 0,
             height: 2,
         },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        padding: 20,
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 230, 118, 0.1)',
     }
 });

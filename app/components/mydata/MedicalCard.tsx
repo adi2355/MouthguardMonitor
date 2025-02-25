@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { COLORS } from "@/src/constants";
+import { COLORS } from "../../../src/constants";
 
 export default function MedicalCard() {
   return (
@@ -123,4 +123,4 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.primary,
   },
-}); 
+});

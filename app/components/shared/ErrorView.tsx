@@ -1,14 +1,7 @@
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-
-const COLORS = {
-  background: '#000000',
-  text: {
-    primary: '#FFFFFF',
-    secondary: '#FFFFFFCC',
-  },
-  error: '#FF5252',
-};
+import { COLORS } from '@/src/constants';
 
 interface ErrorViewProps {
   error: string;
@@ -48,4 +41,4 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     textAlign: 'center',
   },
-}); 
+});

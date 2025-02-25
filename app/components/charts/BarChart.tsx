@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '@/src/constants';
+import { COLORS } from '../../../src/constants';
 
 interface BarChartProps {
   data: number[];

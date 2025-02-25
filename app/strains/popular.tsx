@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -10,6 +10,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { COLORS } from '../../src/constants';
+import { Strain } from '../../src/dbManager';
+import StrainService from '../../src/services/StrainService';
 
 // Define strain type
 interface Strain {

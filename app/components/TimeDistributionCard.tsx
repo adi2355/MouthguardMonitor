@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from "@/src/constants";
-import { TimeDistribution } from "@/src/types";
+import { COLORS } from "../../src/constants";
+import { TimeDistribution } from "../../src/types";
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface TimeDistributionCardProps {

@@ -1,7 +1,13 @@
 import React, { memo } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '../../../src/constants';
+import { COLORS } from '@/src/constants';
+
+// Gradient configurations
+const gradients = {
+  section: ['rgba(0,230,118,0.1)', 'rgba(0,230,118,0.02)', 'transparent'] as const,
+  divider: ['rgba(0,230,118,0.1)', 'transparent'] as const,
+};
 
 interface SectionProps {
   title: string;
@@ -11,14 +17,14 @@ interface SectionProps {
 const Section = memo(({ title, children }: SectionProps) => (
   <View style={styles.sectionWrapper}>
     <LinearGradient
-      colors={['rgba(0,230,118,0.1)', 'transparent']}
+      colors={gradients.divider}
       style={styles.sectionDivider}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
     />
     <View style={styles.section}>
       <LinearGradient
-        colors={['rgba(0,230,118,0.1)', 'rgba(0,230,118,0.02)', 'transparent']}
+        colors={gradients.section}
         style={styles.sectionGradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -46,10 +52,7 @@ const styles = StyleSheet.create({
   section: {
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: Platform.select({
-      ios: 'rgba(26, 26, 26, 0.75)',
-      android: 'rgba(26, 26, 26, 0.9)',
-    }),
+    backgroundColor: 'rgba(26, 26, 26, 0.85)',
   },
   sectionGradient: {
     ...StyleSheet.absoluteFillObject,
@@ -73,4 +76,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default Section; 
+export default Section;

@@ -2,22 +2,17 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '@/src/constants';
+import { COLORS } from '../../../src/constants';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { ChartDataPoint } from '@/src/types';
+import { ChartDataPoint } from '../../../src/types';
 
-interface WeeklyUsageBannerProps {
-  weeklyData: ChartDataPoint[];
-  average: number;
+interface DailyAverageCardProps {
+  data: ChartDataPoint[];
+  averageHits: number;
   onPress: () => void;
 }
 
-const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ weeklyData, average, onPress }) => {
-  // Calculate the percentage change from last week
-  const currentWeekTotal = weeklyData.reduce((sum, day) => sum + day.value, 0);
-  const weeklyAverage = currentWeekTotal / 7;
-  const percentageChange = ((weeklyAverage - average) / average) * 100;
-  
+const DailyAverageCard: React.FC<DailyAverageCardProps> = ({ data, averageHits, onPress }) => {
   return (
     <Animated.View 
       entering={FadeIn.duration(400)}
@@ -42,9 +37,9 @@ const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ weeklyData, avera
         <View style={styles.content}>
           <View style={styles.headerRow}>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>Weekly Usage</Text>
+              <Text style={styles.title}>Daily Average</Text>
               <Text style={styles.subtitle}>
-                {weeklyAverage.toFixed(1)} average hits per day
+                {averageHits.toFixed(1)} hits per day
               </Text>
             </View>
             
@@ -55,34 +50,11 @@ const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ weeklyData, avera
               end={{ x: 1, y: 1 }}
             >
               <MaterialCommunityIcons 
-                name="chart-timeline-variant" 
+                name="chart-bell-curve" 
                 size={24} 
                 color={COLORS.primary}
               />
             </LinearGradient>
-          </View>
-
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Total Hits</Text>
-              <Text style={styles.statValue}>{currentWeekTotal}</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>vs Last Week</Text>
-              <View style={styles.changeContainer}>
-                <MaterialCommunityIcons 
-                  name={percentageChange >= 0 ? "trending-up" : "trending-down"} 
-                  size={16} 
-                  color={percentageChange >= 0 ? COLORS.primary : '#FF5252'} 
-                />
-                <Text style={[
-                  styles.changeText,
-                  { color: percentageChange >= 0 ? COLORS.primary : '#FF5252' }
-                ]}>
-                  {Math.abs(percentageChange).toFixed(1)}%
-                </Text>
-              </View>
-            </View>
           </View>
 
           <View style={styles.buttonContainer}>
@@ -92,7 +64,7 @@ const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ weeklyData, avera
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Text style={styles.buttonText}>View Weekly Analysis</Text>
+              <Text style={styles.buttonText}>View Details</Text>
               <MaterialCommunityIcons 
                 name="chevron-right" 
                 size={20} 
@@ -130,7 +102,7 @@ const styles = StyleSheet.create({
   },
   touchable: {
     width: '100%',
-    minHeight: 160,
+    minHeight: 120,
   },
   content: {
     padding: 20,
@@ -139,7 +111,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   titleContainer: {
     flex: 1,
@@ -166,34 +138,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingTop: 8,
-  },
-  statItem: {
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-  },
-  changeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  changeText: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
   buttonContainer: {
     alignItems: 'flex-start',
   },
@@ -213,4 +157,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default WeeklyUsageBanner; 
+export default DailyAverageCard;

@@ -427,5 +427,3 @@ export async function getDailyStats(timeRange: string) {
 }
 
 // Export query functions
-export * from './queries/bongHits';
-export * from './queries/strains';

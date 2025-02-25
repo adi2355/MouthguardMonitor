@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { COLORS } from '@/src/constants';
+import { COLORS } from '../../../src/constants';
 import Animated, { 
   withRepeat, 
   withTiming,
@@ -62,4 +62,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.text.secondary,
   },
-}); 
+});

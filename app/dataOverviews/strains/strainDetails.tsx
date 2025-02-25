@@ -1,5 +1,5 @@
 // app/dataOverviews/strains/strainDetails.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -7,23 +7,29 @@ import {
   ScrollView, 
   TouchableOpacity,
   ActivityIndicator,
-  Platform
+  Platform,
+  StatusBar
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useStrains } from '@/src/hooks/useStrains';
-import { Strain } from '@/src/dbManager';
-import { COLORS } from '@/src/constants';
+import { BlurView } from 'expo-blur';
+import { useStrains } from '../../../src/hooks/useStrains';
+import { Strain } from '../../../src/dbManager';
+import { COLORS } from '../../../src/constants';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 // Section component
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <View style={styles.section}>
+const Section = ({ title, children, delay = 0 }: { title: string; children: React.ReactNode; delay?: number }) => (
+  <Animated.View 
+    style={styles.section}
+    entering={FadeInDown.springify().delay(delay).damping(12)}
+  >
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.sectionContent}>
       {children}
     </View>
-  </View>
+  </Animated.View>
 );
 
 // StatItem component
@@ -55,167 +61,6 @@ const StatItem = ({
   </View>
 );
 
-export default function StrainDetails() {
-  const { id } = useLocalSearchParams();
-  const router = useRouter();
-  const { getStrainDetails, getRelatedStrains, isLoading } = useStrains();
-  
-  const [strain, setStrain] = useState<Strain | null>(null);
-  const [relatedStrains, setRelatedStrains] = useState<Strain[]>([]);
-
-  useEffect(() => {
-    const loadStrainData = async () => {
-      if (id) {
-        const strainData = await getStrainDetails(Number(id));
-        if (strainData) {
-          setStrain(strainData);
-          const related = await getRelatedStrains(strainData);
-          setRelatedStrains(related);
-        }
-      }
-    };
-
-    loadStrainData();
-  }, [id, getStrainDetails, getRelatedStrains]);
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
-  if (!strain) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Strain not found</Text>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView style={styles.container} bounces={false}>
-      {/* Gradient Header */}
-      <LinearGradient
-        colors={[
-          'rgba(0,230,118,0.3)',
-          'rgba(0,230,118,0.1)',
-          'rgba(0,0,0,0)'
-        ]}
-        style={styles.headerGradient}
-      >
-        <TouchableOpacity 
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <MaterialCommunityIcons 
-            name="chevron-left" 
-            size={32} 
-            color={COLORS.text.primary} 
-          />
-        </TouchableOpacity>
-
-        <View style={styles.header}>
-          <Text style={styles.strainName}>{strain.name}</Text>
-          <View style={styles.ratingBadge}>
-            <MaterialCommunityIcons 
-              name="cannabis" 
-              size={20} 
-              color={COLORS.primary} 
-            />
-            <Text style={styles.ratingText}>
-              {strain.combined_rating.toFixed(1)}
-            </Text>
-          </View>
-          <Text style={styles.geneticType}>{strain.genetic_type}</Text>
-        </View>
-      </LinearGradient>
-
-      {/* Content Sections */}
-      <View style={styles.content}>
-        <Section title="Overview">
-          <Text style={styles.overview}>{strain.overview}</Text>
-        </Section>
-
-        <Section title="Stats & Ratings">
-          <View style={styles.statsGrid}>
-            <StatItem 
-              icon="scale" 
-              label="THC Rating" 
-              value={`${strain.thc_rating.toFixed(1)}`} 
-              subtext={strain.thc_range} 
-            />
-            <StatItem 
-              icon="star" 
-              label="User Rating" 
-              value={`${strain.user_rating.toFixed(1)}`} 
-            />
-            <StatItem 
-              icon="trending-up" 
-              label="Combined" 
-              value={`${strain.combined_rating.toFixed(1)}`} 
-              highlight 
-            />
-          </View>
-        </Section>
-
-        <Section title="Details">
-          <View style={styles.detailsGrid}>
-            <DetailItem icon="dna" label="Lineage" value={strain.lineage} />
-            <DetailItem icon="water" label="CBD Level" value={strain.cbd_level} />
-            <DetailItem icon="leaf" label="Terpenes" value={strain.dominant_terpenes} />
-          </View>
-        </Section>
-
-        <Section title="Effects & Uses">
-          <View style={styles.effectsGrid}>
-            <DetailItem icon="star" label="Effects" value={strain.effects} />
-            <DetailItem icon="alert" label="Potential Negatives" value={strain.negatives} />
-            <DetailItem icon="medical-bag" label="Common Uses" value={strain.uses} />
-          </View>
-        </Section>
-
-        {relatedStrains.length > 0 && (
-          <Section title="Similar Strains">
-            <View style={styles.relatedStrainsGrid}>
-              {relatedStrains.map((related) => (
-                <TouchableOpacity
-                  key={related.id}
-                  style={styles.relatedStrainItem}
-                  onPress={() => {
-                    if (related.id) {
-                      router.push({
-                        pathname: "/dataOverviews/strains/strainDetails",
-                        params: { id: related.id }
-                      });
-                    }
-                  }}
-                >
-                  <MaterialCommunityIcons 
-                    name="cannabis" 
-                    size={20} 
-                    color={COLORS.primary} 
-                  />
-                  <View>
-                    <Text style={styles.relatedStrainName}>{related.name}</Text>
-                    <Text style={styles.relatedStrainType}>
-                      {related.genetic_type}
-                    </Text>
-                  </View>
-                  <Text style={styles.relatedStrainRating}>
-                    {related.combined_rating.toFixed(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Section>
-        )}
-      </View>
-    </ScrollView>
-  );
-}
-
 const DetailItem = ({ 
   icon, 
   label, 
@@ -238,10 +83,274 @@ const DetailItem = ({
   </View>
 );
 
+// Enhanced rating badge component
+const RatingBadge = ({ rating }: { rating: number }) => (
+  <LinearGradient
+    colors={[
+      rating >= 9 ? 'rgba(0,230,118,0.2)' : rating >= 8 ? 'rgba(0,230,118,0.15)' : 'rgba(0,230,118,0.1)',
+      rating >= 9 ? 'rgba(0,230,118,0.1)' : rating >= 8 ? 'rgba(0,230,118,0.05)' : 'rgba(0,230,118,0.03)'
+    ]}
+    style={styles.ratingBadge}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 1 }}
+  >
+    <MaterialCommunityIcons 
+      name="cannabis" 
+      size={18} 
+      color={COLORS.primary} 
+    />
+    <Text style={styles.ratingText}>
+      {rating.toFixed(1)}
+    </Text>
+  </LinearGradient>
+);
+
+export default function StrainDetails() {
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  const { getStrainDetails, getRelatedStrains, isLoading } = useStrains();
+  
+  const [strain, setStrain] = useState<Strain | null>(null);
+  const [relatedStrains, setRelatedStrains] = useState<Strain[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Hide the default stack navigator
+  useEffect(() => {
+    // This ensures we don't show multiple headers
+    StatusBar.setBarStyle('light-content');
+    return () => {
+      StatusBar.setBarStyle('default');
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadStrainData = async () => {
+      setLoading(true);
+      if (id) {
+        try {
+          const strainData = await getStrainDetails(Number(id));
+          if (strainData) {
+            setStrain(strainData);
+            // Get truly similar strains by genetic type and effects
+            const similar = await getRelatedStrains(strainData);
+            
+            // Filter to ensure we're getting truly similar strains
+            // Sort by genetic similarity and effect similarity
+            const sortedSimilar = similar.sort((a, b) => {
+              // Check if genetic type matches
+              const aTypeMatch = a.genetic_type === strainData.genetic_type ? 2 : 0;
+              const bTypeMatch = b.genetic_type === strainData.genetic_type ? 2 : 0;
+              
+              // Check effect overlap
+              const aEffects = a.effects.split(',').map(e => e.trim().toLowerCase());
+              const bEffects = b.effects.split(',').map(e => e.trim().toLowerCase());
+              const strainEffects = strainData.effects.split(',').map(e => e.trim().toLowerCase());
+              
+              const aEffectMatches = aEffects.filter(e => strainEffects.includes(e)).length;
+              const bEffectMatches = bEffects.filter(e => strainEffects.includes(e)).length;
+              
+              // Calculate similarity score (higher is more similar)
+              const aScore = aTypeMatch + aEffectMatches;
+              const bScore = bTypeMatch + bEffectMatches;
+              
+              return bScore - aScore;
+            }).slice(0, 5); // Take only top 5 most similar
+            
+            setRelatedStrains(sortedSimilar);
+          }
+        } catch (error) {
+          console.error('Error loading strain data:', error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadStrainData();
+  }, [id, getStrainDetails, getRelatedStrains]);
+
+  const handleBackPress = useCallback(() => {
+    router.back();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!strain) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Strain not found</Text>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={handleBackPress}
+        >
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      {/* Hide the stack navigator header */}
+      <Stack.Screen options={{ headerShown: false }} />
+      
+      <View style={styles.container}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Premium Gradient Header */}
+          <LinearGradient
+            colors={[
+              'rgba(0,230,118,0.3)',
+              'rgba(0,230,118,0.1)',
+              'rgba(0,0,0,0)'
+            ]}
+            style={styles.headerGradient}
+          >
+            {/* Back button */}
+            <TouchableOpacity 
+              onPress={handleBackPress}
+              style={styles.backButton}
+            >
+              <LinearGradient
+                colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.2)']}
+                style={StyleSheet.absoluteFillObject}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <MaterialCommunityIcons 
+                name="chevron-left" 
+                size={28} 
+                color={COLORS.text.primary} 
+              />
+            </TouchableOpacity>
+
+            <Animated.View 
+              style={styles.header}
+              entering={FadeIn.duration(600)}
+            >
+              <Text style={styles.strainName}>{strain.name}</Text>
+              <RatingBadge rating={strain.combined_rating} />
+              <Text style={styles.geneticType}>{strain.genetic_type}</Text>
+            </Animated.View>
+          </LinearGradient>
+
+          {/* Content Sections */}
+          <View style={styles.content}>
+            <Section title="Overview" delay={100}>
+              <Text style={styles.overview}>{strain.overview}</Text>
+            </Section>
+
+            <Section title="Stats & Ratings" delay={200}>
+              <View style={styles.statsGrid}>
+                <StatItem 
+                  icon="scale" 
+                  label="THC Rating" 
+                  value={`${strain.thc_rating.toFixed(1)}`} 
+                  subtext={strain.thc_range} 
+                />
+                <StatItem 
+                  icon="star" 
+                  label="User Rating" 
+                  value={`${strain.user_rating.toFixed(1)}`} 
+                />
+                <StatItem 
+                  icon="trending-up" 
+                  label="Combined" 
+                  value={`${strain.combined_rating.toFixed(1)}`} 
+                  highlight 
+                />
+              </View>
+            </Section>
+
+            <Section title="Details" delay={300}>
+              <View style={styles.detailsGrid}>
+                <DetailItem icon="dna" label="Lineage" value={strain.lineage} />
+                <DetailItem icon="water" label="CBD Level" value={strain.cbd_level} />
+                <DetailItem icon="leaf" label="Terpenes" value={strain.dominant_terpenes} />
+              </View>
+            </Section>
+
+            <Section title="Effects & Uses" delay={400}>
+              <View style={styles.effectsGrid}>
+                <DetailItem icon="star" label="Effects" value={strain.effects} />
+                <DetailItem icon="alert" label="Potential Negatives" value={strain.negatives} />
+                <DetailItem icon="medical-bag" label="Common Uses" value={strain.uses} />
+              </View>
+            </Section>
+
+            {relatedStrains.length > 0 && (
+              <Section title="Similar Strains" delay={500}>
+                <Text style={styles.similarDescription}>
+                  Strains with similar genetic profiles and effects
+                </Text>
+                <View style={styles.relatedStrainsGrid}>
+                  {relatedStrains.map((related, index) => (
+                    <Animated.View
+                      key={related.id}
+                      entering={FadeInDown.delay(600 + index * 100).springify()}
+                    >
+                      <TouchableOpacity
+                        style={styles.relatedStrainItem}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (related.id) {
+                            router.push({
+                              pathname: "/dataOverviews/strains/strainDetails",
+                              params: { id: related.id }
+                            });
+                          }
+                        }}
+                      >
+                        <LinearGradient
+                          colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.1)']}
+                          style={StyleSheet.absoluteFillObject}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        />
+                        <View style={styles.relatedStrainIcon}>
+                          <MaterialCommunityIcons 
+                            name="cannabis" 
+                            size={20} 
+                            color={COLORS.primary} 
+                          />
+                        </View>
+                        <View style={styles.relatedStrainInfo}>
+                          <Text style={styles.relatedStrainName}>{related.name}</Text>
+                          <Text style={styles.relatedStrainType}>
+                            {related.genetic_type}
+                          </Text>
+                        </View>
+                        <View style={styles.relatedStrainRatingContainer}>
+                          <RatingBadge rating={related.combined_rating} />
+                        </View>
+                      </TouchableOpacity>
+                    </Animated.View>
+                  ))}
+                </View>
+              </Section>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -254,14 +363,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.background,
+    padding: 20,
   },
   errorText: {
     color: COLORS.text.primary,
+    fontSize: 18,
+    marginBottom: 20,
+  },
+  backButtonText: {
+    color: COLORS.primary,
     fontSize: 16,
+    fontWeight: '600',
   },
   headerGradient: {
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 30,
+    paddingBottom: 20,
   },
   backButton: {
     width: 44,
@@ -269,37 +385,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 16,
-    backgroundColor: 'rgba(0,0,0,0.2)',
     borderRadius: 22,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   header: {
     paddingHorizontal: 20,
     marginTop: 16,
   },
   strainName: {
-    fontSize: 34,
+    fontSize: 36,
     fontWeight: '700',
     color: COLORS.text.primary,
-    marginBottom: 8,
+    marginBottom: 12,
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,230,118,0.1)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
     alignSelf: 'flex-start',
-    marginBottom: 8,
-    gap: 6,
+    marginBottom: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,230,118,0.2)',
   },
   ratingText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   geneticType: {
     fontSize: 18,
+    fontWeight: '500',
     color: COLORS.text.secondary,
   },
   content: {
@@ -309,15 +441,29 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionContent: {
-    backgroundColor: COLORS.cardBackground,
+    backgroundColor: 'rgba(26, 32, 28, 0.9)',
     borderRadius: 16,
     padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(0,0,0,0.3)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: COLORS.text.primary,
     marginBottom: 12,
+    letterSpacing: 0.3,
   },
   overview: {
     fontSize: 16,
@@ -326,17 +472,18 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
+    justifyContent: 'space-between',
+    gap: 12,
   },
   statItem: {
     flex: 1,
-    minWidth: '30%',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    padding: 16,
     borderRadius: 12,
     gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   statLabel: {
     fontSize: 14,
@@ -344,7 +491,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 24,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text.primary,
   },
   statSubtext: {
@@ -356,6 +503,7 @@ const styles = StyleSheet.create({
   },
   detailItem: {
     gap: 8,
+    marginBottom: 12,
   },
   detailHeader: {
     flexDirection: 'row',
@@ -363,15 +511,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailLabel: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
     color: COLORS.text.secondary,
   },
   detailValue: {
     fontSize: 16,
     color: COLORS.text.primary,
+    paddingLeft: 28,
   },
   effectsGrid: {
     gap: 16,
+  },
+  similarDescription: {
+    fontSize: 14,
+    color: COLORS.text.tertiary,
+    marginBottom: 16,
+    fontStyle: 'italic',
   },
   relatedStrainsGrid: {
     gap: 12,
@@ -379,24 +535,49 @@ const styles = StyleSheet.create({
   relatedStrainItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 12,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(26, 32, 28, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: 'rgba(0,0,0,0.2)',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  relatedStrainIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,230,118,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,230,118,0.1)',
+  },
+  relatedStrainInfo: {
+    flex: 1,
+    marginLeft: 12,
   },
   relatedStrainName: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: COLORS.text.primary,
   },
   relatedStrainType: {
     fontSize: 14,
     color: COLORS.text.secondary,
+    marginTop: 2,
   },
-  relatedStrainRating: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.primary,
+  relatedStrainRatingContainer: {
     marginLeft: 'auto',
   },
 });

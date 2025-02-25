@@ -1,24 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-
-// Matching color theme from your app
-const COLORS = {
-  background: '#000000',
-  cardBackground: '#1A1A1A',
-  primary: '#00E676',
-  primaryLight: '#69F0AE',
-  text: {
-    primary: '#FFFFFF',
-    secondary: 'rgba(255, 255, 255, 0.8)',
-    tertiary: 'rgba(255, 255, 255, 0.6)',
-    quaternary: 'rgba(255, 255, 255, 0.4)',
-  },
-  divider: 'rgba(255, 255, 255, 0.1)',
-};
+import { COLORS } from '../../src/constants';
 
 interface DataRowProps {
     label: string;

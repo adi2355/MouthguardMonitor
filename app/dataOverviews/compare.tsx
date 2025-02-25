@@ -9,46 +9,41 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '@/src/constants';
-import LoadingView from '@/app/components/LoadingView';
-import { Strain } from '@/src/dbManager';
-import StrainService from '@/src/services/StrainService';
-
-interface CompareValue {
-  value: string | number;
-  subtext?: string;
-  multiline?: boolean;
-}
+import { COLORS } from '../../src/constants';
+import LoadingView from '../components/shared/LoadingView';
+import { Strain } from '../../src/dbManager';
+import StrainService from '../../src/services/StrainService';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface CompareRowProps {
-  label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  values: CompareValue[];
+  label: string;
+  values: { text: string; subtext?: string }[];
 }
 
-const CompareRow = React.memo(({ label, icon, values }: CompareRowProps) => (
-  <View style={styles.row}>
-    <View style={styles.labelCell}>
-      <MaterialCommunityIcons 
-        name={icon} 
-        size={20} 
-        color={COLORS.text.secondary} 
-      />
-      <Text style={styles.labelText}>{label}</Text>
-    </View>
-    {values.map((item, index) => (
-      <View key={index} style={styles.cell}>
-        <Text style={[
-          styles.cellText,
-          item.multiline && styles.multilineText
-        ]}>
-          {item.value}
-        </Text>
-        {item.subtext && (
-          <Text style={styles.subtextText}>{item.subtext}</Text>
-        )}
+const CompareRow = React.memo(({ icon, label, values }: CompareRowProps) => (
+  <View style={styles.rowCard}>
+    <View style={styles.rowHeader}>
+      <View style={styles.iconContainer}>
+        <MaterialCommunityIcons 
+          name={icon} 
+          size={20} 
+          color={COLORS.primary} 
+        />
       </View>
-    ))}
+      <Text style={styles.rowLabel}>{label}</Text>
+    </View>
+    
+    <View style={styles.rowContent}>
+      {values.map((value, index) => (
+        <View key={index} style={styles.valueCell}>
+          <Text style={styles.valueText}>{value.text}</Text>
+          {value.subtext && (
+            <Text style={styles.valueSubtext}>{value.subtext}</Text>
+          )}
+        </View>
+      ))}
+    </View>
   </View>
 ));
 
@@ -109,6 +104,18 @@ export default function CompareScreen() {
   if (error || !strains.length) {
     return (
       <View style={styles.container}>
+        <View style={styles.headerBar}>
+          <TouchableOpacity 
+            onPress={() => router.back()}
+          >
+            <MaterialCommunityIcons 
+              name="chevron-left" 
+              size={24} 
+              color="#FFFFFF" 
+            />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Compare Strains</Text>
+        </View>
         <View style={styles.header}>
           <TouchableOpacity 
             onPress={() => router.back()}
@@ -116,11 +123,11 @@ export default function CompareScreen() {
           >
             <MaterialCommunityIcons 
               name="chevron-left" 
-              size={32} 
-              color={COLORS.text.primary} 
+              size={24} 
+              color={COLORS.primary} 
             />
           </TouchableOpacity>
-          <Text style={styles.title}>{error || 'No Strains to Compare'}</Text>
+          <Text style={styles.headerTitle}>{error || 'No Strains to Compare'}</Text>
         </View>
       </View>
     );
@@ -128,6 +135,10 @@ export default function CompareScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Navigation Bar */}
+      
+      
+      {/* Main Header */}
       <View style={styles.header}>
         <TouchableOpacity 
           onPress={() => router.back()}
@@ -135,91 +146,92 @@ export default function CompareScreen() {
         >
           <MaterialCommunityIcons 
             name="chevron-left" 
-            size={32} 
-            color={COLORS.text.primary} 
+            size={24} 
+            color={COLORS.primary} 
           />
         </TouchableOpacity>
-        <Text style={styles.title}>Compare Strains</Text>
+        <Text style={styles.headerTitle}>Compare Strains</Text>
       </View>
 
       <ScrollView 
-        showsVerticalScrollIndicator={false}
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Strain Names Row */}
-        <View style={styles.row}>
-          <View style={styles.labelCell}>
-            <MaterialCommunityIcons 
-              name="cannabis" 
-              size={24} 
-              color={COLORS.primary} 
-            />
-          </View>
-          {strains.map(strain => (
-            <View key={strain.id} style={styles.cell}>
-              <Text style={styles.strainName}>{strain.name}</Text>
-              <Text style={styles.strainType}>{strain.genetic_type}</Text>
+        {/* Strain Names Card */}
+        <View style={styles.rowCard}>
+          <View style={styles.rowHeader}>
+            <View style={styles.iconContainer}>
+              <MaterialCommunityIcons 
+                name="cannabis" 
+                size={20} 
+                color={COLORS.primary} 
+              />
             </View>
-          ))}
+          </View>
+          
+          <View style={styles.rowContent}>
+            {strains.map((strain, index) => (
+              <View key={index} style={styles.strainNameCell}>
+                <Text style={styles.strainName}>{strain.name}</Text>
+                <Text style={styles.strainType}>{strain.genetic_type}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* Rating Row */}
         <CompareRow 
-          label="Rating"
           icon="star"
+          label="Rating"
           values={strains.map(strain => ({
-            value: strain.combined_rating.toFixed(1),
+            text: strain.combined_rating.toFixed(1),
             subtext: `THC: ${strain.thc_range}`
           }))}
         />
 
         {/* Effects Row */}
         <CompareRow 
-          label="Effects"
           icon="flash"
+          label="Effects"
           values={strains.map(strain => ({
-            value: strain.effects,
-            multiline: true
+            text: strain.effects
           }))}
         />
 
         {/* Terpenes Row */}
         <CompareRow 
-          label="Terpenes"
           icon="molecule"
+          label="Terpenes"
           values={strains.map(strain => ({
-            value: strain.dominant_terpenes,
-            multiline: true
+            text: strain.dominant_terpenes
           }))}
         />
 
         {/* CBD Level Row */}
         <CompareRow 
-          label="CBD"
           icon="medical-bag"
+          label="CBD"
           values={strains.map(strain => ({
-            value: strain.cbd_level
+            text: strain.cbd_level
           }))}
         />
 
         {/* Uses Row */}
         <CompareRow 
-          label="Uses"
           icon="information"
+          label="Uses"
           values={strains.map(strain => ({
-            value: strain.uses,
-            multiline: true
+            text: strain.uses
           }))}
         />
 
         {/* Negatives Row */}
         <CompareRow 
-          label="Negatives"
           icon="alert"
+          label="Negatives"
           values={strains.map(strain => ({
-            value: strain.negatives,
-            multiline: true
+            text: strain.negatives
           }))}
         />
       </ScrollView>
@@ -230,74 +242,117 @@ export default function CompareScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#000000',
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  headerText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000000',
+    marginLeft: 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 230, 118, 0.1)',
   },
   backButton: {
-    marginRight: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  title: {
-    fontSize: 28,
+  headerTitle: {
+    fontSize: 24,
     fontWeight: '700',
-    color: COLORS.text.primary,
+    color: '#FFFFFF',
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
-    gap: 16,
+    padding: 16,
+    gap: 12,
   },
-  row: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.cardBackground,
+  rowCard: {
+    backgroundColor: 'rgba(12, 20, 14, 1)',
     borderRadius: 12,
+    marginBottom: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
   },
-  labelCell: {
-    width: 100,
-    padding: 12,
-    backgroundColor: 'rgba(0,230,118,0.1)',
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 0,
+    borderBottomColor: 'rgba(0, 230, 118, 0.1)',
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    marginRight: 12,
   },
-  labelText: {
+  rowLabel: {
     fontSize: 14,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
+    fontWeight: '500',
+    color: '#AAAAAA',
   },
-  cell: {
+  rowContent: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+  },
+  valueCell: {
     flex: 1,
-    padding: 12,
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  strainNameCell: {
+    flex: 1,
+    padding: 8,
+    alignItems: 'center',
   },
   strainName: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.text.primary,
+    color: '#FFFFFF',
+    textAlign: 'center',
     marginBottom: 4,
   },
   strainType: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
+    fontSize: 12,
+    color: COLORS.primary,
+    textAlign: 'center',
   },
-  cellText: {
+  valueText: {
     fontSize: 14,
-    color: COLORS.text.primary,
-  },
-  multilineText: {
+    color: '#FFFFFF',
     lineHeight: 20,
   },
-  subtextText: {
+  valueSubtext: {
     fontSize: 12,
-    color: COLORS.text.tertiary,
+    color: '#AAAAAA',
     marginTop: 4,
   },
 });

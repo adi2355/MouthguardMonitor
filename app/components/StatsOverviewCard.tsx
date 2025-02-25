@@ -2,9 +2,9 @@ import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from 'expo-linear-gradient';
-import { Card } from "@/components/Card";
-import { COLORS } from "@/src/constants";
-import { UsageStats } from "@/src/types";
+import { Card } from "./shared/Card";
+import { COLORS } from "../../src/constants";
+import { UsageStats } from "../../src/types";
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface StatsOverviewCardProps {

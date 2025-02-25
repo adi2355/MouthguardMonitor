@@ -10,7 +10,7 @@ const DEFAULT_CONFIG = {
   'android',
   'CanovaReactNativeApp/app/dataOverviews',
   'assets',
-  'components',
+  
   'ios',
   'node_modules',
   '',

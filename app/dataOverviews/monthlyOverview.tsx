@@ -7,14 +7,14 @@ import LoadingView from '../components/shared/LoadingView';
 import ErrorView from '../components/shared/ErrorView';
 import BarChart from '../components/charts/BarChart';
 
-export default function WeeklyOverview() {
-  const { weeklyData, isLoading, error } = useDataService();
+export default function MonthlyOverview() {
+  const { monthlyData, isLoading, error } = useDataService();
 
   if (isLoading) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
 
-  const chartData = weeklyData.map(d => d.value);
-  const chartLabels = weeklyData.map(d => d.label);
+  const chartData = monthlyData.map(d => d.value);
+  const chartLabels = monthlyData.map(d => d.label);
 
   return (
     <SafeAreaProvider>
@@ -25,9 +25,9 @@ export default function WeeklyOverview() {
       >
         {/* Header */}
         <View style={styles.headerContainer}>
-          <Text style={styles.headerTitle}>Weekly Overview</Text>
+          <Text style={styles.headerTitle}>Monthly Overview</Text>
           <Text style={styles.headerDescription}>
-            Detailed view of your weekly usage patterns
+            Detailed view of your monthly usage patterns
           </Text>
         </View>
 
@@ -47,14 +47,14 @@ export default function WeeklyOverview() {
               <Text style={styles.statValue}>
                 {Math.max(...chartData)}
               </Text>
-              <Text style={styles.statLabel}>Peak Day</Text>
+              <Text style={styles.statLabel}>Peak Month</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {Math.round(chartData.reduce((a, b) => a + b, 0) / 7)}
+                {Math.round(chartData.reduce((a, b) => a + b, 0) / chartData.length)}
               </Text>
-              <Text style={styles.statLabel}>Daily Average</Text>
+              <Text style={styles.statLabel}>Monthly Average</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -68,11 +68,11 @@ export default function WeeklyOverview() {
 
         {/* Additional Info */}
         <View style={styles.infoContainer}>
-          <Text style={styles.infoTitle}>Understanding Your Week</Text>
+          <Text style={styles.infoTitle}>Understanding Your Monthly Trends</Text>
           <Text style={styles.infoText}>
-            This chart shows your daily usage patterns throughout the week. 
-            Higher bars indicate more activity on those days. Use this information 
-            to understand your usage patterns and make adjustments if needed.
+            This chart shows your monthly usage patterns throughout the year. 
+            Higher bars indicate more activity in those months. Use this information 
+            to understand your long-term usage patterns and make adjustments if needed.
           </Text>
         </View>
       </ScrollView>
@@ -169,4 +169,4 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     letterSpacing: -0.24,
   },
-});
+}); 
