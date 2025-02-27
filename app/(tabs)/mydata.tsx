@@ -1,10 +1,13 @@
 import React, { memo, useCallback, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
 import { useDataService } from '../../src/hooks/useDataService';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Text } from 'react-native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 // Import components from their new structure
 import LoadingView from '../components/shared/LoadingView';
@@ -51,6 +54,10 @@ export default memo(function MyData() {
   const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
   }, [router]);
+
+  const handleNavigateToAI = () => {
+    router.push('/ai/recommendations' as any);
+  };
 
   // Sample strain data - in a real app, this would come from your database
   const mockStrainData = [
@@ -153,7 +160,32 @@ export default memo(function MyData() {
             <StatsOverviewCard stats={usageStats} />
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
-        </View>
+
+          <TouchableOpacity 
+            style={styles.aiFeatureCard}
+            onPress={handleNavigateToAI}
+          >
+            <LinearGradient
+              colors={['#4a7c59', '#2c4c36']}
+              style={styles.aiCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.aiCardContent}>
+                <View style={styles.aiCardIcon}>
+                  <MaterialCommunityIcons name="brain" size={32} color="#fff" />
+                </View>
+                <View style={styles.aiCardTextContainer}>
+                  <Text style={styles.aiCardTitle}>AI Recommendations</Text>
+                  <Text style={styles.aiCardDescription}>
+                    Get personalized strain recommendations and insights based on your usage patterns
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color="#fff" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+            </View>
       </Animated.ScrollView>
 
       {/* Goal Setting Modal */}
@@ -177,5 +209,46 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     paddingHorizontal: 20,
+  },
+  aiFeatureCard: {
+    marginBottom: 20,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  aiCardGradient: {
+    width: '100%',
+  },
+  aiCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  aiCardIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  aiCardTextContainer: {
+    flex: 1,
+  },
+  aiCardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  aiCardDescription: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 20,
   },
 });
