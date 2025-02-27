@@ -17,88 +17,90 @@ import {
 const AI_USAGE_DB_NAME = "AIUsage";
 const RECOMMENDATION_FEEDBACK_DB_NAME = "RecommendationFeedback";
 
+// Anthropic API constants
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1";
+const ANTHROPIC_API_VERSION = "2023-06-01";
+// In a production app, you would use environment variables
+// import { ANTHROPIC_API_KEY } from '@env';
+// For now, we'll use a placeholder that you'll replace with your actual key
+const ANTHROPIC_API_KEY = "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"; // Replace this with your actual key
+
 export class AIService {
   private static instance: AIService;
-  private apiKey: string;
-  private baseUrl: string;
   private db: SQLiteDatabase | null = null;
   private feedbackDb: SQLiteDatabase | null = null;
   private initialized: boolean = false;
-  
+  private apiKey: string = ANTHROPIC_API_KEY;
+  private baseUrl: string = ANTHROPIC_API_URL;
+  private apiVersion: string = ANTHROPIC_API_VERSION;
+
   private constructor() {
-    // Initialize with environment variables or default values
-    this.apiKey = process.env.OPENAI_API_KEY || '';
-    this.baseUrl = 'https://api.openai.com/v1';
+    // Private constructor to enforce singleton pattern
   }
-  
+
   static getInstance(): AIService {
     if (!AIService.instance) {
       AIService.instance = new AIService();
     }
     return AIService.instance;
   }
-  
+
+  // Set API key (useful for runtime configuration)
+  setApiKey(key: string): void {
+    this.apiKey = key;
+    console.log('[AIService] API key updated');
+  }
+
+  // Initialize the service
   async initialize(): Promise<void> {
     if (this.initialized) return;
     
     console.log('[AIService] Initializing...');
     
     try {
-      // Initialize usage tracking database
+      // Initialize databases
       this.db = await openDatabaseAsync(AI_USAGE_DB_NAME);
+      this.feedbackDb = await openDatabaseAsync(RECOMMENDATION_FEEDBACK_DB_NAME);
+      
+      // Create tables if they don't exist
       await this.db.execAsync(`
-        PRAGMA journal_mode = WAL;
-        
         CREATE TABLE IF NOT EXISTS ai_usage (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL,
           request_type TEXT NOT NULL,
           tokens_used INTEGER NOT NULL,
           timestamp INTEGER NOT NULL
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_user_id_timestamp 
-        ON ai_usage(user_id, timestamp);
+        )
       `);
       
-      // Initialize feedback database
-      this.feedbackDb = await openDatabaseAsync(RECOMMENDATION_FEEDBACK_DB_NAME);
       await this.feedbackDb.execAsync(`
-        PRAGMA journal_mode = WAL;
-        
         CREATE TABLE IF NOT EXISTS recommendation_feedback (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL,
           recommendation_id TEXT NOT NULL,
-          helpful INTEGER NOT NULL,
-          accurate_effects INTEGER NOT NULL,
-          would_try_again INTEGER NOT NULL,
+          helpful BOOLEAN NOT NULL,
+          accurate_effects BOOLEAN NOT NULL,
+          would_try_again BOOLEAN NOT NULL,
           comments TEXT,
-          created_at INTEGER NOT NULL
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_recommendation_id 
-        ON recommendation_feedback(recommendation_id);
-        
-        CREATE INDEX IF NOT EXISTS idx_user_feedback 
-        ON recommendation_feedback(user_id, recommendation_id);
+          timestamp INTEGER NOT NULL
+        )
       `);
       
       this.initialized = true;
       console.log('[AIService] Initialization complete');
     } catch (error) {
       console.error('[AIService] Initialization error:', error);
-      throw new Error('Failed to initialize AI service');
+      throw error;
     }
   }
-  
+
+  // Cleanup resources
   async cleanup(): Promise<void> {
-    console.log('[AIService] Cleaning up...');
-    // Close database connections if needed
+    if (this.db) await this.db.closeAsync();
+    if (this.feedbackDb) await this.feedbackDb.closeAsync();
     this.initialized = false;
-    return Promise.resolve();
   }
-  
+
   async getStrainRecommendations(request: RecommendationRequest): Promise<RecommendationResponse> {
     try {
       await this.ensureInitialized();
@@ -110,33 +112,31 @@ export class AIService {
           // Format the prompt for the AI
           const prompt = this.formatRecommendationPrompt(request);
           
-          // Call OpenAI API
-          const response = await fetch(`${this.baseUrl}/chat/completions`, {
+          // Call Claude API
+          const response = await fetch(`${this.baseUrl}/messages`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${this.apiKey}`
+              'x-api-key': this.apiKey,
+              'anthropic-version': this.apiVersion
             },
             body: JSON.stringify({
-              model: "gpt-4",
+              model: "claude-3-5-haiku-20241022",
+              max_tokens: 1000,
+              temperature: 0.7,
+              system: "You are a cannabis recommendation assistant with expertise in strain effects and medical applications. You provide detailed, evidence-based recommendations tailored to user needs. Always prioritize safety and responsible use.",
               messages: [
-                { 
-                  role: "system", 
-                  content: "You are a cannabis recommendation assistant with expertise in strain effects and medical applications." 
-                },
                 { 
                   role: "user", 
                   content: prompt 
                 }
-              ],
-              temperature: 0.7,
-              max_tokens: 1000
+              ]
             })
           });
           
           if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+            throw new Error(`Claude API error: ${errorData.error?.message || response.statusText}`);
           }
           
           const data = await response.json();
@@ -146,13 +146,13 @@ export class AIService {
             await this.trackUsage(
               request.userProfile.id,
               'strain_recommendation',
-              data.usage?.total_tokens || 1000
+              data.usage?.input_tokens + data.usage?.output_tokens || 1000
             );
           }
           
           // Parse the response into structured data
           return this.parseRecommendationResponse(
-            data.choices[0].message.content,
+            data.content[0].text,
             request
           );
         });
@@ -196,40 +196,38 @@ export class AIService {
     try {
       if (this.apiKey && this.shouldUseRealAPI()) {
         return await this.authenticatedRequest(async () => {
-          // Format messages for OpenAI
-          const formattedMessages = [
-            {
-              role: "system",
-              content: "You are a cannabis assistant providing helpful, educational information about cannabis. Provide accurate information and always prioritize safety. Keep responses concise and informative."
-            },
-            ...previousMessages.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            })),
-            {
-              role: "user",
-              content: message
-            }
-          ];
+          // Format messages for Claude
+          const formattedMessages = previousMessages.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.content
+          }));
           
-          // Call OpenAI API
-          const response = await fetch(`${this.baseUrl}/chat/completions`, {
+          // Add the current message
+          formattedMessages.push({
+            role: 'user',
+            content: message
+          });
+          
+          // Call Claude API
+          const response = await fetch(`${this.baseUrl}/messages`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${this.apiKey}`
+              'x-api-key': this.apiKey,
+              'anthropic-version': this.apiVersion
             },
             body: JSON.stringify({
-              model: "gpt-4",
-              messages: formattedMessages,
+              model: "claude-3-7-sonnet-20250219",
+              max_tokens: 500,
               temperature: 0.7,
-              max_tokens: 500
+              system: "You are a cannabis assistant providing helpful, educational information about cannabis. Provide accurate information and always prioritize safety. Keep responses concise and informative.",
+              messages: formattedMessages
             })
           });
           
           if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+            throw new Error(`Claude API error: ${errorData.error?.message || response.statusText}`);
           }
           
           const data = await response.json();
@@ -239,13 +237,13 @@ export class AIService {
             await this.trackUsage(
               userProfile.id,
               'chat_response',
-              data.usage?.total_tokens || 500
+              data.usage?.input_tokens + data.usage?.output_tokens || 500
             );
           }
           
           return {
             id: `ai_${Date.now()}`,
-            content: data.choices[0].message.content,
+            content: data.content[0].text,
             role: 'assistant',
             timestamp: new Date().toISOString()
           };
@@ -261,7 +259,7 @@ export class AIService {
           response = this.generateRecommendationResponse(userProfile);
         } else if (message.toLowerCase().includes('dosage') || message.toLowerCase().includes('how much')) {
           response = this.generateDosageResponse(userProfile);
-        } else if (message.toLowerCase().includes('effect') || message.toLowerCase().includes('feel')) {
+        } else if (message.includes('effect') || message.includes('feel')) {
           response = this.generateEffectsResponse(message);
         } else if (message.toLowerCase().includes('legal') || message.toLowerCase().includes('law')) {
           response = this.generateRegulatoryResponse();
@@ -891,7 +889,7 @@ export class AIService {
           accurate_effects,
           would_try_again,
           comments,
-          created_at
+          timestamp
         ) VALUES (
           '${userId}',
           '${recommendationId}',
@@ -929,8 +927,8 @@ export class AIService {
   // Determine if we should use the real API or mock data
   private shouldUseRealAPI(): boolean {
     // In a real app, this could check for environment, user permissions, etc.
-    // For now, we'll just check if the API key is available
-    return !!this.apiKey && this.apiKey.length > 0;
+    // For now, we'll just check if the API key is available and not the placeholder
+    return !!this.apiKey && this.apiKey.length > 0 && this.apiKey !== "YOUR_ANTHROPIC_API_KEY";
   }
 }
 
