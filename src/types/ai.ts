@@ -78,6 +78,11 @@ export interface RecommendationResponse {
   disclaimers: string[];
   dosageSuggestion?: DosageSuggestion;
   safetyNotes?: string[];
+  error?: {
+    message: string;
+    type: string;
+    recoverable: boolean;
+  };
 }
 
 export interface ChatRequest {
