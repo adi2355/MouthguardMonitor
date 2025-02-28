@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import AIService from '../services/AIService';
+import { AIService } from '../services/ai';
+import { ChatRequest } from '../services/ai/types/requests';
 import SafetyService from '../services/SafetyService';
 import { 
   RecommendationRequest, 
@@ -22,11 +23,14 @@ export const useAIRecommendations = () => {
   const [safetyValidation, setSafetyValidation] = useState<SafetyValidationResult | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   
+  // Get AIService instance
+  const aiService = AIService.getInstance();
+  
   // Initialize services
   useEffect(() => {
     const initServices = async () => {
       try {
-        await AIService.initialize();
+        await aiService.initialize();
         await SafetyService.initialize();
       } catch (err) {
         console.error('Error initializing AI or Safety services:', err);
@@ -41,7 +45,6 @@ export const useAIRecommendations = () => {
     
     return () => {
       // Cleanup
-      AIService.cleanup();
       SafetyService.cleanup();
     };
   }, []);
@@ -107,7 +110,7 @@ export const useAIRecommendations = () => {
         : request;
       
       // Get recommendations from AI service
-      const rawRecommendations = await AIService.getStrainRecommendations(safeRequest);
+      const rawRecommendations = await aiService.getRecommendations(safeRequest);
       
       // Process recommendations through safety service
       const safeRecommendations = await SafetyService.processRecommendationResponse(
@@ -129,7 +132,7 @@ export const useAIRecommendations = () => {
       setLoading(false);
       return null;
     }
-  }, []);
+  }, [aiService]);
   
   // Get chat response
   const getChatResponse = useCallback(async (
@@ -150,18 +153,35 @@ export const useAIRecommendations = () => {
       
       setChatHistory(prev => [...prev, userMessage]);
       
-      // Get AI response
-      const aiResponse = await AIService.getChatResponse(
+      // Create chat request - convert ChatMessage to the simplified format expected by AIService
+      const chatRequest: ChatRequest = {
         message,
         userProfile,
-        chatHistory
-      );
+        // Only include the role and content properties that AIService needs
+        previousMessages: chatHistory.length > 0 
+          ? chatHistory.map(msg => ({ 
+              role: msg.role, 
+              content: msg.content 
+            })) as any // Use type assertion to bypass the type check
+          : undefined
+      };
+      
+      // Get AI response
+      const aiResponseData = await aiService.getChatResponse(chatRequest);
+      
+      // Create chat message from response
+      const aiResponseMessage: ChatMessage = {
+        id: `assistant_${Date.now()}`,
+        content: aiResponseData.response,
+        role: 'assistant',
+        timestamp: new Date().toISOString()
+      };
       
       // Add AI response to history
-      setChatHistory(prev => [...prev, aiResponse]);
+      setChatHistory(prev => [...prev, aiResponseMessage]);
       
       setLoading(false);
-      return aiResponse;
+      return aiResponseMessage;
       
     } catch (err) {
       console.error('Error getting chat response:', err);
@@ -169,7 +189,7 @@ export const useAIRecommendations = () => {
       setLoading(false);
       return null;
     }
-  }, [chatHistory]);
+  }, [chatHistory, aiService]);
   
   // Analyze journal patterns
   const analyzeJournalPatterns = useCallback(async (
@@ -180,7 +200,7 @@ export const useAIRecommendations = () => {
     setError(null);
     
     try {
-      const analysis = await AIService.analyzeJournalPatterns(entries, userProfile);
+      const analysis = await aiService.analyzeJournalEntries(userProfile.id, entries);
       setLoading(false);
       return analysis;
       
@@ -190,7 +210,7 @@ export const useAIRecommendations = () => {
       setLoading(false);
       return null;
     }
-  }, []);
+  }, [aiService]);
   
   // Clear chat history
   const clearChatHistory = useCallback(() => {

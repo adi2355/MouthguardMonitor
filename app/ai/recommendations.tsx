@@ -102,12 +102,72 @@ export default function RecommendationsScreen() {
   // Transform StrainRecommendation to UIStrainRecommendation
   const enhanceRecommendation = (recommendation: StrainRecommendation): UIStrainRecommendation => {
     const strainId = recommendation.strainId;
+    
+    // Extract genetic type from the reasoning factors if available
+    let type = 'hybrid'; // Default to hybrid
+    let thcContent = '';
+    
+    if (recommendation.reasoningFactors && Array.isArray(recommendation.reasoningFactors)) {
+      // Look for the genetic type in the reasoning factors
+      const typeFactors = recommendation.reasoningFactors.filter(factor => 
+        factor.factor.includes('Indica') || 
+        factor.factor.includes('Sativa') || 
+        factor.factor.includes('Hybrid') ||
+        factor.factor.includes('THC content')
+      );
+      
+      if (typeFactors.length > 0) {
+        const typeFactor = typeFactors[0].factor.toLowerCase();
+        
+        if (typeFactor.includes('indica')) {
+          type = 'indica';
+        } else if (typeFactor.includes('sativa')) {
+          type = 'sativa';
+        } else if (typeFactor.includes('hybrid')) {
+          type = 'hybrid';
+        }
+        
+        // Extract THC content if available
+        const thcMatch = typeFactors[0].factor.match(/(\d+(?:\.\d+)?-\d+(?:\.\d+)?)%/);
+        if (thcMatch) {
+          thcContent = thcMatch[1];
+        }
+      }
+    }
+    
+    // Extract effects from the reasoning factors
+    let effects = ['Relaxed', 'Happy']; // Default effects
+    
+    if (recommendation.reasoningFactors && Array.isArray(recommendation.reasoningFactors)) {
+      const effectsFactor = recommendation.reasoningFactors.find(factor => 
+        factor.factor.includes('Matches') && factor.factor.includes('effects')
+      );
+      
+      if (effectsFactor) {
+        // Try to extract the effects from the factor text
+        effects = effectsFactor.factor
+          .replace('Matches', '')
+          .replace('of your desired effects', '')
+          .trim()
+          .split(',')
+          .map(e => e.trim())
+          .filter(e => e.length > 0);
+        
+        // If we couldn't extract effects, use the desired effects from the request
+        if (effects.length === 0 || (effects.length === 1 && !isNaN(parseInt(effects[0])))) {
+          effects = desiredEffects.map(e => e.charAt(0).toUpperCase() + e.slice(1));
+        }
+      }
+    }
+    
     return {
       ...recommendation,
       name: recommendation.strainName,
-      type: mockStrainTypes[strainId % 3 + 1] || 'hybrid',
-      effects: mockEffects[strainId % 3 + 1] || ['Relaxed', 'Happy'],
-      reason: recommendation.reasoningFactors.map(f => f.factor).join('. ')
+      type: type,
+      effects: effects,
+      reason: recommendation.reasoningFactors && Array.isArray(recommendation.reasoningFactors) 
+        ? recommendation.reasoningFactors.map(f => f.factor).join('. ')
+        : 'Recommended based on your preferences'
     };
   };
   
@@ -301,7 +361,7 @@ export default function RecommendationsScreen() {
         )}
         
         {/* Recommendations */}
-        {recommendations && recommendations.recommendations && (
+        {recommendations && recommendations.recommendations && Array.isArray(recommendations.recommendations) && recommendations.recommendations.length > 0 ? (
           <View style={styles.recommendationsContainer}>
             <Text style={styles.recommendationsTitle}>
               Your Personalized Recommendations
@@ -312,7 +372,7 @@ export default function RecommendationsScreen() {
             )}
             
             {/* Disclaimers */}
-            {recommendations.disclaimers && recommendations.disclaimers.length > 0 && (
+            {recommendations.disclaimers && Array.isArray(recommendations.disclaimers) && recommendations.disclaimers.length > 0 && (
               <View style={styles.disclaimersContainer}>
                 <Text style={styles.disclaimersTitle}>Important Information</Text>
                 {recommendations.disclaimers.map((disclaimer, index) => (
@@ -322,6 +382,12 @@ export default function RecommendationsScreen() {
                 ))}
               </View>
             )}
+          </View>
+        ) : (
+          <View style={styles.noRecommendationsContainer}>
+            <Text style={styles.noRecommendationsText}>
+              No recommendations available. Try adjusting your preferences or try again later.
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -543,5 +609,19 @@ const styles = StyleSheet.create({
     color: '#bdbdbd', // Light gray
     marginBottom: 4,
     lineHeight: 20,
+  },
+  noRecommendationsContainer: {
+    backgroundColor: '#1a1a1a', // Dark background
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noRecommendationsText: {
+    color: '#bdbdbd', // Light gray
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 }); 

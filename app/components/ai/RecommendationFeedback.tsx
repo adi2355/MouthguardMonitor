@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AIService from '../../../src/services/AIService';
+import { AIService } from '../../../src/services/ai';
 
 interface RecommendationFeedbackProps {
   userId: string;
@@ -20,18 +20,26 @@ export default function RecommendationFeedback({
   const [comments, setComments] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
+  // Get AIService instance
+  const aiService = AIService.getInstance();
+  
   const handleSubmit = async () => {
     if (helpful === null) return;
     
     setSubmitting(true);
     
     try {
-      await AIService.submitRecommendationFeedback(userId, recommendationId, {
+      // Calculate relevance score (1-5) based on user feedback
+      const relevance = calculateRelevanceScore(helpful, accurateEffects, wouldTryAgain);
+      
+      await aiService.submitRecommendationFeedback(
+        userId,
+        recommendationId,
         helpful,
-        accurateEffects: accurateEffects || false,
-        wouldTryAgain: wouldTryAgain || false,
+        accurateEffects || false,
+        relevance,
         comments
-      });
+      );
       
       onClose();
     } catch (error) {
@@ -39,6 +47,26 @@ export default function RecommendationFeedback({
     } finally {
       setSubmitting(false);
     }
+  };
+  
+  // Calculate a relevance score (1-5) based on user feedback
+  const calculateRelevanceScore = (
+    helpful: boolean, 
+    accurateEffects: boolean | null, 
+    wouldTryAgain: boolean | null
+  ): number => {
+    if (!helpful) return 1; // Not helpful at all
+    
+    // Base score for helpful
+    let score = 3;
+    
+    // Add points for accurate effects
+    if (accurateEffects) score += 1;
+    
+    // Add points for would try again
+    if (wouldTryAgain) score += 1;
+    
+    return Math.min(score, 5); // Cap at 5
   };
   
   return (
