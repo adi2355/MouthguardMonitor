@@ -24,6 +24,11 @@ export interface AverageHourCount {
     hourOfDay: string;
 }
 
+export interface Datapoint {
+    x: string | number;
+    y: number;
+}
+
 // Chart-specific types
 export interface ChartDataPoint {
     label: string;
@@ -161,6 +166,11 @@ export interface UsageAnalytics {
     weeklyAverage: number;
     percentageChange: number;
     lastUpdated: string;
+}
+
+export interface SavedDevice {
+    id: string;
+    name: string;
 }
 
 // State management types

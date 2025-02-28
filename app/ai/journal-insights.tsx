@@ -4,13 +4,16 @@ import {
   Text, 
   StyleSheet, 
   ScrollView, 
-  TouchableOpacity, 
-  ActivityIndicator 
+  TouchableOpacity,
+  ActivityIndicator
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import useAIRecommendations from '../../src/hooks/useAIRecommendations';
 import { UserProfile } from '../../src/types/ai';
+import { COLORS } from '../../src/constants';
+import LoadingView from '../components/shared/LoadingView';
+import ErrorView from '../components/shared/ErrorView';
 
 // Mock journal entries for demo purposes
 const mockJournalEntries = [
@@ -97,6 +100,14 @@ export default function JournalInsightsScreen() {
     }
   };
   
+  if (loading && !insights) {
+    return <LoadingView />;
+  }
+  
+  if (error && !insights) {
+    return <ErrorView error={error} />;
+  }
+  
   return (
     <View style={styles.container}>
       <Stack.Screen 
@@ -105,7 +116,7 @@ export default function JournalInsightsScreen() {
         }} 
       />
       
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>AI Journal Analysis</Text>
           <Text style={styles.headerSubtitle}>
@@ -122,7 +133,7 @@ export default function JournalInsightsScreen() {
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {mockJournalEntries.reduce((sum, entry) => sum + entry.rating, 0) / mockJournalEntries.length}
+                {(mockJournalEntries.reduce((sum, entry) => sum + entry.rating, 0) / mockJournalEntries.length).toFixed(1)}
               </Text>
               <Text style={styles.statLabel}>Avg Rating</Text>
             </View>
@@ -152,7 +163,7 @@ export default function JournalInsightsScreen() {
           )}
         </TouchableOpacity>
         
-        {error && (
+        {error && insights && (
           <View style={styles.errorContainer}>
             <MaterialCommunityIcons name="alert-circle" size={24} color="#ff6b6b" />
             <Text style={styles.errorText}>{error}</Text>
@@ -166,7 +177,7 @@ export default function JournalInsightsScreen() {
             {/* Pattern Insights */}
             <View style={styles.insightCard}>
               <View style={styles.insightHeader}>
-                <MaterialCommunityIcons name="chart-line" size={24} color="#4a7c59" />
+                <MaterialCommunityIcons name="chart-line" size={24} color={COLORS.primary} />
                 <Text style={styles.insightHeaderText}>Usage Patterns</Text>
               </View>
               <Text style={styles.insightText}>
@@ -177,7 +188,7 @@ export default function JournalInsightsScreen() {
             {/* Effectiveness Insights */}
             <View style={styles.insightCard}>
               <View style={styles.insightHeader}>
-                <MaterialCommunityIcons name="check-circle" size={24} color="#4a7c59" />
+                <MaterialCommunityIcons name="check-circle" size={24} color={COLORS.primary} />
                 <Text style={styles.insightHeaderText}>Effectiveness</Text>
               </View>
               <Text style={styles.insightText}>
@@ -195,7 +206,7 @@ export default function JournalInsightsScreen() {
             {/* Recommendations */}
             <View style={styles.insightCard}>
               <View style={styles.insightHeader}>
-                <MaterialCommunityIcons name="lightbulb" size={24} color="#4a7c59" />
+                <MaterialCommunityIcons name="lightbulb" size={24} color={COLORS.primary} />
                 <Text style={styles.insightHeaderText}>Recommendations</Text>
               </View>
               <Text style={styles.insightText}>
@@ -208,7 +219,7 @@ export default function JournalInsightsScreen() {
                   "Journal more consistently for better insights"
                 ]).map((tip: string, index: number) => (
                   <View key={`tip-${index}`} style={styles.recommendationItem}>
-                    <MaterialCommunityIcons name="arrow-right" size={16} color="#4a7c59" />
+                    <MaterialCommunityIcons name="arrow-right" size={16} color={COLORS.primary} />
                     <Text style={styles.recommendationText}>{tip}</Text>
                   </View>
                 ))}
@@ -219,7 +230,7 @@ export default function JournalInsightsScreen() {
         
         {!insights && !loading && (
           <View style={styles.placeholderContainer}>
-            <MaterialCommunityIcons name="book-open-page-variant" size={64} color="#333" />
+            <MaterialCommunityIcons name="book-open-page-variant" size={64} color={COLORS.text.tertiary} />
             <Text style={styles.placeholderText}>
               Tap "Analyze My Journal" to get personalized insights based on your usage patterns
             </Text>
@@ -233,7 +244,7 @@ export default function JournalInsightsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: COLORS.background,
   },
   scrollView: {
     flex: 1,
@@ -245,24 +256,31 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: COLORS.text.primary,
     marginBottom: 8,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#aaa',
+    color: COLORS.text.secondary,
     lineHeight: 22,
   },
   journalSummaryContainer: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: COLORS.text.primary,
     marginBottom: 16,
   },
   statsContainer: {
@@ -275,16 +293,16 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4a7c59',
+    color: COLORS.primary,
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
-    color: '#aaa',
+    color: COLORS.text.secondary,
   },
   analyzeButton: {
-    backgroundColor: '#4a7c59',
-    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginBottom: 24,
@@ -301,7 +319,7 @@ const styles = StyleSheet.create({
   },
   errorContainer: {
     backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     flexDirection: 'row',
@@ -318,14 +336,21 @@ const styles = StyleSheet.create({
   insightsTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: COLORS.text.primary,
     marginBottom: 16,
   },
   insightCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   insightHeader: {
     flexDirection: 'row',
@@ -335,12 +360,12 @@ const styles = StyleSheet.create({
   insightHeaderText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: COLORS.text.primary,
     marginLeft: 8,
   },
   insightText: {
     fontSize: 16,
-    color: '#ddd',
+    color: COLORS.text.secondary,
     lineHeight: 22,
     marginBottom: 16,
   },
@@ -349,7 +374,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   effectiveStrain: {
-    backgroundColor: 'rgba(74, 124, 89, 0.2)',
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -357,7 +382,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   effectiveStrainText: {
-    color: '#4a7c59',
+    color: COLORS.primary,
     fontWeight: '500',
   },
   recommendationsList: {
@@ -370,7 +395,7 @@ const styles = StyleSheet.create({
   },
   recommendationText: {
     fontSize: 16,
-    color: '#ddd',
+    color: COLORS.text.secondary,
     marginLeft: 8,
     flex: 1,
   },
@@ -382,9 +407,9 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     fontSize: 16,
-    color: '#888',
+    color: COLORS.text.tertiary,
     textAlign: 'center',
     marginTop: 16,
     lineHeight: 24,
   },
-}); 
+});

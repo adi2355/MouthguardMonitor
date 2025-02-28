@@ -5,16 +5,16 @@ import {
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  ActivityIndicator,
   Alert,
   TextInput
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import useAIRecommendations from '../../src/hooks/useAIRecommendations';
 import { RecommendationRequest, StrainRecommendation, UserProfile } from '../../src/types/ai';
 import { COLORS } from '../../src/constants';
+import LoadingView from '../components/shared/LoadingView';
+import ErrorView from '../components/shared/ErrorView';
 
 // Extended StrainRecommendation for UI purposes
 interface UIStrainRecommendation extends StrainRecommendation {
@@ -34,20 +34,6 @@ const mockUserProfile: UserProfile = {
   avoid_effects: ['anxiety', 'paranoia'],
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString()
-};
-
-// Mock strain types for UI
-const mockStrainTypes: Record<number, string> = {
-  1: 'indica',
-  2: 'sativa',
-  3: 'hybrid'
-};
-
-// Mock effects for UI
-const mockEffects: Record<number, string[]> = {
-  1: ['Relaxed', 'Sleepy', 'Hungry'],
-  2: ['Energetic', 'Creative', 'Focused'],
-  3: ['Balanced', 'Happy', 'Euphoric']
 };
 
 export default function RecommendationsScreen() {
@@ -94,26 +80,17 @@ export default function RecommendationsScreen() {
     setDesiredEffects(desiredEffects.filter(e => e !== effect));
   };
   
-  // Toggle context
-  const toggleContext = () => {
-    setContext(context === 'recreational' ? 'medical' : 'recreational');
-  };
-  
   // Transform StrainRecommendation to UIStrainRecommendation
   const enhanceRecommendation = (recommendation: StrainRecommendation): UIStrainRecommendation => {
-    const strainId = recommendation.strainId;
-    
     // Extract genetic type from the reasoning factors if available
     let type = 'hybrid'; // Default to hybrid
-    let thcContent = '';
     
     if (recommendation.reasoningFactors && Array.isArray(recommendation.reasoningFactors)) {
       // Look for the genetic type in the reasoning factors
       const typeFactors = recommendation.reasoningFactors.filter(factor => 
         factor.factor.includes('Indica') || 
         factor.factor.includes('Sativa') || 
-        factor.factor.includes('Hybrid') ||
-        factor.factor.includes('THC content')
+        factor.factor.includes('Hybrid')
       );
       
       if (typeFactors.length > 0) {
@@ -125,12 +102,6 @@ export default function RecommendationsScreen() {
           type = 'sativa';
         } else if (typeFactor.includes('hybrid')) {
           type = 'hybrid';
-        }
-        
-        // Extract THC content if available
-        const thcMatch = typeFactors[0].factor.match(/(\d+(?:\.\d+)?-\d+(?:\.\d+)?)%/);
-        if (thcMatch) {
-          thcContent = thcMatch[1];
         }
       }
     }
@@ -181,12 +152,10 @@ export default function RecommendationsScreen() {
         style={styles.recommendationCard}
         onPress={() => Alert.alert('Strain Details', `View detailed information about ${enhancedRecommendation.name}`)}
       >
-        <LinearGradient
-          colors={getStrainTypeGradient(enhancedRecommendation.type)}
-          style={styles.strainTypeIndicator}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
+        <View style={[
+          styles.strainTypeIndicator,
+          { backgroundColor: getStrainTypeColor(enhancedRecommendation.type) }
+        ]} />
         <View style={styles.recommendationContent}>
           <Text style={styles.strainName}>{enhancedRecommendation.name}</Text>
           <Text style={styles.strainType}>{enhancedRecommendation.type}</Text>
@@ -207,17 +176,17 @@ export default function RecommendationsScreen() {
     );
   };
   
-  // Get gradient colors based on strain type
-  const getStrainTypeGradient = (type: string): readonly [string, string] => {
+  // Get color based on strain type
+  const getStrainTypeColor = (type: string): string => {
     switch(type.toLowerCase()) {
       case 'indica':
-        return ['#3949ab', '#1a237e'] as const; // Indigo colors
+        return '#3949ab'; // Indigo color
       case 'sativa':
-        return ['#43a047', '#1b5e20'] as const; // Green colors
+        return COLORS.primary; // Primary green color
       case 'hybrid':
-        return ['#7b1fa2', '#4a148c'] as const; // Purple colors
+        return '#7b1fa2'; // Purple color
       default:
-        return ['#757575', '#424242'] as const; // Gray colors
+        return '#757575'; // Gray color
     }
   };
   
@@ -231,11 +200,7 @@ export default function RecommendationsScreen() {
           <MaterialCommunityIcons 
             name="alert-circle-outline" 
             size={20} 
-            color={
-              safetyValidation.warningLevel === 'warning' 
-                ? '#ffb300' // Amber color
-                : '#2196f3' // Blue color
-            } 
+            color={safetyValidation.warningLevel === 'warning' ? '#ffb300' : '#2196f3'} 
           />
           <Text style={styles.safetyHeaderText}>Safety Information</Text>
         </View>
@@ -249,33 +214,37 @@ export default function RecommendationsScreen() {
     );
   };
   
+  if (loading) {
+    return <LoadingView />;
+  }
+  
+  if (error && !recommendations) {
+    return <ErrorView error={error} />;
+  }
+  
   return (
     <View style={styles.container}>
       <Stack.Screen 
         options={{
-          title: 'AI Strain Recommendations',
-          headerStyle: {
-            backgroundColor: '#1a1a1a', // Dark background
-          },
-          headerTintColor: '#fff',
+          title: 'AI Strain Recommendations'
         }} 
       />
       
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {/* Context Selector */}
         <View style={styles.contextSelector}>
           <Text style={styles.sectionTitle}>Purpose</Text>
-          <View style={styles.contextButtons}>
+          <View style={styles.timeRangeButtons}>
             <TouchableOpacity
               style={[
-                styles.contextButton,
-                context === 'recreational' && styles.activeContextButton
+                styles.timeRangeButton,
+                context === 'recreational' && styles.timeRangeButtonActive
               ]}
               onPress={() => setContext('recreational')}
             >
               <Text style={[
-                styles.contextButtonText,
-                context === 'recreational' && styles.activeContextButtonText
+                styles.timeRangeButtonText,
+                context === 'recreational' && styles.timeRangeButtonTextActive
               ]}>
                 Recreational
               </Text>
@@ -283,14 +252,14 @@ export default function RecommendationsScreen() {
             
             <TouchableOpacity
               style={[
-                styles.contextButton,
-                context === 'medical' && styles.activeContextButton
+                styles.timeRangeButton,
+                context === 'medical' && styles.timeRangeButtonActive
               ]}
               onPress={() => setContext('medical')}
             >
               <Text style={[
-                styles.contextButtonText,
-                context === 'medical' && styles.activeContextButtonText
+                styles.timeRangeButtonText,
+                context === 'medical' && styles.timeRangeButtonTextActive
               ]}>
                 Medical
               </Text>
@@ -307,7 +276,7 @@ export default function RecommendationsScreen() {
               <View key={`selected-${index}`} style={styles.selectedEffect}>
                 <Text style={styles.selectedEffectText}>{effect}</Text>
                 <TouchableOpacity onPress={() => handleRemoveEffect(effect)}>
-                  <MaterialCommunityIcons name="close-circle" size={16} color="#fff" />
+                  <MaterialCommunityIcons name="close-circle" size={16} color={COLORS.text.primary} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -317,7 +286,7 @@ export default function RecommendationsScreen() {
             <TextInput
               style={styles.effectInput}
               placeholder="Add desired effect..."
-              placeholderTextColor="#9e9e9e" // Gray color
+              placeholderTextColor={COLORS.text.tertiary}
               value={customEffect}
               onChangeText={setCustomEffect}
               onSubmitEditing={handleAddEffect}
@@ -326,7 +295,7 @@ export default function RecommendationsScreen() {
               style={styles.addEffectButton}
               onPress={handleAddEffect}
             >
-              <MaterialCommunityIcons name="plus" size={20} color="#fff" />
+              <MaterialCommunityIcons name="plus" size={20} color={COLORS.text.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -335,27 +304,19 @@ export default function RecommendationsScreen() {
         <TouchableOpacity 
           style={styles.getRecommendationsButton}
           onPress={fetchRecommendations}
-          disabled={loading}
         >
           <Text style={styles.getRecommendationsText}>
-            {loading ? 'Finding Matches...' : 'Get Recommendations'}
+            Get Recommendations
           </Text>
-          {loading && (
-            <ActivityIndicator 
-              size="small" 
-              color="#fff" 
-              style={styles.loadingIndicator} 
-            />
-          )}
         </TouchableOpacity>
         
         {/* Safety Warnings */}
         {renderSafetyWarnings()}
         
         {/* Error Message */}
-        {error && (
+        {error && recommendations && (
           <View style={styles.errorContainer}>
-            <MaterialCommunityIcons name="alert-circle" size={24} color="#f44336" /> {/* Red color */}
+            <MaterialCommunityIcons name="alert-circle" size={24} color="#ff6b6b" />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
@@ -363,7 +324,7 @@ export default function RecommendationsScreen() {
         {/* Recommendations */}
         {recommendations && recommendations.recommendations && Array.isArray(recommendations.recommendations) && recommendations.recommendations.length > 0 ? (
           <View style={styles.recommendationsContainer}>
-            <Text style={styles.recommendationsTitle}>
+            <Text style={styles.sectionTitle}>
               Your Personalized Recommendations
             </Text>
             
@@ -374,7 +335,7 @@ export default function RecommendationsScreen() {
             {/* Disclaimers */}
             {recommendations.disclaimers && Array.isArray(recommendations.disclaimers) && recommendations.disclaimers.length > 0 && (
               <View style={styles.disclaimersContainer}>
-                <Text style={styles.disclaimersTitle}>Important Information</Text>
+                <Text style={styles.insightTitle}>Important Information</Text>
                 {recommendations.disclaimers.map((disclaimer, index) => (
                   <Text key={`disclaimer-${index}`} style={styles.disclaimerText}>
                     • {disclaimer}
@@ -398,42 +359,47 @@ export default function RecommendationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000', // Black background
+    backgroundColor: COLORS.background,
   },
   scrollView: {
     flex: 1,
-    padding: 16,
+  },
+  contentContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 32,
   },
   contextSelector: {
+    marginTop: 16,
     marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '600',
+    color: COLORS.text.primary,
     marginBottom: 12,
   },
-  contextButtons: {
+  timeRangeButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 4,
   },
-  contextButton: {
+  timeRangeButton: {
     flex: 1,
-    backgroundColor: '#424242', // Dark gray
-    padding: 12,
-    borderRadius: 8,
+    paddingVertical: 10,
     alignItems: 'center',
-    marginHorizontal: 4,
+    borderRadius: 8,
   },
-  activeContextButton: {
-    backgroundColor: '#4a7c59', // Green
+  timeRangeButtonActive: {
+    backgroundColor: 'rgba(0, 230, 118, 0.2)',
   },
-  contextButtonText: {
-    color: '#bdbdbd', // Light gray
+  timeRangeButtonText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  timeRangeButtonTextActive: {
+    color: COLORS.primary,
     fontWeight: '600',
-  },
-  activeContextButtonText: {
-    color: '#fff',
   },
   effectsSection: {
     marginBottom: 20,
@@ -446,7 +412,7 @@ const styles = StyleSheet.create({
   selectedEffect: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4a7c59', // Green
+    backgroundColor: 'rgba(0, 230, 118, 0.2)',
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -454,8 +420,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   selectedEffectText: {
-    color: '#fff',
+    color: COLORS.primary,
     marginRight: 6,
+    fontWeight: '500',
   },
   addEffectContainer: {
     flexDirection: 'row',
@@ -463,41 +430,53 @@ const styles = StyleSheet.create({
   },
   effectInput: {
     flex: 1,
-    backgroundColor: '#424242', // Dark gray
+    backgroundColor: COLORS.cardBackground,
     borderRadius: 8,
     padding: 12,
-    color: '#fff',
+    color: COLORS.text.primary,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
   },
   addEffectButton: {
-    backgroundColor: '#4a7c59', // Green
+    backgroundColor: 'rgba(0, 230, 118, 0.2)',
     borderRadius: 8,
     padding: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   getRecommendationsButton: {
-    backgroundColor: '#4caf50', // Green
-    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginBottom: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   getRecommendationsText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 16,
   },
   loadingIndicator: {
     marginLeft: 10,
   },
   safetyWarningsContainer: {
-    backgroundColor: '#1a1a1a', // Dark background
-    borderRadius: 8,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#2196f3', // Blue
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
   },
   safetyHeader: {
     flexDirection: 'row',
@@ -505,46 +484,45 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   safetyHeaderText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: COLORS.text.primary,
+    fontWeight: '600',
     marginLeft: 8,
     fontSize: 16,
   },
   safetyFlag: {
-    color: '#bdbdbd', // Light gray
+    color: COLORS.text.secondary,
     marginBottom: 4,
     lineHeight: 20,
   },
   errorContainer: {
-    backgroundColor: '#1a1a1a', // Dark background
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    borderRadius: 16,
     padding: 16,
     marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#f44336', // Red
     flexDirection: 'row',
     alignItems: 'center',
   },
   errorText: {
-    color: '#ef9a9a', // Light red
+    color: '#ff6b6b',
     marginLeft: 8,
     flex: 1,
   },
   recommendationsContainer: {
     marginBottom: 20,
   },
-  recommendationsTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 16,
-  },
   recommendationCard: {
-    backgroundColor: '#1a1a1a', // Dark background
-    borderRadius: 12,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
     marginBottom: 16,
     overflow: 'hidden',
     flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
   strainTypeIndicator: {
     width: 8,
@@ -556,24 +534,25 @@ const styles = StyleSheet.create({
   },
   strainName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: COLORS.text.primary,
     marginBottom: 4,
   },
   strainType: {
     fontSize: 14,
-    color: '#9e9e9e', // Gray
+    color: COLORS.text.tertiary,
     marginBottom: 8,
+    textTransform: 'capitalize'
   },
   matchScore: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#66bb6a', // Green
+    fontWeight: '700',
+    color: COLORS.primary,
     marginBottom: 8,
   },
   reasonText: {
     fontSize: 14,
-    color: '#bdbdbd', // Light gray
+    color: COLORS.text.secondary,
     marginBottom: 12,
     lineHeight: 20,
   },
@@ -582,7 +561,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   effectTag: {
-    backgroundColor: '#424242', // Dark gray
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
     borderRadius: 16,
     paddingVertical: 4,
     paddingHorizontal: 10,
@@ -590,38 +569,53 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   effectText: {
-    color: '#bdbdbd', // Light gray
+    color: COLORS.primary,
     fontSize: 12,
+    fontWeight: '500',
   },
   disclaimersContainer: {
-    backgroundColor: '#1a1a1a', // Dark background
-    borderRadius: 8,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
     padding: 16,
     marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  disclaimersTitle: {
+  insightTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '600',
+    color: COLORS.text.primary,
     marginBottom: 8,
   },
   disclaimerText: {
-    color: '#bdbdbd', // Light gray
+    color: COLORS.text.secondary,
     marginBottom: 4,
     lineHeight: 20,
   },
   noRecommendationsContainer: {
-    backgroundColor: '#1a1a1a', // Dark background
-    borderRadius: 8,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 16,
     padding: 16,
     marginTop: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.1)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   noRecommendationsText: {
-    color: '#bdbdbd', // Light gray
+    color: COLORS.text.secondary,
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 22,
   },
-}); 
+});

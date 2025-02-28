@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Tabs, useRouter, usePathname } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { View, ActivityIndicator, Text } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { COLORS } from '../../src/constants';
 
 export default function AILayout() {
   const router = useRouter();
@@ -38,21 +40,40 @@ export default function AILayout() {
   
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212' }}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+      <View style={styles.loadingContainer}>
+        <LinearGradient
+          colors={['rgba(0,230,118,0.1)', 'transparent']}
+          style={styles.loadingGradient}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+        />
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
   
   if (error) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212', padding: 20 }}>
-        <Text style={{ color: '#ff6b6b', fontSize: 16, textAlign: 'center', marginBottom: 16 }}>
-          {error}
-        </Text>
-        <Text style={{ color: '#ffffff', fontSize: 14, textAlign: 'center' }}>
-          Please restart the app or try again later.
-        </Text>
+      <View style={styles.errorContainer}>
+        <LinearGradient
+          colors={['rgba(255,107,107,0.1)', 'transparent']}
+          style={styles.errorGradient}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+        />
+        <View style={styles.errorContent}>
+          <MaterialCommunityIcons 
+            name="alert-circle-outline" 
+            size={48} 
+            color="#ff6b6b" 
+          />
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorSubtext}>
+            Please restart the app or try again later.
+          </Text>
+        </View>
       </View>
     );
   }
@@ -60,19 +81,30 @@ export default function AILayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#4a7c59',
-        tabBarInactiveTintColor: '#888',
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.text.tertiary,
         tabBarStyle: {
-          backgroundColor: '#121212',
-          borderTopColor: '#333',
+          backgroundColor: COLORS.background,
+          borderTopColor: 'rgba(255, 255, 255, 0.1)',
+          borderTopWidth: 1,
+          elevation: 0,
+          shadowOpacity: 0,
         },
         tabBarLabelStyle: {
           fontSize: 12,
+          fontWeight: '500',
         },
         headerStyle: {
-          backgroundColor: '#121212',
+          backgroundColor: COLORS.background,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 1,
+          borderBottomColor: 'rgba(255, 255, 255, 0.1)',
         },
-        headerTintColor: '#fff',
+        headerTintColor: COLORS.text.primary,
+        headerTitleStyle: {
+          fontWeight: '600',
+        }
       }}
     >
       <Tabs.Screen
@@ -117,4 +149,63 @@ export default function AILayout() {
       />
     </Tabs>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    position: 'relative',
+  },
+  loadingGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.5,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.text.secondary,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    padding: 24,
+    position: 'relative',
+  },
+  errorGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.5,
+  },
+  errorContent: {
+    alignItems: 'center',
+    backgroundColor: COLORS.cardBackground,
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.2)',
+    width: '90%',
+    maxWidth: 400,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#ff6b6b',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+  }
+});

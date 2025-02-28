@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { COLORS } from '../../src/constants';
+import LoadingView from '../components/shared/LoadingView';
+import ErrorView from '../components/shared/ErrorView';
 
 // Define the step type with proper icon names
 type OnboardingStep = {
@@ -18,25 +21,25 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     title: "Personalized Recommendations",
     description: "Our AI analyzes your preferences and usage patterns to suggest strains tailored to your needs.",
     icon: "leaf",
-    color: "#4CAF50"
+    color: COLORS.primary
   },
   {
     title: "Smart Safety Checks",
     description: "We automatically check for potential interactions and usage patterns to keep you informed and safe.",
     icon: "shield-check",
-    color: "#2196F3"
+    color: COLORS.primary
   },
   {
     title: "Journal Insights",
     description: "Get personalized insights from your journal entries to better understand what works for you.",
     icon: "notebook",
-    color: "#9C27B0"
+    color: COLORS.primary
   },
   {
     title: "AI Assistant",
     description: "Chat with our AI assistant to get answers about cannabis, effects, dosing, and more.",
     icon: "robot",
-    color: "#FF9800"
+    color: COLORS.primary
   }
 ];
 
@@ -45,6 +48,7 @@ export default function AIOnboarding() {
   const [currentStep, setCurrentStep] = useState(0);
   const [isCompleting, setIsCompleting] = useState(false);
   const [hasChecked, setHasChecked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Check if onboarding is already completed
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function AIOnboarding() {
         }
       } catch (error) {
         console.error('Error checking onboarding status:', error);
+        setError('Failed to check onboarding status');
       } finally {
         setHasChecked(true);
       }
@@ -84,16 +89,17 @@ export default function AIOnboarding() {
     } catch (error) {
       console.error('Error saving onboarding status:', error);
       setIsCompleting(false);
+      setError('Failed to complete onboarding');
     }
   };
   
   // Show loading screen while checking onboarding status
   if (!hasChecked) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-      </View>
-    );
+    return <LoadingView />;
+  }
+  
+  if (error) {
+    return <ErrorView error={error} />;
   }
   
   const step = ONBOARDING_STEPS[currentStep];
@@ -107,7 +113,7 @@ export default function AIOnboarding() {
       />
       
       <LinearGradient
-        colors={['#000000', '#121212']}
+        colors={[COLORS.background, COLORS.background]}
         style={StyleSheet.absoluteFill}
       />
       
@@ -180,11 +186,7 @@ export default function AIOnboarding() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-  },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: COLORS.background,
   },
   content: {
     flex: 1,
@@ -204,7 +206,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 6,
   },
   activeStepDot: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.primary,
     width: 12,
     height: 12,
     borderRadius: 6,
@@ -222,13 +224,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: COLORS.text.primary,
     marginBottom: 16,
     textAlign: 'center',
   },
   description: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: COLORS.text.secondary,
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 60,
@@ -242,11 +244,11 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   skipButtonText: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: COLORS.text.tertiary,
     fontSize: 16,
   },
   nextButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORS.primary,
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 30,
@@ -261,4 +263,4 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginRight: 8,
   },
-}); 
+});

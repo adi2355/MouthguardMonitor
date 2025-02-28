@@ -10,9 +10,11 @@ import {
   getStrainInsertStatements,
   SAMPLE_STRAINS
 } from "./constants";
-import { BongHitStats, Datapoint, AverageHourCount } from "./types";
+import { BongHitStats, Datapoint, AverageHourCount, SavedDevice } from "./types";
+import { Device } from 'react-native-ble-plx';
 
 const FIRST_LAUNCH_KEY = "hasLaunched";
+const SAVED_DEVICES_KEY: string = 'savedDevices';
 
 export interface Strain {
   id?: number;
@@ -52,6 +54,8 @@ export async function initializeAppOnFirstLaunch() {
   try {
     await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
     await initializeDatabase();
+
+    await AsyncStorage.setItem(SAVED_DEVICES_KEY, JSON.stringify([]));
   } catch (error) {
     console.error('[dbManager] Error initializing app:', error);
     throw error;
@@ -424,6 +428,35 @@ export async function getDailyStats(timeRange: string) {
     console.error("Error in getDailyStats:", error);
     throw error;
   }
+}
+
+export async function getSavedDevices(): Promise<SavedDevice[]> {
+  const savedDevices = await AsyncStorage.getItem(SAVED_DEVICES_KEY);
+  if (savedDevices) {
+    return JSON.parse(savedDevices) as SavedDevice[];
+  }
+  throw new Error("Failed to find saved devices");
+}
+
+export async function saveDevices(devices: Device[]): Promise<void> {
+  console.log(devices)
+  let savedDevices: SavedDevice[] = []
+  try {
+    savedDevices = await getSavedDevices();
+  } catch(e) {
+    console.error(e);
+    throw e;
+  }
+
+  console.log(devices)
+  devices.forEach(device => {
+    console.log(`device ${device}`)
+    const savedDevice: SavedDevice = {id: device.id, name: device.name ? device.name : "Unknown Name"}
+    console.log(savedDevice)
+    savedDevices.push(savedDevice);
+  });
+  
+  await AsyncStorage.setItem(SAVED_DEVICES_KEY, JSON.stringify(savedDevices));
 }
 
 // Export query functions

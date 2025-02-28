@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AIService } from '../services/ai';
 import { ChatRequest } from '../services/ai/types/requests';
 import SafetyService from '../services/SafetyService';
@@ -23,15 +23,22 @@ export const useAIRecommendations = () => {
   const [safetyValidation, setSafetyValidation] = useState<SafetyValidationResult | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   
+  // Track initialization state
+  const isInitialized = useRef<boolean>(false);
+  const cleanupCalled = useRef<boolean>(false);
+  
   // Get AIService instance
   const aiService = AIService.getInstance();
   
   // Initialize services
   useEffect(() => {
     const initServices = async () => {
+      if (isInitialized.current) return;
+      
       try {
         await aiService.initialize();
         await SafetyService.initialize();
+        isInitialized.current = true;
       } catch (err) {
         console.error('Error initializing AI or Safety services:', err);
         setError('Failed to initialize recommendation services');
@@ -44,8 +51,13 @@ export const useAIRecommendations = () => {
     loadCachedRecommendations();
     
     return () => {
-      // Cleanup
-      SafetyService.cleanup();
+      // Cleanup only if not already called
+      if (!cleanupCalled.current) {
+        cleanupCalled.current = true;
+        SafetyService.cleanup().catch(err => {
+          console.error('Error during SafetyService cleanup:', err);
+        });
+      }
     };
   }, []);
   

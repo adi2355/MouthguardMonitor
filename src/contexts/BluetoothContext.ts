@@ -18,13 +18,23 @@ export class BluetoothHandler {
         this.connectedDevice = null;
     }
 
-    public async connectToDevice(device: Device) {
+    public async connectToDevice(deviceId: string) {
         if (this.connectedDevice !== null) {
-            // TODO: decide how to handle new connection when device is already connected
-            return;
+            // If we already have a connected device, we should:
+            // 1. Check if it's the same device - if so, just return
+            // 2. If it's a different device, disconnect from the current one first
+            if (this.connectedDevice.device.id === deviceId) {
+                console.log("Already connected to this device");
+                return;
+            }
+            
+            console.log("Disconnecting from current device before connecting to new one");
+            this.disconnectFromDevice(this.connectedDevice.device);
+            this.connectedDevice = null;
         }
+        
         try {
-            const deviceConnection: Device = await this.manager.connectToDevice(device.id);
+            const deviceConnection: Device = await this.manager.connectToDevice(deviceId);
             await deviceConnection.discoverAllServicesAndCharacteristics();
             const services = await deviceConnection.services();
             if (services.length !== 1) {
@@ -45,6 +55,7 @@ export class BluetoothHandler {
 
         } catch (error) {
             console.error('Error discovering services/characteristics:', error);
+            throw error; // Re-throw to allow caller to handle the error
         } finally {
             this.manager.stopDeviceScan();
         }
@@ -53,7 +64,10 @@ export class BluetoothHandler {
     public disconnectFromDevice(connectedDevice: Device) {
         if (connectedDevice) {
             this.manager.cancelDeviceConnection(connectedDevice.id);
-          }
+            if (this.connectedDevice?.device.id === connectedDevice.id) {
+                this.connectedDevice = null;
+            }
+        }
     }
 
     public streamOnConnectedDevice(streamListener: (error: BleError | null, characteristic: Characteristic | null) => void) {
@@ -64,7 +78,7 @@ export class BluetoothHandler {
             this.connectedDevice.serviceUUID,
             this.connectedDevice.characteristicUUID,
             streamListener
-          );
+        );
     }
 
     public getBLEManager(): BleManager {
@@ -76,7 +90,8 @@ export class BluetoothHandler {
     }
 
     public getSavedDevices(): Device[] {
-        // TODO query database
+        // This is a placeholder - in the updated version, this function will
+        // get populated by actual device data from storage
         return [];
     }
 

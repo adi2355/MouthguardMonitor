@@ -27,6 +27,7 @@ import TimeDistributionCard from '../components/TimeDistributionCard';
 import GoalTrackingCard from '../components/mydata/GoalTrackingCard';
 import SetGoalModal from '../components/mydata/SetGoalModal';
 import StrainUsageCard from '../components/mydata/StrainUsageCard';
+import AIRecommendationCard from '../components/mydata/AIRecommendationCard';
 
 const ROUTES = {
   DAILY_AVERAGE: "/dataOverviews/dailyAverageOverview",
@@ -161,31 +162,9 @@ export default memo(function MyData() {
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
 
-          <TouchableOpacity 
-            style={styles.aiFeatureCard}
-            onPress={handleNavigateToAI}
-          >
-            <LinearGradient
-              colors={['#4a7c59', '#2c4c36']}
-              style={styles.aiCardGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.aiCardContent}>
-                <View style={styles.aiCardIcon}>
-                  <MaterialCommunityIcons name="brain" size={32} color="#fff" />
-                </View>
-                <View style={styles.aiCardTextContainer}>
-                  <Text style={styles.aiCardTitle}>AI Recommendations</Text>
-                  <Text style={styles.aiCardDescription}>
-                    Get personalized strain recommendations and insights based on your usage patterns
-                  </Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={24} color="#fff" />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-            </View>
+          {/* AI Recommendations Card */}
+          <AIRecommendationCard onPress={handleNavigateToAI} />
+        </View>
       </Animated.ScrollView>
 
       {/* Goal Setting Modal */}
@@ -209,46 +188,5 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     paddingHorizontal: 20,
-  },
-  aiFeatureCard: {
-    marginBottom: 20,
-    borderRadius: 12,
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  aiCardGradient: {
-    width: '100%',
-  },
-  aiCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  aiCardIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  aiCardTextContainer: {
-    flex: 1,
-  },
-  aiCardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  aiCardDescription: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    lineHeight: 20,
-  },
+  }
 });

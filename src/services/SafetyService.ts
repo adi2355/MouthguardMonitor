@@ -866,12 +866,29 @@ export class SafetyService {
   async cleanup(): Promise<void> {
     if (this.db) {
       try {
-        await this.db.closeAsync();
+        // Check if the database is already closed
+        const isClosed = await this.isDbClosed();
+        if (!isClosed) {
+          await this.db.closeAsync();
+        }
         this.db = null;
         this.initialized = false;
       } catch (error) {
         console.error('[SafetyService] Error during cleanup:', error);
       }
+    }
+  }
+
+  // Helper method to check if the database is closed
+  private async isDbClosed(): Promise<boolean> {
+    try {
+      // Try a simple query - if it fails with a "database is closed" error, the DB is closed
+      await this.db?.execAsync('SELECT 1');
+      return false; // Query succeeded, database is open
+    } catch (error) {
+      // If the error message contains "closed", the database is already closed
+      const errorMessage = String(error);
+      return errorMessage.includes('closed') || errorMessage.includes('not open');
     }
   }
 }

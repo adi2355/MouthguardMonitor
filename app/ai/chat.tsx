@@ -14,6 +14,9 @@ import { Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import useAIRecommendations from '../../src/hooks/useAIRecommendations';
 import { ChatMessage, UserProfile } from '../../src/types/ai';
+import { COLORS } from '../../src/constants';
+import LoadingView from '../components/shared/LoadingView';
+import ErrorView from '../components/shared/ErrorView';
 
 // Mock user profile for demo purposes
 const mockUserProfile: UserProfile = {
@@ -128,6 +131,14 @@ export default function ChatScreen() {
     );
   };
   
+  if (loading && messages.length === 1) {
+    return <LoadingView />;
+  }
+  
+  if (error && messages.length === 1) {
+    return <ErrorView error={error} />;
+  }
+  
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -139,7 +150,7 @@ export default function ChatScreen() {
           title: 'AI Assistant',
           headerRight: () => (
             <TouchableOpacity onPress={handleClearChat} style={styles.clearButton}>
-              <MaterialCommunityIcons name="delete-outline" size={24} color="#fff" />
+              <MaterialCommunityIcons name="delete-outline" size={24} color={COLORS.text.primary} />
             </TouchableOpacity>
           ),
         }} 
@@ -153,7 +164,7 @@ export default function ChatScreen() {
         contentContainerStyle={styles.messagesContainer}
       />
       
-      {error && (
+      {error && messages.length > 1 && (
         <View style={styles.errorContainer}>
           <MaterialCommunityIcons name="alert-circle" size={20} color="#ff6b6b" />
           <Text style={styles.errorText}>{error}</Text>
@@ -164,7 +175,7 @@ export default function ChatScreen() {
         <TextInput
           style={styles.input}
           placeholder="Type a message..."
-          placeholderTextColor="#888"
+          placeholderTextColor={COLORS.text.tertiary}
           value={message}
           onChangeText={setMessage}
           multiline
@@ -194,7 +205,7 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: COLORS.background,
   },
   messagesContainer: {
     padding: 16,
@@ -215,7 +226,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#333',
+    backgroundColor: 'rgba(0, 230, 118, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 8,
@@ -226,15 +237,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   userMessageBubble: {
-    backgroundColor: '#4a7c59',
+    backgroundColor: COLORS.primary,
     borderBottomRightRadius: 4,
   },
   assistantMessageBubble: {
-    backgroundColor: '#2c2c2c',
+    backgroundColor: COLORS.cardBackground,
     borderBottomLeftRadius: 4,
   },
   messageText: {
-    color: '#fff',
+    color: COLORS.text.primary,
     fontSize: 16,
     lineHeight: 22,
   },
@@ -242,17 +253,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 12,
     borderTopWidth: 1,
-    borderTopColor: '#333',
-    backgroundColor: '#1a1a1a',
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: COLORS.cardBackground,
     alignItems: 'center',
   },
   input: {
     flex: 1,
-    backgroundColor: '#2c2c2c',
+    backgroundColor: COLORS.background,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    color: '#fff',
+    color: COLORS.text.primary,
     fontSize: 16,
     maxHeight: 120,
   },
@@ -260,13 +271,13 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#4a7c59',
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
   },
   disabledSendButton: {
-    backgroundColor: '#333',
+    backgroundColor: 'rgba(0, 230, 118, 0.3)',
   },
   clearButton: {
     padding: 8,
@@ -284,4 +295,4 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
-}); 
+});
