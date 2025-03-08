@@ -52,8 +52,7 @@ const DEFAULT_CONFIG = {
     'app/page.tsx',
     'app/globals.css',
     'app/layout.tsx',
-    'CanovaReactNativeApp/app/(tabs)/_layout.tsx',
-    'CanovaReactNativeApp/app/(tabs)/devices.tsx',
+
 
     'CanovaReactNativeApp/tsconfig.json',
     'CanovaReactNativeApp/app.json',
