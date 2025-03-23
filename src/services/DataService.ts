@@ -396,6 +396,25 @@ export class DataService {
     }
   }
 
+  async getAllBongHitLogs(): Promise<DatabaseResponse<BongHit[]>> {
+    try {
+      const db = await this.getDatabase();
+      const results = await db.getAllAsync<BongHit>(`
+        SELECT * FROM ${BONG_HITS_DATABASE_NAME} 
+        ORDER BY timestamp DESC
+      `);
+      
+      console.log('[DataService] Retrieved bong hit logs:', results.length);
+      
+      return {
+        success: true,
+        data: results
+      };
+    } catch (error) {
+      return this.handleError(error, 'getAllBongHitLogs');
+    }
+  }
+
   async cleanup() {
     console.log('[DataService] Starting cleanup...');
     if (this.db) {

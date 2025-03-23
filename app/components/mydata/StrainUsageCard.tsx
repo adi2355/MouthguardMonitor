@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../../src/constants';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface StrainUsage {
   strainId: number;
@@ -27,106 +28,151 @@ const StrainUsageCard = ({ strainData, totalHits, onViewAll }: StrainUsageCardPr
       entering={FadeIn.duration(400)}
       style={styles.container}
     >
-      <View style={styles.content}>
-        {/* Header with icon */}
-        <View style={styles.headerRow}>
-          <View style={styles.iconCircle}>
-            <MaterialCommunityIcons 
-              name="cannabis" 
-              size={20} 
-              color={COLORS.primary}
-            />
-          </View>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.title}>Most Used Strains</Text>
-            <Text style={styles.subtitle}>
-              Based on your last {totalHits} hits
-            </Text>
-          </View>
-        </View>
-
-        {/* Strains List */}
-        <View style={styles.strainsList}>
-          {topStrains.map((strain, index) => (
-            <View key={strain.strainId} style={styles.strainItem}>
-              <View style={styles.strainInfo}>
-                <Text style={styles.strainName}>{strain.strainName}</Text>
-                <Text style={styles.strainType}>{strain.strainType}</Text>
-              </View>
-              
-              <View style={styles.strainStats}>
-                <Text style={styles.usageCount}>{strain.usageCount} hits</Text>
-                <View style={styles.percentageContainer}>
-                  <View 
-                    style={[
-                      styles.percentageFill, 
-                      { width: `${strain.percentageOfTotal}%` }
-                    ]} 
-                  />
-                </View>
-                <Text style={styles.percentageText}>
-                  {strain.percentageOfTotal.toFixed(1)}%
-                </Text>
-              </View>
+      <TouchableOpacity 
+        onPress={onViewAll}
+        style={styles.touchable}
+        activeOpacity={0.9}
+      >
+        <LinearGradient
+          colors={[
+            'rgba(0,230,118,0.15)',
+            'rgba(0,230,118,0.05)',
+            'transparent'
+          ]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+        
+        <View style={styles.content}>
+          <View style={styles.headerRow}>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>Most Used Strains</Text>
+              <Text style={styles.subtitle}>
+                Based on your last {totalHits} hits
+              </Text>
             </View>
-          ))}
-        </View>
+            
+            <LinearGradient
+              colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.1)']}
+              style={styles.iconContainer}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <MaterialCommunityIcons 
+                name="cannabis" 
+                size={24} 
+                color={COLORS.primary}
+              />
+            </LinearGradient>
+          </View>
 
-        {/* View All Button */}
-        <TouchableOpacity 
-          onPress={onViewAll}
-          style={styles.viewDetailsButton}
-        >
-          <Text style={styles.viewDetailsText}>View Details</Text>
-          <MaterialCommunityIcons 
-            name="chevron-right" 
-            size={16} 
-            color="#FFFFFF"
-          />
-        </TouchableOpacity>
-      </View>
+          <View style={styles.strainsList}>
+            {topStrains.map((strain, index) => (
+              <View key={strain.strainId} style={styles.strainItem}>
+                <View style={styles.strainInfo}>
+                  <Text style={styles.strainName}>{strain.strainName}</Text>
+                  <Text style={styles.strainType}>{strain.strainType}</Text>
+                </View>
+                
+                <View style={styles.strainStats}>
+                  <Text style={styles.usageCount}>{strain.usageCount} hits</Text>
+                  <View style={styles.percentageContainer}>
+                    <View 
+                      style={[
+                        styles.percentageFill, 
+                        { width: `${strain.percentageOfTotal}%` }
+                      ]} 
+                    />
+                  </View>
+                  <Text style={styles.percentageText}>
+                    {strain.percentageOfTotal.toFixed(1)}%
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.primaryDark]}
+              style={styles.button}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Text style={styles.buttonText}>View Details</Text>
+              <MaterialCommunityIcons 
+                name="chevron-right" 
+                size={20} 
+                color="#000"
+              />
+            </LinearGradient>
+          </View>
+        </View>
+      </TouchableOpacity>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#0C140E',
+    backgroundColor: Platform.select({
+      ios: 'rgba(26, 26, 26, 0.8)',
+      android: 'rgba(26, 26, 26, 0.95)',
+    }),
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
-    marginBottom: 12,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
+  },
+  touchable: {
+    width: '100%',
   },
   content: {
-    padding: 16,
+    padding: 20,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 230, 118, 0.15)',
-    marginRight: 12,
-  },
-  headerTextContainer: {
+  titleContainer: {
     flex: 1,
   },
   title: {
-    fontSize: 16,
+    fontSize: 22,
     fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 2,
+    color: COLORS.text.primary,
+    marginBottom: 8,
+    letterSpacing: 0.35,
   },
   subtitle: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 16,
+    color: COLORS.text.secondary,
+    letterSpacing: 0.25,
+  },
+  iconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   strainsList: {
     gap: 8,
@@ -136,20 +182,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: 12,
+    marginBottom: 8,
   },
   strainInfo: {
     flex: 1,
   },
   strainName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '500',
-    color: '#FFFFFF',
-    marginBottom: 2,
+    color: COLORS.text.primary,
+    marginBottom: 4,
   },
   strainType: {
-    fontSize: 13,
+    fontSize: 14,
     color: COLORS.primary,
   },
   strainStats: {
@@ -157,8 +204,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   usageCount: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    color: COLORS.text.secondary,
     marginBottom: 4,
   },
   percentageContainer: {
@@ -175,19 +222,20 @@ const styles = StyleSheet.create({
   },
   percentageText: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: COLORS.text.secondary,
   },
-  viewDetailsButton: {
+  buttonContainer: {
+    alignItems: 'flex-start',
+  },
+  button: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    alignSelf: 'center',
+    backgroundColor: COLORS.primary,
   },
-  viewDetailsText: {
+  buttonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#000000',

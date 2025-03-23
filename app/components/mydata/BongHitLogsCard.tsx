@@ -1,28 +1,32 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../../src/constants';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 
-interface GoalTrackingCardProps {
-  currentUsage: number;
-  goalUsage: number;
-  onEditGoal: () => void;
+interface BongHitLogsSummaryProps {
+  totalHits: number;
+  averageDuration: number;
+  recentTimestamp: string;
+  onPress: () => void;
 }
 
-const GoalTrackingCard = ({ currentUsage, goalUsage, onEditGoal }: GoalTrackingCardProps) => {
-  // Calculate percentage of goal reached
-  const goalPercentage = Math.min(Math.round((currentUsage / goalUsage) * 100), 100);
-  const isExceeded = currentUsage > goalUsage;
-
+export const BongHitLogsCard: React.FC<BongHitLogsSummaryProps> = ({ 
+  totalHits, 
+  averageDuration, 
+  recentTimestamp, 
+  onPress 
+}) => {
+  const formattedDate = new Date(recentTimestamp).toLocaleString();
+  
   return (
     <Animated.View 
       entering={FadeIn.duration(400)}
       style={styles.container}
     >
       <TouchableOpacity 
-        onPress={onEditGoal}
+        onPress={onPress}
         style={styles.touchable}
         activeOpacity={0.9}
       >
@@ -40,9 +44,9 @@ const GoalTrackingCard = ({ currentUsage, goalUsage, onEditGoal }: GoalTrackingC
         <View style={styles.content}>
           <View style={styles.headerRow}>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>Daily Goal Tracking</Text>
+              <Text style={styles.title}>Logs</Text>
               <Text style={styles.subtitle}>
-                {isExceeded ? 'Goal exceeded today' : `${goalPercentage}% of daily goal reached`}
+                {totalHits} total recorded hits
               </Text>
             </View>
             
@@ -53,31 +57,23 @@ const GoalTrackingCard = ({ currentUsage, goalUsage, onEditGoal }: GoalTrackingC
               end={{ x: 1, y: 1 }}
             >
               <MaterialCommunityIcons 
-                name="target" 
+                name="pipe" 
                 size={24} 
                 color={COLORS.primary}
               />
             </LinearGradient>
           </View>
 
-          <View style={styles.statsContainer}>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBackground}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { 
-                      width: `${Math.min(goalPercentage, 100)}%`,
-                      backgroundColor: isExceeded ? '#FF5252' : COLORS.primary
-                    }
-                  ]} 
-                />
-              </View>
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{averageDuration.toFixed(1)}s</Text>
+              <Text style={styles.statLabel}>Avg Duration</Text>
             </View>
-            
-            <View style={styles.progressLabels}>
-              <Text style={styles.progressText}>{currentUsage.toFixed(2)} hits</Text>
-              <Text style={styles.goalText}>Goal: {goalUsage} hits</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {formattedDate.split(',')[0]}
+              </Text>
+              <Text style={styles.statLabel}>Latest Hit</Text>
             </View>
           </View>
 
@@ -88,11 +84,11 @@ const GoalTrackingCard = ({ currentUsage, goalUsage, onEditGoal }: GoalTrackingC
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Text style={styles.buttonText}>Edit Goal</Text>
+              <Text style={styles.buttonText}>View All Logs</Text>
               <MaterialCommunityIcons 
-                name="pencil" 
+                name="chevron-right" 
                 size={20} 
-                color="#000"
+                color="#FFF"
               />
             </LinearGradient>
           </View>
@@ -127,6 +123,7 @@ const styles = StyleSheet.create({
   },
   touchable: {
     width: '100%',
+    minHeight: 120,
   },
   content: {
     padding: 20,
@@ -162,36 +159,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  statsContainer: {
-    padding: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  progressContainer: {
-    marginBottom: 10,
-  },
-  progressBackground: {
-    height: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  progressLabels: {
+  statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  progressText: {
+  statItem: {
+    alignItems: 'flex-start',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  statLabel: {
     fontSize: 14,
     color: COLORS.text.secondary,
-  },
-  goalText: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
+    letterSpacing: 0.2,
   },
   buttonContainer: {
     alignItems: 'flex-start',
@@ -205,11 +190,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   buttonText: {
+    color: '#FFF',
     fontSize: 14,
     fontWeight: '600',
-    color: '#000000',
     marginRight: 4,
   },
 });
-
-export default GoalTrackingCard;

@@ -1,9 +1,11 @@
-import React, { memo, useCallback, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { memo, useCallback, useState, useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
 import { useDataService } from '../../src/hooks/useDataService';
+import { DataService } from '../../src/services/DataService';
+import { BongHit } from '../../src/types';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from 'react-native';
@@ -28,6 +30,9 @@ import GoalTrackingCard from '../components/mydata/GoalTrackingCard';
 import SetGoalModal from '../components/mydata/SetGoalModal';
 import StrainUsageCard from '../components/mydata/StrainUsageCard';
 import AIRecommendationCard from '../components/mydata/AIRecommendationCard';
+import { BongHitLogsCard } from '../components/mydata/BongHitLogsCard';
+import SubscriptionButton from '../components/mydata/SubscriptionButton';
+import SubscriptionModal from '../components/mydata/SubscriptionModal';
 
 const ROUTES = {
   DAILY_AVERAGE: "/dataOverviews/dailyAverageOverview",
@@ -35,6 +40,7 @@ const ROUTES = {
   WEEKLY_OVERVIEW: "/dataOverviews/weeklyOverview",
   MONTHLY_OVERVIEW: "/dataOverviews/monthlyOverview",
   STRAIN_USAGE: "/dataOverviews/strainUsage",
+  BONG_HIT_LOGS: "/dataOverviews/bongHitLogs",
 } as const;
 
 export default memo(function MyData() {
@@ -42,6 +48,12 @@ export default memo(function MyData() {
   const [showNotification, setShowNotification] = useState(true);
   const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [dailyGoal, setDailyGoal] = useState(10); // Default goal
+  const [bongHitSummary, setBongHitSummary] = useState({
+    totalHits: 0,
+    averageDuration: 0,
+    recentTimestamp: new Date().toISOString()
+  });
+  const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   
   const { 
     weeklyData, 
@@ -52,12 +64,51 @@ export default memo(function MyData() {
     error 
   } = useDataService();
 
+  useEffect(() => {
+    const fetchBongHitData = async () => {
+      try {
+        const dataService = DataService.getInstance();
+        const bongHitLogsResponse = await dataService.getAllBongHitLogs();
+        
+        if (bongHitLogsResponse.success && bongHitLogsResponse.data && bongHitLogsResponse.data.length > 0) {
+          const logs = bongHitLogsResponse.data;
+          const totalDuration = logs.reduce((sum: number, log: BongHit) => sum + log.duration_ms, 0);
+          
+          setBongHitSummary({
+            totalHits: logs.length,
+            averageDuration: totalDuration / (logs.length * 1000), // convert to seconds
+            recentTimestamp: logs[0].timestamp
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch bong hit data:', error);
+      }
+    };
+    
+    fetchBongHitData();
+  }, []);
+
   const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
   }, [router]);
 
   const handleNavigateToAI = () => {
     router.push('/ai/recommendations' as any);
+  };
+  
+  const handleSubscribe = (planId: string) => {
+    console.log(`Selected plan: ${planId}`);
+    // Here you would implement your actual payment processing
+    // For example, using in-app purchases
+    
+    // For now, just close the modal
+    setSubscriptionModalVisible(false);
+    
+    // Show a success message
+    Alert.alert(
+      "Subscription Processing",
+      "Your subscription request is being processed. This is a demo only."
+    );
   };
 
   // Sample strain data - in a real app, this would come from your database
@@ -105,12 +156,33 @@ export default memo(function MyData() {
         <Header />
 
         <View style={styles.mainContent}>
+          {/* Subscription Button */}
+          <SubscriptionButton onPress={() => setSubscriptionModalVisible(true)} />
           {/* Goals Section */}
           <Section title="Goals & Tracking">
             <GoalTrackingCard
               currentUsage={usageStats.averageHitsPerDay}
               goalUsage={dailyGoal}
               onEditGoal={() => setGoalModalVisible(true)}
+            />
+          </Section>
+
+          <Section title="Usage Data">
+            <BongHitLogsCard
+              totalHits={bongHitSummary.totalHits}
+              averageDuration={bongHitSummary.averageDuration}
+              recentTimestamp={bongHitSummary.recentTimestamp}
+              onPress={() => handleNavigation("BONG_HIT_LOGS")}
+            />
+            <DailyAverageCard
+              data={weeklyData}
+              averageHits={usageStats.averageHitsPerDay}
+              onPress={() => handleNavigation("DAILY_AVERAGE")}
+            />
+            <WeeklyUsageBanner
+              weeklyData={weeklyData}
+              average={usageStats.averageHitsPerDay}
+              onPress={() => handleNavigation("WEEKLY_AVERAGE")}
             />
           </Section>
 
@@ -126,19 +198,6 @@ export default memo(function MyData() {
           </Section>
 
           <Section title="Usage Overview">
-            <DailyAverageCard
-              data={weeklyData}
-              averageHits={usageStats.averageHitsPerDay}
-              onPress={() => handleNavigation("DAILY_AVERAGE")}
-            />
-            <WeeklyUsageBanner
-              weeklyData={weeklyData}
-              average={usageStats.averageHitsPerDay}
-              onPress={() => handleNavigation("WEEKLY_AVERAGE")}
-            />
-          </Section>
-
-          <Section title="Analytics">
             <StrainUsageCard
               strainData={mockStrainData}
               totalHits={usageStats.totalHits || 100}
@@ -162,6 +221,8 @@ export default memo(function MyData() {
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
 
+          
+
           {/* AI Recommendations Card */}
           <AIRecommendationCard onPress={handleNavigateToAI} />
         </View>
@@ -173,6 +234,13 @@ export default memo(function MyData() {
         onClose={() => setGoalModalVisible(false)}
         onSave={(goal) => setDailyGoal(goal)}
         currentGoal={dailyGoal}
+      />
+
+      {/* Subscription Modal */}
+      <SubscriptionModal
+        visible={subscriptionModalVisible}
+        onClose={() => setSubscriptionModalVisible(false)}
+        onSubscribe={handleSubscribe}
       />
     </SafeAreaProvider>
   );

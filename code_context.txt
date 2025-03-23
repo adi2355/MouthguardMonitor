@@ -1,0 +1,3518 @@
+=== AI KNOWLEDGE BASE CODE CONTEXT ===
+Generated on: 2025-03-22 21:10:52
+Total files processed: 97
+
+=== COMPONENT COMPLEXITY ===
+(Components with complexity > 10, sorted by complexity)
+Component Name | Complexity | File
+--------------|------------|-----
+RecommendationsScreen | 27 | recommendations.tsx
+Section | 27 | strainDetails.tsx
+StatItem | 27 | strainDetails.tsx
+DetailItem | 27 | strainDetails.tsx
+RatingBadge | 27 | strainDetails.tsx
+StrainDetails | 27 | strainDetails.tsx
+Devices | 26 | devices.tsx
+ChatScreen | 23 | chat.tsx
+TrendingScreen | 21 | trending.tsx
+CompareRow | 20 | compare.tsx
+CompareScreen | 20 | compare.tsx
+WeeklyAverage | 18 | weeklyAverage.tsx
+StrainsList | 16 | StrainsList.tsx
+AIOnboarding | 15 | onboarding.tsx
+DailyAverageOverview | 15 | dailyAverageOverview.tsx
+StrainUsage | 15 | strainUsage.tsx
+MyData | 14 | mydata.tsx
+AILayout | 13 | _layout.tsx
+RecommendationFeedback | 13 | RecommendationFeedback.tsx
+RatingBadge | 12 | StrainsList.tsx
+
+Complexity Guidelines:
+- 0-5: Simple component
+- 6-10: Moderate complexity
+- 11-20: Complex component
+- 21+: Very complex, consider refactoring
+
+=== CUSTOM HOOKS ===
+Hook: useAIRecommendations (from useAIRecommendations.ts)
+  Returns:
+    - [loading, setLoading]
+    - [error, setError]
+    - [recommendations, setRecommendations]
+    - [safetyValidation, setSafetyValidation]
+    - [chatHistory, setChatHistory]
+  Uses hooks:
+    - useState
+    - useState
+    - useState
+    - useState
+    - useState
+    - useRef
+    - useRef
+    - useEffect
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+
+Hook: useDataService (from useDataService.ts)
+  Returns:
+    - [state, setState]
+  Uses hooks:
+    - useState
+    - useEffect
+
+Hook: useStrains (from useStrains.ts)
+  Returns:
+    - [state, setState]
+    - [filters, setFilters]
+    - [favoriteStrains, setFavoriteStrains]
+  Uses hooks:
+    - useState
+    - useState
+    - useState
+    - useEffect
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+
+Hook: useTimeRangeData (from useTimeRangeData.ts)
+  Parameters:
+    - initialRange: TimeRange
+    - W: any
+  Returns:
+    - [timeRange, setTimeRange]
+    - [data, setData]
+    - [isLoading, setIsLoading]
+    - [error, setError]
+  Uses hooks:
+    - useDataService
+    - useState
+    - useState
+    - useState
+    - useState
+    - useCallback
+    - useEffect
+
+Hook: useAnimatedPress (from animations.ts)
+  Parameters:
+    - scale: number
+    - 0: any
+    - 98: any
+  Uses hooks:
+    - useSharedValue
+    - useAnimatedStyle
+    - useCallback
+    - useCallback
+
+=== SERVICES ===
+Service: DataService (Singleton) (from DataService.ts)
+  Methods:
+    - getInstance() -> DataService
+    - if(DataService: any, instance: any)
+    - initialize() -> Promise<void>
+    - catch(error: any)
+    - getDatabase() -> Promise<SQLiteDatabase>
+    - if(this: any, db: any)
+    - if(this: any, initializationPromise: any)
+    - if(this: any, db: any)
+    - validateWeeklyData(data: DatabaseRow[]) -> ChartDataPoint[]
+    - if(dayIndex: any, 0: any, dayIndex: any, 7: any)
+    - validateMonthlyData(data: DatabaseRow[]) -> ChartDataPoint[]
+    - getWeeklyStats() -> Promise<DatabaseResponse<ChartDataPoint[]>>
+    - if(results: any, length: any)
+    - catch(error: any)
+    - getMonthlyStats() -> Promise<DatabaseResponse<ChartDataPoint[]>>
+    - if(results: any, length: any)
+    - catch(error: any)
+    - getUsageStats() -> Promise<DatabaseResponse<UsageStats>>
+    - if(result: any)
+    - catch(error: any)
+    - getTimeDistribution() -> Promise<DatabaseResponse<TimeDistribution>>
+    - catch(error: any)
+    - getDailyAverageDatapoints() -> Promise<DatabaseResponse<ChartDataPoint[]>>
+    - if(hourIndex: any, 0: any, hourIndex: any, 24: any)
+    - catch(error: any)
+    - cleanup()
+    - if(this: any, db: any)
+    - catch(error: any)
+
+Service: SafetyService (Singleton) (from SafetyService.ts)
+  Methods:
+    - getInstance() -> SafetyService
+    - if(SafetyService: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(hasInitialized: any)
+    - catch(error: any)
+    - validateRecommendationRequest(request: RecommendationRequest) -> Promise<SafetyValidationResult>
+    - if(userProfile: any)
+    - if(userProfile: any, experience_level: any, beginner: any)
+    - if(coolingOffStatus: any, inCoolingOff: any)
+    - if(overuseCheck: any, detected: any)
+    - if(overuseCheck: any, level: any, severe: any)
+    - if(userProfile: any, medications: any, userProfile: any, medications: any, length: any, 0: any)
+    - if(interactionCheck: any, hasInteractions: any)
+    - if(interactionCheck: any, severity: any, severe: any)
+    - if(userProfile: any, experience_level: any, beginner: any)
+    - if(context: any, medical: any, medicalNeeds: any, medicalNeeds: any, length: any, 0: any)
+    - if(hasSensitiveCondition: any)
+    - catch(error: any)
+    - processRecommendationResponse(response: RecommendationResponse, userProfile: UserProfile, recentEntries: JournalEntry[]) -> Promise<RecommendationResponse>
+    - if(response: any, disclaimers: any, response: any, disclaimers: any, length: any, 0: any)
+    - if(userProfile: any, experience_level: any, beginner: any)
+    - if(recentEntries: any, length: any, 0: any)
+    - forEach(entry: any, if: any, entry: any, negative_effects: any)
+    - if(frequentNegativeEffects: any, length: any, 0: any)
+    - if(highDosageEntries: any, length: any, 2: any)
+    - if(userProfile: any, avoid_effects: any, userProfile: any, avoid_effects: any, length: any, 0: any)
+    - if(userProfile: any, medical_needs: any, userProfile: any, medical_needs: any, length: any, 0: any)
+    - catch(error: any)
+    - detectOverusePatterns(userId: string) -> Promise<OveruseDetectionResult>
+    - if(recentEntries: any, length: any, 5: any)
+    - if(riskFactors: any, length: any, 3: any)
+    - if(riskFactors: any, length: any, 2: any)
+    - if(riskFactors: any, length: any, 1: any)
+    - if(level: any, moderate: any, level: any, severe: any)
+    - catch(error: any)
+    - getRecentJournalEntries(userId: string, days: number) -> Promise<JournalEntry[]>
+    - extractUsageFeatures(entries: JournalEntry[]) -> any
+    - getWeeklyUsageCounts(entries: JournalEntry[]) -> number[]
+    - if(weekIndex: any, weeklyCounts: any, length: any)
+    - getWeeklyAverageDosages(entries: JournalEntry[]) -> number[]
+    - if(weekIndex: any, weeklyDosages: any, length: any)
+    - getEffectivenessRatios(entries: JournalEntry[]) -> number[]
+    - detectIncreasingTrend(values: number[]) -> boolean
+    - detectDecreasingTrend(values: number[]) -> boolean
+    - detectWithdrawalSymptoms(entries: JournalEntry[]) -> boolean
+    - for(let: any, i: any, 1: any, i: any, sortedEntries: any, length: any, i: any)
+    - if(diffHours: any, 48: any, currEntry: any, mood_before: any, Irritable: any, currEntry: any, mood_before: any, Anxious: any, currEntry: any, mood_before: any, Restless: any)
+    - checkMedicationInteractions(medications: string[]) -> Promise<DrugInteractionResult>
+    - if(highRiskMatches: any, length: any, 0: any)
+    - if(moderateRiskMatches: any, length: any, 0: any)
+    - catch(error: any)
+    - logSafetyConcern(data: {
+    userId: string;
+    concernType: 'overuse' | 'negative_effects' | 'interactions';
+    concernDetails: string;
+    timestamp: number;
+    resolutionSuggestions?: string[];
+    coolingOffUntil?: number;
+  }) -> Promise<void>
+    - if(this: any, db: any)
+    - catch(error: any)
+    - getSafetyHistory(userId: string) -> Promise<SafetyRecord[]>
+    - if(this: any, db: any)
+    - parse(row: any, resolution_suggestions: any) -> [],
+        cooling_off_until: row.cooling_off_until,
+        created_at: new Date(row.created_at).toISOString()
+      }));
+      
+    } catch (error)
+    - checkCoolingOffStatus(userId: string) -> Promise<
+    - if(this: any, db: any)
+    - if(result: any)
+    - catch(error: any)
+    - ensureInitialized() -> Promise<void>
+    - if(this: any, initialized: any)
+    - initializeEducationalContent() -> Promise<void>
+    - cleanup() -> Promise<void>
+    - if(this: any, db: any)
+    - if(isClosed: any)
+    - catch(error: any)
+    - isDbClosed() -> Promise<boolean>
+    - catch(error: any)
+
+Service: StrainService (Singleton) (from StrainService.ts)
+  Methods:
+    - getInstance() -> StrainService
+    - if(StrainService: any, instance: any)
+    - initialize() -> Promise<void>
+    - for(const: any, strain: any, of: any, SAMPLE_STRAINS: any)
+    - catch(insertError: any)
+    - catch(error: any)
+    - getDatabase() -> Promise<SQLiteDatabase>
+    - if(this: any, db: any)
+    - if(this: any, initializationPromise: any)
+    - if(this: any, db: any)
+    - parseTHCRange(thcRange: string)
+    - if(matches: any)
+    - searchStrains(query: string = '', filters: StrainSearchFilters = {}, pagination: PaginationParams = { page: 1, limit: 20 }) -> Promise<StrainSearchResult>
+    - if(filters: any, geneticType: any)
+    - if(filters: any, effects: any, length: any)
+    - if(filters: any, minTHC: any, undefined: any)
+    - if(filters: any, maxTHC: any, undefined: any)
+    - catch(error: any)
+    - getSortOrder(sort: any, StrainSearchFilters: any, sort: any) -> string
+    - switch(sort: any)
+    - getStrainById(id: number) -> Promise<Strain | null>
+    - catch(error: any)
+    - getPopularStrains(limit: number = 10) -> Promise<Strain[]>
+    - catch(error: any)
+    - getRelatedStrains(strain: Strain) -> Promise<Strain[]>
+    - catch(error: any)
+    - getStrainCategories() -> Promise<
+    - if(genetic_type: any)
+    - catch(error: any)
+    - cleanup() -> Promise<void>
+    - if(this: any, db: any)
+    - catch(error: any)
+
+Service: AIService (Singleton) (from AIService.ts)
+  Methods:
+    - getInstance() -> AIService
+    - if(AIService: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - catch(error: any)
+    - catch(error: any)
+    - catch(error: any)
+    - configure(options: {
+    useMockResponses?: boolean;
+    cacheEnabled?: boolean;
+    cacheTtl?: number;
+    cacheMaxSize?: number;
+  }) -> void
+    - if(options: any, useMockResponses: any, undefined: any)
+    - if(options: any, cacheEnabled: any, undefined: any, options: any, cacheTtl: any, undefined: any, options: any, cacheMaxSize: any, undefined: any)
+    - catch(error: any)
+    - checkInitialized() -> void
+    - if(this: any, initialized: any)
+    - getRealStrainRecommendations(request: RecommendationRequest) -> Promise<RecommendationResponse>
+    - if(allStrainsResult: any, data: any, allStrainsResult: any, data: any, length: any, 0: any)
+    - if(matchedStrains: any, matchedStrains: any, length: any, 0: any)
+    - catch(error: any)
+    - matchStrainsWithAI(desiredEffects: string[], strains: Strain[], context: any, string: any, medicalNeeds: any, string: any) -> Promise<Array<
+    - if(this: any, useMockResponses: any)
+    - map(strain: any, strain: any, name: any, strain: any, genetic_type: any, THC: ${strain.thc_range}) -> $
+    - if(strain: any)
+    - filter(match: any) -> match is
+    - catch(error: any)
+    - catch(error: any)
+    - matchStrainsSimple(desiredEffects: string[], strains: Strain[], context: any, string: any, medicalNeeds: any, string: any) -> Array<
+    - if(directMatch: any)
+    - if(hasEffect: any)
+    - if(hasPartialMatch: any)
+    - if(matchedEffects: any, length: any, 0: any)
+    - if(context: any, medical: any, strain: any, uses: any)
+    - getRecommendations(request: RecommendationRequest) -> Promise<RecommendationResponse>
+    - if(cachedResponse: any)
+    - if(this: any, useMockResponses: any)
+    - catch(error: any)
+    - formatRecommendationPrompt(request: RecommendationRequest) -> string
+    - parseRecommendationResponse(response: string) -> RecommendationResponse
+    - catch(error: any)
+    - getMockRecommendations(request: RecommendationRequest) -> RecommendationResponse
+    - submitRecommendationFeedback(userId: string, responseId: string, helpful: boolean, accurate: boolean, relevance: number, comments: any, string: any) -> Promise<string>
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - getChatResponse(request: ChatRequest) -> Promise<ChatResponse>
+    - if(cachedResponse: any)
+    - if(this: any, useMockResponses: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - formatChatMessages(request: ChatRequest) -> Array<
+    - if(request: any, previousMessages: any, request: any, previousMessages: any, length: any, 0: any)
+    - parseChatResponse(response: string) -> ChatResponse
+    - extractLinks(text: string) -> string[]
+    - if(matches: any)
+    - getMockChatResponse(request: ChatRequest) -> ChatResponse
+    - submitChatFeedback(userId: string, responseId: string, helpful: boolean, accurate: boolean, relevance: number, comments: any, string: any) -> Promise<string>
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - analyzeJournalEntries(userId: string, journalEntries: JournalEntry[]) -> Promise<JournalAnalysisResult>
+    - if(journalEntries: any, journalEntries: any, length: any, 0: any)
+    - if(cachedAnalysis: any)
+    - if(this: any, useMockResponses: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - formatJournalAnalysisPrompt(journalEntries: JournalEntry[]) -> string
+    - parseJournalAnalysisResponse(response: string) -> JournalAnalysisResult
+    - if(parsedResponse: any, patterns: any, parsedResponse: any, insights: any, parsedResponse: any, recommendations: any)
+    - catch(error: any)
+    - getMockJournalAnalysis(journalEntries: JournalEntry[]) -> JournalAnalysisResult
+    - if(journalEntries: any, length: any, 5: any)
+    - validateRecommendationSafety(request: RecommendationRequest) -> Promise<SafetyValidationResult>
+    - if(basicSafetyCheck: any, valid: any)
+    - if(interactionResult: any, hasInteractions: any, interactionResult: any, severity: any, severe: any)
+    - if(overuseResult: any, detected: any, overuseResult: any, level: any, severe: any)
+    - catch(error: any)
+    - performBasicSafetyCheck(request: RecommendationRequest) -> SafetyValidationResult
+    - if(request: any, userProfile: any, experience_level: any, beginner: any)
+    - checkDrugInteractions(request: RecommendationRequest) -> Promise<DrugInteractionResult>
+    - if(request: any, userProfile: any, medications: any, request: any, userProfile: any, medications: any, length: any, 0: any)
+    - if(highRiskFound: any)
+    - if(moderateRiskFound: any)
+    - detectOveruse(userId: string) -> Promise<OveruseDetectionResult>
+    - if(randomValue: any, 0: any, 01: any)
+    - if(randomValue: any, 0: any, 05: any)
+    - if(randomValue: any, 0: any, 10: any)
+
+Service: AnthropicAPI (from AnthropicAPI.ts)
+  Methods:
+    - sendMessage(messages: Array<{ role: 'user' | 'assistant'; content: string }>, maxTokens: number = 1000, temperature: number = 0.7, model: string = 'claude-3-sonnet-20240229') -> Promise<string>
+    - if(response: any, ok: any)
+    - if(response: any, status: any, 401: any, response: any, status: any, 403: any)
+    - if(response: any, status: any, 429: any)
+    - if(response: any, status: any, 500: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - sendCompletion(prompt: string, maxTokens: number = 1000, temperature: number = 0.7, model: string = 'claude-3-sonnet-20240229') -> Promise<string>
+    - if(response: any, ok: any)
+    - if(response: any, status: any, 401: any, response: any, status: any, 403: any)
+    - if(response: any, status: any, 429: any)
+    - if(response: any, status: any, 500: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+  API Endpoints:
+    - ${this.apiUrl}/messages
+    - ${this.apiUrl}/complete
+
+Service: CacheManager (Singleton) (from CacheManager.ts)
+  Methods:
+    - getInstance() -> CacheManager
+    - if(CacheManager: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - configure(enabled: boolean, ttlMs: number = DEFAULT_CACHE_TTL, maxSize: number = MAX_CACHE_SIZE) -> void
+    - generateKey(requestData: any) -> string
+    - if(requestData: any, userProfile: any, requestData: any, userProfile: any, id: any)
+    - if(requestData: any, userId: any)
+    - catch(error: any)
+    - createStableRepresentation(obj: any) -> string
+    - if(obj: any, null: any, obj: any, undefined: any)
+    - if(typeof: any, obj: any, object: any)
+    - map(key: any, Skip: any, functions: any, and: any, undefined: any, values: any, if: any, typeof: any, obj: any, key: any, function: any, obj: any, key: any, undefined: any)
+    - if(this: any, enabled: any)
+    - if(this: any, initialized: any)
+    - if(memoryEntry: any)
+    - if(persistentData: any)
+    - catch(error: any)
+    - if(this: any, enabled: any)
+    - if(data: any, null: any, data: any, undefined: any)
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - delete(key: string) -> Promise<void>
+    - catch(error: any)
+    - deleteByPattern(pattern: string) -> Promise<number>
+    - catch(error: any)
+    - clear() -> Promise<void>
+    - catch(error: any)
+    - deleteForUser(userId: string) -> Promise<number>
+    - for(const: any, key: any, of: any, keys: any)
+    - catch(error: any)
+    - pruneCache() -> Promise<void>
+    - catch(error: any)
+    - loadFrequentEntries(limit: number = 20) -> Promise<void>
+    - for(const: any, entry: any, of: any, entries: any)
+    - if(ttl: any, 0: any)
+    - catch(error: any)
+    - catch(error: any)
+
+Service: MemoryCache (from MemoryCache.ts)
+  Methods:
+    - setMaxSize(size: number) -> void
+    - if(this: any, cache: any, size: any, this: any, maxSize: any)
+    - size() -> number
+    - has(key: string) -> boolean
+    - if(entry: any)
+    - delete(key: string) -> boolean
+    - clear() -> void
+    - keys() -> string[]
+    - deleteByPattern(pattern: string) -> number
+    - for(const: any, key: any, of: any, keys: any)
+    - deleteExpired() -> number
+    - for(const: any, key: any, entry: any, of: any, entries: any)
+    - if(entry: any, expiresAt: any, now: any)
+    - prune() -> void
+    - if(this: any, cache: any, size: any, this: any, maxSize: any)
+    - for(let: any, i: any, 0: any, i: any, entriesToRemove: any, i: any)
+    - evictOne() -> void
+    - if(this: any, cache: any, size: any, 0: any)
+
+Service: PersistentCache (from PersistentCache.ts)
+  Methods:
+    - ensureInitialized() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - set(key: string, data: any, ttl: number) -> Promise<void>
+    - if(data: any, null: any, data: any, undefined: any)
+    - catch(error: any)
+    - catch(error: any)
+    - if(entry: any)
+    - catch(error: any)
+    - catch(error: any)
+    - delete(key: string) -> Promise<void>
+    - catch(error: any)
+    - deleteByPattern(pattern: string) -> Promise<number>
+    - catch(error: any)
+    - clear() -> Promise<void>
+    - catch(error: any)
+    - deleteExpired() -> Promise<number>
+    - catch(error: any)
+    - getMostFrequentlyUsed(limit: number) -> Promise<CacheDbEntry[]>
+    - catch(error: any)
+    - getKeysForUser(userId: string) -> Promise<string[]>
+    - catch(error: any)
+
+Service: DatabaseManager (Singleton) (from DatabaseManager.ts)
+  Methods:
+    - getInstance() -> DatabaseManager
+    - if(DatabaseManager: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - catch(error: any)
+    - catch(error: any)
+    - if(this: any, usageDb: any, this: any, feedbackDb: any, this: any, cacheDb: any)
+    - catch(error: any)
+    - getUsageDb() -> SQLiteDatabase
+    - if(this: any, usageDb: any)
+    - if(this: any, initialized: any)
+    - getFeedbackDb() -> SQLiteDatabase
+    - if(this: any, feedbackDb: any)
+    - if(this: any, initialized: any)
+    - getCacheDb() -> SQLiteDatabase
+    - if(this: any, cacheDb: any)
+    - if(this: any, initialized: any)
+    - openDatabase(dbName: string) -> Promise<SQLiteDatabase>
+    - catch(error: any)
+    - initializeUsageDb() -> Promise<void>
+    - catch(error: any)
+    - initializeFeedbackDb() -> Promise<void>
+    - catch(error: any)
+    - initializeCacheDb() -> Promise<void>
+    - catch(error: any)
+    - closeAll() -> Promise<void>
+    - if(this: any, usageDb: any)
+    - if(this: any, feedbackDb: any)
+    - if(this: any, cacheDb: any)
+    - catch(error: any)
+
+Service: CacheRepository (from CacheRepository.ts)
+  Methods:
+    - catch(error: any)
+    - ensureDatabase() -> SQLiteDatabase
+    - if(this: any, db: any)
+    - catch(error: any)
+    - storeResponse(key: string, data: string, timestamp: number, expiresAt: number, ttl: number) -> Promise<void>
+    - if(data: any)
+    - catch(error: any)
+    - getResponse(key: string) -> Promise<CacheDbEntry | null>
+    - if(results: any, length: any, 0: any)
+    - catch(error: any)
+    - updateStats(key: string, hitCount: number, lastAccessed: number) -> Promise<void>
+    - catch(error: any)
+    - deleteEntry(key: string) -> Promise<void>
+    - catch(error: any)
+    - deleteByPattern(pattern: string) -> Promise<number>
+    - if(keys: any, length: any, 0: any)
+    - catch(error: any)
+    - clearAll() -> Promise<void>
+    - catch(error: any)
+    - getCount() -> Promise<number>
+    - catch(error: any)
+    - deleteExpired() -> Promise<number>
+    - if(keys: any, length: any, 0: any)
+    - catch(error: any)
+    - getLeastRecentlyUsed(limit: number) -> Promise<KeyEntry[]>
+    - catch(error: any)
+    - getMostFrequentlyUsed(limit: number) -> Promise<CacheDbEntry[]>
+    - catch(error: any)
+    - getKeysForUser(userId: string) -> Promise<KeyEntry[]>
+    - catch(error: any)
+
+Service: FeedbackRepository (from FeedbackRepository.ts)
+  Methods:
+    - catch(error: any)
+    - ensureDatabase() -> SQLiteDatabase
+    - if(this: any, db: any)
+    - catch(error: any)
+    - catch(error: any)
+    - storeQualityScore(evaluationId: string, responseId: string, qualityScore: QualityScore) -> Promise<void>
+    - catch(error: any)
+    - storePattern(pattern: FeedbackPattern) -> Promise<void>
+    - catch(error: any)
+    - getPattern(patternId: string) -> Promise<PatternEntry | null>
+    - if(results: any, length: any, 0: any)
+    - catch(error: any)
+    - getUserFeedback(userId: string) -> Promise<UserFeedback[]>
+    - catch(error: any)
+    - getUserFeedbackStats(userId: string) -> Promise<FeedbackStats>
+    - catch(error: any)
+    - getQualityScoreStats() -> Promise<QualityStats>
+    - catch(error: any)
+    - getPatternsByType(responseType: string) -> Promise<PatternEntry[]>
+    - catch(error: any)
+    - deleteUserFeedback(userId: string) -> Promise<number>
+    - catch(error: any)
+
+Service: FeedbackService (Singleton) (from FeedbackService.ts)
+  Methods:
+    - getInstance() -> FeedbackService
+    - if(FeedbackService: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - submitFeedback(feedback: UserFeedback) -> Promise<string>
+    - catch(error: any)
+    - evaluateResponseQuality(responseId: string, responseType: 'recommendation' | 'chat', responseData: any, any: any) -> Promise<QualityScore>
+    - if(useRealApi: any)
+    - catch(error: any)
+    - extractFeedbackPatterns(feedback: UserFeedback) -> Promise<void>
+    - if(existingPattern: any)
+    - catch(error: any)
+    - getUserFeedback(userId: string) -> Promise<UserFeedback[]>
+    - catch(error: any)
+    - getUserFeedbackStats(userId: string) -> Promise<any>
+    - catch(error: any)
+    - getQualityScoreStats() -> Promise<any>
+    - catch(error: any)
+    - deleteUserFeedback(userId: string) -> Promise<number>
+    - catch(error: any)
+
+Service: AIServiceError extends Error (from errors.ts)
+
+=== API ENDPOINTS ===
+Endpoint: ${this.apiUrl}/messages
+  Service: AnthropicAPI
+  File: AnthropicAPI.ts
+
+Endpoint: ${this.apiUrl}/complete
+  Service: AnthropicAPI
+  File: AnthropicAPI.ts
+
+=== DATABASE SCHEMAS ===
+Table: ai_usage (from DatabaseManager.ts)
+  Columns:
+    - id: INTEGER NULL PRIMARY KEY
+    - user_id: TEXT NOT NULL
+    - request_type: TEXT NOT NULL
+    - tokens_used: INTEGER NOT NULL
+    - timestamp: INTEGER NOT NULL
+  Primary Keys:
+    - id
+
+Table: user_feedback (from DatabaseManager.ts)
+  Columns:
+    - id: TEXT NULL PRIMARY KEY
+    - user_id: TEXT NOT NULL
+    - response_id: TEXT NOT NULL
+    - response_type: TEXT NOT NULL
+    - helpful: INTEGER NOT NULL
+    - accurate: INTEGER NOT NULL
+    - relevance: INTEGER NOT NULL
+    - comments: TEXT NULL
+    - timestamp: INTEGER NOT NULL
+  Primary Keys:
+    - id
+
+Table: response_quality_scores (from DatabaseManager.ts)
+  Columns:
+    - id: TEXT NULL PRIMARY KEY
+    - response_id: TEXT NOT NULL
+    - overall_score: REAL NOT NULL
+    - relevance_score: REAL NOT NULL
+    - accuracy_score: REAL NOT NULL
+    - comprehensiveness_score: REAL NOT NULL
+    - safety_score: REAL NOT NULL
+    - strengths: TEXT NOT NULL
+    - weaknesses: TEXT NOT NULL
+    - improvement_suggestions: TEXT NOT NULL
+    - timestamp: INTEGER NOT NULL
+  Primary Keys:
+    - id
+
+Table: feedback_patterns (from DatabaseManager.ts)
+  Columns:
+    - pattern_id: TEXT NULL PRIMARY KEY
+    - response_type: TEXT NOT NULL
+    - user_profile_factors: TEXT NOT NULL
+    - request_factors: TEXT NOT NULL
+    - positive_outcome_rate: REAL NOT NULL
+    - sample_size: INTEGER NOT NULL
+    - last_updated: INTEGER NOT NULL
+  Primary Keys:
+    - pattern_id
+
+Table: ai_response_cache (from DatabaseManager.ts)
+  Columns:
+    - key: TEXT NULL PRIMARY KEY
+    - data: TEXT NOT NULL
+    - timestamp: INTEGER NOT NULL
+    - expires_at: INTEGER NOT NULL
+    - ttl: INTEGER NOT NULL
+    - hit_count: INTEGER NOT NULL DEFAULT 0
+    - last_accessed: INTEGER NOT NULL
+  Primary Keys:
+    - key
+
+=== MODULE DEPENDENCIES ===
+Module: react-native - 255 imports (255 named)
+Module: react - 43 imports (18 named, 25 default)
+Module: expo-router - 37 imports (37 named)
+Module: @expo/vector-icons - 37 imports (37 named)
+Module: expo-linear-gradient - 26 imports (26 named)
+Module: ../../src/constants - 23 imports (23 named)
+Module: ../../../src/constants - 23 imports (23 named)
+Module: ../types/ai - 14 imports (14 named)
+Module: ../components/shared/LoadingView - 13 imports (13 default)
+Module: react-native-safe-area-context - 12 imports (12 named)
+Module: expo-sqlite - 12 imports (12 named)
+Module: ../types/common - 12 imports (12 named)
+Module: @/src/constants - 11 imports (11 named)
+Module: @/src/types - 11 imports (11 named)
+Module: ../components/shared/ErrorView - 11 imports (11 default)
+Module: react-native-reanimated - 10 imports (10 named)
+Module: react-native-ble-plx - 9 imports (9 named)
+Module: @react-native-async-storage/async-storage - 6 imports (6 default)
+Module: ../../src/types/ai - 6 imports (6 named)
+Module: ./constants - 6 imports (6 named)
+
+=== TYPE SYSTEM ANALYSIS ===
+Total Interfaces: 92
+Total Type Aliases: 4
+
+Most Complex Interfaces:
+- DatabaseRow - 33 properties
+- JournalEntry - 17 properties
+- Strain - 16 properties
+- UsageStats - 13 properties
+- UserProfile - 10 properties
+
+Type Alias Categories:
+- basic: 2
+- union: 2
+
+=== ENHANCED API DOCUMENTATION ===
+GET Endpoints (3):
+- window
+- window
+- window
+
+=== STYLE PATTERNS ===
+Total StyleSheet Rules: 0
+
+=== ENHANCED HOOK ANALYSIS ===
+Hook: userMessage
+Hook: useAIRecommendations
+  State Variables: 5
+    - loading = false
+    - error = null
+    - recommendations = null
+    ... and 2 more state variables
+  Callbacks: 1
+
+Hook: userMessage
+Hook: useDataService
+  State Variables: 1
+    - state = DEFAULT_STATE
+Hook: useStrains
+  State Variables: 3
+    - state = INITIAL_STATE
+    - filters = {}
+    - favoriteStrains = []
+  Effects: 1
+    - Dependencies: [[]]
+  Callbacks: 1
+
+Hook: useTimeRangeData
+  State Variables: 4
+    - timeRange = initialRange
+    - data = {
+    chartData: [],
+    chartLabels: [],
+    averageValue: 0,
+    maxValue: 0,
+    minValue: 0,
+    weekdayAvg: 0,
+    weekendAvg: 0
+  }
+    - isLoading = true
+    ... and 1 more state variables
+  Effects: 1
+    - Dependencies: [timeRange, fetchDataByTimeRange]
+Hook: useRealApi
+Hook: useAnimatedPress
+  Callbacks: 2
+
+=== ENHANCED NAVIGATION ROUTES ===
+Tabs Routes (9):
+- index (with options)
+- mydata (with options)
+- devices (with options)
+- journal (with options)
+- trending (with options)
+- recommendations (with options)
+- chat (with options)
+- journal-insights (with options)
+- onboarding (with options)
+
+Stack Routes (10):
+- (tabs) (with options)
+- dataOverviews/strains/strainDetails (with options)
+- +not-found
+- daily-average (with options)
+- weekly-average (with options)
+- weekly-overview (with options)
+- monthly-overview (with options)
+- popular (with options)
+- details (with options)
+- compare (with options)
+
+=== FILE SUMMARIES ===
+=== app/(tabs)/_layout.tsx ===
+# Imports:
+# import { Tabs } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: TabLayout (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/(tabs)/devices.tsx ===
+# Imports:
+# import { BluetoothContext, BluetoothHandler } from '@/src/contexts/BluetoothContext'
+# import { getSavedDevices, saveDevices } from '@/src/dbManager'
+# import { SavedDevice } from '@/src/types'
+# import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, ScrollView } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# ... and 5 more imports
+
+# Components:
+Component: Devices (functional)
+  Hooks used:
+    - useState
+    - useEffect
+    - useRef
+    - useContext
+    - useState
+    - useState
+    - useState
+    - useState
+    - useState
+    - useRef
+    - useContext
+    - useEffect
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/(tabs)/index.tsx ===
+# Imports:
+# import { Redirect } from 'expo-router'
+
+# Components:
+Component: Index (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/(tabs)/journal.tsx ===
+# Imports:
+# import { View, Text, Modal, TextInput, Button, StyleSheet } from 'react-native'
+# import { Calendar } from 'react-native-calendars'
+
+# Components:
+Component: JournalCalendar (functional)
+  Hooks used:
+    - useState
+    - useState
+    - useState
+    - useState
+    - useState
+
+
+--------------------------------------------------------------------------------
+
+=== app/(tabs)/mydata.tsx ===
+# Imports:
+# import { View, StyleSheet, TouchableOpacity } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { useRouter } from 'expo-router'
+# import { COLORS } from '../../src/constants'
+# import { useDataService } from '../../src/hooks/useDataService'
+# ... and 19 more imports
+
+# Components:
+Component: MyData (functional)
+  Hooks used:
+    - useCallback
+    - useState
+    - useRouter
+    - useDataService
+    - useDataService
+    - useRouter
+    - useState
+    - useState
+    - useState
+    - useDataService
+    - useCallback
+
+
+--------------------------------------------------------------------------------
+
+=== app/(tabs)/trending.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, Platform } from 'react-native'
+# import { useRouter } from 'expo-router'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { useStrains } from '../../src/hooks/useStrains'
+# import { COLORS } from '../../src/constants'
+# ... and 9 more imports
+
+# Components:
+Component: TrendingScreen (functional)
+  Hooks used:
+    - useState
+    - useCallback
+    - useEffect
+    - useMemo
+    - useRouter
+    - useStrains
+    - useStrains
+    - useRouter
+    - useState
+    - useState
+    - useState
+    - useState
+    - useStrains
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/_layout.tsx ===
+# Imports:
+# import { Stack } from 'expo-router'
+# import { useState, useEffect } from 'react'
+# import { BluetoothContext, BluetoothHandler } from '@/src/contexts/BluetoothContext'
+# import { useColorScheme } from 'react-native'
+
+# Components:
+Component: RootLayout (functional)
+  Hooks used:
+    - useState
+    - useEffect
+    - useColorScheme
+    - useColorScheme
+    - useState
+
+
+--------------------------------------------------------------------------------
+
+=== app/ai/_layout.tsx ===
+# Imports:
+# import { Tabs, useRouter, usePathname } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { AsyncStorage } from '@react-native-async-storage/async-storage'
+# import { View, ActivityIndicator, Text, StyleSheet } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# ... and 1 more imports
+
+# Components:
+Component: AILayout (functional)
+  Hooks used:
+    - useEffect
+    - useState
+    - useRouter
+    - usePathname
+    - useRouter
+    - usePathname
+    - useState
+    - useState
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/ai/chat.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native'
+# import { Stack } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useAIRecommendations } from '../../src/hooks/useAIRecommendations'
+# import { ChatMessage, UserProfile } from '../../src/types/ai'
+# ... and 3 more imports
+
+# Components:
+Component: ChatScreen (functional)
+  Hooks used:
+    - useState
+    - useRef
+    - useEffect
+    - useAIRecommendations
+    - useAIRecommendations
+    - useAIRecommendations
+    - useState
+    - useState
+    - useRef
+    - useEffect
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/ai/index.tsx ===
+# Imports:
+# import { useEffect } from 'react'
+# import { Redirect } from 'expo-router'
+
+# Components:
+Component: AIIndex (functional)
+  Hooks used:
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/ai/journal-insights.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native'
+# import { Stack } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useAIRecommendations } from '../../src/hooks/useAIRecommendations'
+# import { UserProfile } from '../../src/types/ai'
+# ... and 3 more imports
+
+# Components:
+Component: JournalInsightsScreen (functional)
+  Hooks used:
+    - useState
+    - useAIRecommendations
+    - useAIRecommendations
+    - useAIRecommendations
+    - useState
+
+
+--------------------------------------------------------------------------------
+
+=== app/ai/onboarding.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native'
+# import { Stack, useRouter } from 'expo-router'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { AsyncStorage } from '@react-native-async-storage/async-storage'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# ... and 3 more imports
+
+# Components:
+Component: AIOnboarding (functional)
+  Hooks used:
+    - useState
+    - useEffect
+    - useRouter
+    - useRouter
+    - useState
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+# Type Definitions:
+  Type Aliases:
+    - OnboardingStep = {
+  title: string
+
+
+--------------------------------------------------------------------------------
+
+=== app/ai/recommendations.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native'
+# import { Stack, useRouter } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useAIRecommendations } from '../../src/hooks/useAIRecommendations'
+# import { RecommendationRequest, StrainRecommendation, UserProfile } from '../../src/types/ai'
+# ... and 3 more imports
+
+# Components:
+Component: RecommendationsScreen (functional)
+  Hooks used:
+    - useState
+    - useEffect
+    - useRouter
+    - useAIRecommendations
+    - useAIRecommendations
+    - useRouter
+    - useAIRecommendations
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+# Type Definitions:
+  Interfaces:
+    - UIStrainRecommendation extends StrainRecommendation
+      - name: string
+      - type: string
+      - effects: string[]
+      - reason: string
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/Header.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet } from 'react-native'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: Header (functional)
+  Props:
+    - title: any
+
+# Type Definitions:
+  Interfaces:
+    - HeaderProps
+      - title: string
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/StatsOverviewCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, Platform } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { Card } from './shared/Card'
+# ... and 2 more imports
+
+# Type Definitions:
+  Interfaces:
+    - StatsOverviewCardProps
+      - stats: UsageStats
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/TimeDistributionCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, Platform } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../src/constants'
+# ... and 1 more imports
+
+# Components:
+Component: TimeDistributionCard (functional)
+  Props:
+    - timeData: any
+
+Component: TimeSlotComponent (functional)
+  Props:
+    - type: any
+    - value: any
+
+# Type Definitions:
+  Interfaces:
+    - TimeDistributionCardProps
+      - timeData: TimeDistribution
+  Type Aliases:
+    - TimeSlot = 'morning' | 'afternoon' | 'evening' | 'night'
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/ai/RecommendationFeedback.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { AIService } from '../../../src/services/ai'
+
+# Components:
+Component: RecommendationFeedback (functional)
+  Props:
+    - userId: any
+    - recommendationId: any
+    - onClose: any
+  Hooks used:
+    - useState
+    - useState
+    - useState
+    - useState
+    - useState
+    - useState
+
+# Type Definitions:
+  Interfaces:
+    - RecommendationFeedbackProps
+      - userId: string
+      - recommendationId: string
+      - onClose: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/charts/BarChart.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, Dimensions } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../../src/constants'
+
+# Type Definitions:
+  Interfaces:
+    - BarChartProps
+      - data: number[]
+      - labels: string[]
+      - maxValue: number
+      - barColor: string
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/charts/ChartStyles.ts ===
+# Imports:
+# import { StyleSheet } from 'react-native'
+# import { COLORS } from '../../../src/constants'
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/charts/LineChart.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, StyleSheet, Dimensions } from 'react-native'
+# import { LineChart as RNLineChart } from 'react-native-chart-kit'
+# import { COLORS } from '../../../src/constants'
+
+# Type Definitions:
+  Interfaces:
+    - LineChartProps
+      - data: number[]
+      - labels: string[]
+      - color: string
+      - width: number
+      - height: number
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/charts/MonthlyOverviewChart.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# ... and 2 more imports
+
+# Type Definitions:
+  Interfaces:
+    - MonthlyOverviewChartProps
+      - data: ChartDataPoint[]
+      - onPress: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/charts/WeeklyOverviewChart.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# ... and 2 more imports
+
+# Type Definitions:
+  Interfaces:
+    - WeeklyOverviewChartProps
+      - data: ChartDataPoint[]
+      - onPress: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/AIRecommendationCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+
+# Type Definitions:
+  Interfaces:
+    - AIRecommendationCardProps
+      - onPress: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/DailyAverageCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# ... and 1 more imports
+
+# Type Definitions:
+  Interfaces:
+    - DailyAverageCardProps
+      - data: ChartDataPoint[]
+      - averageHits: number
+      - onPress: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/GoalTrackingCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: GoalTrackingCard (functional)
+  Props:
+    - currentUsage: any
+    - goalUsage: any
+    - onEditGoal: any
+
+# Type Definitions:
+  Interfaces:
+    - GoalTrackingCardProps
+      - currentUsage: number
+      - goalUsage: number
+      - onEditGoal: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/Header.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, Platform } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: Header (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/MedicalCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: MedicalCard (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/NotificationBanner.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../../src/constants'
+
+# Type Definitions:
+  Interfaces:
+    - NotificationProps
+      - averageHits: number
+      - percentageChange: number
+      - onDismiss: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/Section.tsx ===
+# Imports:
+# import { View, Text, StyleSheet } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: Section (functional)
+  Props:
+    - title: any
+    - children: any
+    - SectionProps: any
+
+# Type Definitions:
+  Interfaces:
+    - SectionProps
+      - title: string
+      - children: React.ReactNode
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/SetGoalModal.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, TouchableWithoutFeedback, Keyboard } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: SetGoalModal (functional)
+  Props:
+    - visible: any
+    - onClose: any
+    - onSave: any
+    - currentGoal: any
+  Hooks used:
+    - useState
+    - useState
+
+# Type Definitions:
+  Interfaces:
+    - SetGoalModalProps
+      - visible: boolean
+      - onClose: () => void
+      - onSave: (goal: number) => void
+      - currentGoal: number
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/StrainUsageCard.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: StrainUsageCard (functional)
+  Props:
+    - strainData: any
+    - totalHits: any
+    - onViewAll: any
+
+# Type Definitions:
+  Interfaces:
+    - StrainUsage
+      - strainId: number
+      - strainName: string
+      - strainType: string
+      - usageCount: number
+      - percentageOfTotal: number
+    - StrainUsageCardProps
+      - strainData: StrainUsage[]
+      - totalHits: number
+      - onViewAll: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/mydata/WeeklyUsageBanner.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# ... and 1 more imports
+
+# Type Definitions:
+  Interfaces:
+    - WeeklyUsageBannerProps
+      - weeklyData: ChartDataPoint[]
+      - average: number
+      - onPress: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/shared/Card.tsx ===
+# Imports:
+# import { View, StyleSheet, StyleProp, ViewStyle } from 'react-native'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: Card (functional)
+  Props:
+    - children: any
+    - style: any
+    - ref: any
+
+# Type Definitions:
+  Interfaces:
+    - CardProps
+      - children: React.ReactNode
+      - style: StyleProp<ViewStyle>
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/shared/ErrorView.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: ErrorView (functional)
+  Props:
+    - error: any
+
+# Type Definitions:
+  Interfaces:
+    - ErrorViewProps
+      - error: string
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/shared/LoadingView.tsx ===
+# Imports:
+# import { View, Text, StyleSheet } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# import { TIMING_CONFIG } from '@/src/utils/animations'
+
+# Components:
+Component: LoadingView (functional)
+  Hooks used:
+    - useEffect
+    - useAnimatedStyle
+    - useSharedValue
+    - useSharedValue
+    - useEffect
+    - useAnimatedStyle
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/trending/CompareBar.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# import { Strain } from '../../../src/dbManager'
+
+# Components:
+Component: CompareBar (functional)
+  Props:
+    - compareList: any
+    - onCompareToggle: any
+    - onCompare: any
+    - CompareBarProps: any
+
+# Type Definitions:
+  Interfaces:
+    - CompareBarProps
+      - compareList: Strain[]
+      - onCompareToggle: (strain: Strain) => void
+      - onCompare: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/trending/Header.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native'
+# import { Ionicons } from '@expo/vector-icons'
+# import { useSafeAreaInsets } from 'react-native-safe-area-context'
+# import { LinearGradient } from 'expo-linear-gradient'
+# ... and 3 more imports
+
+# Components:
+Component: Header (functional)
+  Props:
+    - searchQuery: any
+    - setSearchQuery: any
+    - showFilters: any
+    - setShowFilters: any
+    - filters: any
+    - handleClearSearch: any
+  Hooks used:
+    - useSafeAreaInsets
+    - useSafeAreaInsets
+
+# Type Definitions:
+  Interfaces:
+    - HeaderProps
+      - searchQuery: string
+      - setSearchQuery: (query: string) => void
+      - showFilters: boolean
+      - setShowFilters: (show: boolean) => void
+      - filters: StrainSearchFilters
+      - handleClearSearch: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/trending/SearchBar.tsx ===
+# Imports:
+# import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { StrainSearchFilters } from '../../../src/services/StrainService'
+# ... and 1 more imports
+
+# Components:
+Component: SearchBar (functional)
+  Props:
+    - searchQuery: any
+    - setSearchQuery: any
+    - showFilters: any
+    - setShowFilters: any
+    - filters: any
+    - onClear: any
+    - SearchBarProps: any
+  Hooks used:
+    - useAnimatedStyle
+    - useSharedValue
+
+# Type Definitions:
+  Interfaces:
+    - SearchBarProps
+      - searchQuery: string
+      - setSearchQuery: (query: string) => void
+      - showFilters: boolean
+      - setShowFilters: (show: boolean) => void
+      - filters: StrainSearchFilters
+      - onClear: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/trending/SearchFilters.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../../src/constants'
+# import { StrainSearchFilters } from '../../../src/services/StrainService'
+# import { LinearGradient } from 'expo-linear-gradient'
+
+# Components:
+Component: SearchFilters (functional)
+  Props:
+    - filters: any
+    - onFilterChange: any
+    - onApplyFilters: any
+    - categories: any
+  Hooks used:
+    - useState
+    - useEffect
+    - useState
+
+# Type Definitions:
+  Interfaces:
+    - SearchFiltersProps
+      - filters: StrainSearchFilters
+      - onFilterChange: (filters: StrainSearchFilters) => void
+      - onApplyFilters: () => void
+      - categories: { [key: string]: number }
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/trending/Section.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, Platform } from 'react-native'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../../src/constants'
+
+# Components:
+Component: Section (functional)
+  Props:
+    - title: any
+    - children: any
+    - SectionProps: any
+
+# Type Definitions:
+  Interfaces:
+    - SectionProps
+      - title: string
+      - children: React.ReactNode
+
+
+--------------------------------------------------------------------------------
+
+=== app/components/trending/StrainsList.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TouchableOpacity, FlatList, Platform } from 'react-native'
+# import { useRouter } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { COLORS } from '../../../src/constants'
+# ... and 1 more imports
+
+# Components:
+Component: RatingBadge (functional)
+  Props:
+    - rating: any
+  Hooks used:
+    - useCallback
+    - useRouter
+
+Component: TypeBadge (functional)
+  Props:
+    - type: any
+  Hooks used:
+    - useCallback
+    - useRouter
+
+Component: StrainsList (functional)
+  Props:
+    - strains: any
+    - onCompareToggle: any
+    - onFavoriteToggle: any
+    - compareList: any
+    - isFavorite: any
+    - isLoading: any
+    - onEndReached: any
+    - StrainsListProps: any
+  Hooks used:
+    - useCallback
+    - useRouter
+    - useRouter
+    - useCallback
+    - useCallback
+    - useCallback
+
+# Type Definitions:
+  Interfaces:
+    - StrainsListProps
+      - strains: Strain[]
+      - onCompareToggle: (strain: Strain) => void
+      - onFavoriteToggle: (strainId: number) => void
+      - compareList: Strain[]
+      - isFavorite: (strainId: number) => boolean
+      - isLoading: boolean
+      - onEndReached: () => void
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/_layout.tsx ===
+# Imports:
+# import { Stack } from 'expo-router'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: DataOverviewsLayout (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/compare.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+# import { useLocalSearchParams, useRouter } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../src/constants'
+# import { LoadingView } from '../components/shared/LoadingView'
+# ... and 2 more imports
+
+# Components:
+Component: CompareRow (functional)
+  Props:
+    - icon: any
+    - label: any
+    - values: any
+    - CompareRowProps: any
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useMemo
+    - useLocalSearchParams
+    - useRouter
+    - useRouter
+    - useLocalSearchParams
+    - useState
+    - useState
+    - useState
+    - useMemo
+    - useMemo
+    - useCallback
+    - useCallback
+    - useEffect
+
+Component: CompareScreen (functional)
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useMemo
+    - useLocalSearchParams
+    - useRouter
+    - useRouter
+    - useLocalSearchParams
+    - useState
+    - useState
+    - useState
+    - useMemo
+    - useMemo
+    - useCallback
+    - useCallback
+    - useEffect
+
+# Type Definitions:
+  Interfaces:
+    - CompareRowProps
+      - icon: keyof typeof MaterialCommunityIcons.glyphMap
+      - label: string
+      - values: { text: string
+      - subtext: string }[]
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/dailyAverageOverview.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useRouter } from 'expo-router'
+# ... and 5 more imports
+
+# Components:
+Component: DailyAverageOverview (functional)
+  Hooks used:
+    - useRouter
+    - useTimeRangeData
+    - useTimeRangeData
+    - useRouter
+    - useTimeRangeData
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/dailyLimits.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useRouter } from 'expo-router'
+# import { AsyncStorage } from '@react-native-async-storage/async-storage'
+# import { COLORS } from '../../src/constants'
+
+# Components:
+Component: DailyLimits (functional)
+  Hooks used:
+    - useState
+    - useRouter
+    - useRouter
+    - useState
+    - useState
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/detailedData.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from 'react-native'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useRouter } from 'expo-router'
+# import { SafeAreaView } from 'react-native-safe-area-context'
+# import { LinearGradient } from 'expo-linear-gradient'
+# ... and 1 more imports
+
+# Components:
+Component: DetailedDataView (functional)
+  Hooks used:
+    - useState
+    - useRouter
+    - useRouter
+
+# Type Definitions:
+  Interfaces:
+    - DataRowProps
+      - label: string
+      - value: string | number
+      - time: string | null
+      - icon: React.ReactNode
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/monthlyOverview.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, ScrollView } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { COLORS } from '../../src/constants'
+# import { useDataService } from '../../src/hooks/useDataService'
+# ... and 3 more imports
+
+# Components:
+Component: MonthlyOverview (functional)
+  Hooks used:
+    - useDataService
+    - useDataService
+    - useDataService
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/strainUsage.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useRouter } from 'expo-router'
+# import { COLORS } from '../../src/constants'
+# ... and 4 more imports
+
+# Components:
+Component: StrainUsage (functional)
+  Hooks used:
+    - useState
+    - useRouter
+    - useDataService
+    - useDataService
+    - useRouter
+    - useDataService
+    - useState
+    - useState
+
+# Type Definitions:
+  Interfaces:
+    - StrainUsage
+      - strainId: number
+      - strainName: string
+      - strainType: string
+      - usageCount: number
+      - percentageOfTotal: number
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/strains/[id].tsx ===
+# Imports:
+# import { Redirect, useLocalSearchParams } from 'expo-router'
+
+# Components:
+Component: StrainDetailsRedirect (functional)
+  Hooks used:
+    - useLocalSearchParams
+    - useLocalSearchParams
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/strains/_layout.tsx ===
+# Imports:
+# import { Stack } from 'expo-router'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: StrainsLayout (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/strains/strainDetails.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Platform, StatusBar } from 'react-native'
+# import { useLocalSearchParams, useRouter, Stack } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { LinearGradient } from 'expo-linear-gradient'
+# import { BlurView } from 'expo-blur'
+# ... and 3 more imports
+
+# Components:
+Component: Section (functional)
+  Props:
+    - title: any
+    - children: any
+    - delay: any
+    - 0: any
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useStrains
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+Component: StatItem (functional)
+  Props:
+    - icon: any
+    - label: any
+    - value: any
+    - subtext: any
+    - highlight: any
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useStrains
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+Component: DetailItem (functional)
+  Props:
+    - icon: any
+    - label: any
+    - value: any
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useStrains
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+Component: RatingBadge (functional)
+  Props:
+    - rating: any
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useStrains
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+Component: StrainDetails (functional)
+  Hooks used:
+    - useEffect
+    - useState
+    - useCallback
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useStrains
+    - useLocalSearchParams
+    - useRouter
+    - useStrains
+    - useState
+    - useState
+    - useState
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/weeklyAverage.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useRouter } from 'expo-router'
+# ... and 5 more imports
+
+# Components:
+Component: WeeklyAverage (functional)
+  Hooks used:
+    - useRouter
+    - useTimeRangeData
+    - useTimeRangeData
+    - useRouter
+    - useTimeRangeData
+
+
+--------------------------------------------------------------------------------
+
+=== app/dataOverviews/weeklyOverview.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, ScrollView } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { COLORS } from '../../src/constants'
+# import { useDataService } from '../../src/hooks/useDataService'
+# ... and 3 more imports
+
+# Components:
+Component: WeeklyOverview (functional)
+  Hooks used:
+    - useDataService
+    - useDataService
+    - useDataService
+
+
+--------------------------------------------------------------------------------
+
+=== app/mydata/_layout.tsx ===
+# Imports:
+# import { Stack } from 'expo-router'
+
+# Components:
+Component: MyDataLayout (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/mydata/daily-average.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet } from 'react-native'
+# import { COLORS } from '../../src/constants'
+
+# Components:
+Component: DailyAverageOverview (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/mydata/monthly-overview.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet } from 'react-native'
+# import { COLORS } from '../../src/constants'
+
+# Components:
+Component: MonthlyOverview (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/mydata/weekly-average.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet } from 'react-native'
+# import { COLORS } from '../../src/constants'
+
+# Components:
+Component: WeeklyAverage (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/mydata/weekly-overview.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text, StyleSheet, ScrollView } from 'react-native'
+# import { SafeAreaProvider } from 'react-native-safe-area-context'
+# import { COLORS } from '../../src/constants'
+# import { useDataService } from '../../src/hooks/useDataService'
+# ... and 3 more imports
+
+# Components:
+Component: WeeklyOverview (functional)
+  Hooks used:
+    - useDataService
+    - useDataService
+
+
+--------------------------------------------------------------------------------
+
+=== app/strains/_layout.tsx ===
+# Imports:
+# import { Stack } from 'expo-router'
+
+# Components:
+Component: StrainsLayout (functional)
+
+
+--------------------------------------------------------------------------------
+
+=== app/strains/compare.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+# import { useLocalSearchParams, useRouter } from 'expo-router'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { COLORS } from '../../src/constants'
+# import { Strain } from '../../src/dbManager'
+# ... and 1 more imports
+
+# Components:
+Component: CompareStrains (functional)
+  Hooks used:
+    - useEffect
+    - useState
+    - useLocalSearchParams
+    - useRouter
+    - useLocalSearchParams
+
+
+--------------------------------------------------------------------------------
+
+=== app/strains/details.tsx ===
+# Imports:
+# import { React } from 'react'
+# import { View, Text } from 'react-native'
+# import { Redirect, useLocalSearchParams } from 'expo-router'
+# import { COLORS } from '@/src/constants'
+
+# Components:
+Component: StrainDetailsRedirect (functional)
+  Hooks used:
+    - useLocalSearchParams
+    - useLocalSearchParams
+
+
+--------------------------------------------------------------------------------
+
+=== app/strains/popular.tsx ===
+# Imports:
+# import { View, Text, StyleSheet, FlatList, TouchableOpacity, Platform } from 'react-native'
+# import { SafeAreaView } from 'react-native-safe-area-context'
+# import { MaterialCommunityIcons } from '@expo/vector-icons'
+# import { useRouter } from 'expo-router'
+# import { COLORS } from '../../src/constants'
+# ... and 2 more imports
+
+# Components:
+Component: PopularStrains (functional)
+  Hooks used:
+    - useEffect
+    - useState
+    - useRouter
+    - useRouter
+
+# Type Definitions:
+  Interfaces:
+    - Strain
+      - id: string
+      - name: string
+      - description: string
+      - thcContent: string
+      - type: 'sativa' | 'indica' | 'hybrid'
+
+
+--------------------------------------------------------------------------------
+
+=== src/contexts/BluetoothContext.ts ===
+# Imports:
+# import { createContext, useContext } from 'react'
+# import { PermissionsAndroid, Platform } from 'react-native'
+# import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx'
+
+# Type Definitions:
+  Type Aliases:
+    - ConnectedDevice = {
+    device: Device
+
+
+--------------------------------------------------------------------------------
+
+=== src/dbManager.ts ===
+# Imports:
+# import { AsyncStorage } from '@react-native-async-storage/async-storage'
+# import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite'
+# import { BONG_HITS_DATABASE_NAME, SAVED_DEVICES_DATABASE_NAME, STRAINS_DATABASE_NAME, getInsertStatements, getStrainInsertStatements, SAMPLE_STRAINS } from './constants'
+# import { BongHitStats, Datapoint, AverageHourCount, SavedDevice } from './types'
+# import { Device } from 'react-native-ble-plx'
+
+# Type Definitions:
+  Interfaces:
+    - Strain
+      - id: number
+      - name: string
+      - overview: string
+      - genetic_type: string
+      - lineage: string
+      - thc_range: string
+      - cbd_level: string
+      - dominant_terpenes: string
+      - qualitative_insights: string
+      - effects: string
+      - negatives: string
+      - uses: string
+      - thc_rating: number
+      - user_rating: number
+      - combined_rating: number
+      - created_at: string
+
+
+--------------------------------------------------------------------------------
+
+=== src/hooks/useAIRecommendations.ts ===
+# Imports:
+# import { useState, useEffect, useCallback, useRef } from 'react'
+# import { AIService } from '../services/ai'
+# import { ChatRequest } from '../services/ai/types/requests'
+# import { SafetyService } from '../services/SafetyService'
+# import { RecommendationRequest, RecommendationResponse, ChatMessage, UserProfile, JournalEntry, SafetyValidationResult } from '../types/ai'
+# ... and 1 more imports
+
+# Hooks:
+Hook: useAIRecommendations
+  Returns:
+    - [loading, setLoading]
+    - [error, setError]
+    - [recommendations, setRecommendations]
+    - [safetyValidation, setSafetyValidation]
+    - [chatHistory, setChatHistory]
+  Uses hooks:
+    - useState
+    - useState
+    - useState
+    - useState
+    - useState
+    - useRef
+    - useRef
+    - useEffect
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+
+
+--------------------------------------------------------------------------------
+
+=== src/hooks/useDataService.ts ===
+# Imports:
+# import { useState, useEffect } from 'react'
+# import { DataService } from '@/src/services/DataService'
+# import { DataState, ChartDataPoint, UsageStats, WeekdayStats } from '@/src/types'
+
+# Hooks:
+Hook: useDataService
+  Returns:
+    - [state, setState]
+  Uses hooks:
+    - useState
+    - useEffect
+
+
+--------------------------------------------------------------------------------
+
+=== src/hooks/useStrains.ts ===
+# Imports:
+# import { useState, useEffect, useCallback } from 'react'
+# import { Strain } from '../dbManager'
+
+# Hooks:
+Hook: useStrains
+  Returns:
+    - [state, setState]
+    - [filters, setFilters]
+    - [favoriteStrains, setFavoriteStrains]
+  Uses hooks:
+    - useState
+    - useState
+    - useState
+    - useEffect
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+    - useCallback
+
+# Type Definitions:
+  Interfaces:
+    - UseStrainState
+      - strains: Strain[]
+      - popularStrains: Strain[]
+      - categories: { [key: string]: number }
+      - isLoading: boolean
+      - error: string | null
+      - pagination: {
+    total: number
+      - currentPage: number
+      - totalPages: number
+      - hasMore: boolean
+    - UseStrainActions
+      - searchStrains: (query: string, filters: StrainSearchFilters) => Promise<void>
+      - loadMore: () => void
+      - toggleFavorite: (strainId: number) => Promise<void>
+      - isFavorite: (strainId: number) => boolean
+      - clearSearch: () => void
+      - getStrainDetails: (id: number) => Promise<Strain | null>
+      - getRelatedStrains: (strain: Strain) => Promise<Strain[]>
+
+
+--------------------------------------------------------------------------------
+
+=== src/hooks/useTimeRangeData.ts ===
+# Imports:
+# import { useState, useCallback, useEffect } from 'react'
+# import { useDataService } from './useDataService'
+
+# Hooks:
+Hook: useTimeRangeData
+  Parameters:
+    - initialRange: TimeRange
+    - W: any
+  Returns:
+    - [timeRange, setTimeRange]
+    - [data, setData]
+    - [isLoading, setIsLoading]
+    - [error, setError]
+  Uses hooks:
+    - useDataService
+    - useState
+    - useState
+    - useState
+    - useState
+    - useCallback
+    - useEffect
+
+# Type Definitions:
+  Interfaces:
+    - TimeRangeData
+      - chartData: number[]
+      - chartLabels: string[]
+      - averageValue: number
+      - maxValue: number
+      - minValue: number
+      - weekdayAvg: number
+      - weekendAvg: number
+  Type Aliases:
+    - TimeRange = 'D' | 'W' | 'M' | 'Y'
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/DataService.ts ===
+# Imports:
+# import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite'
+# import { BongHit, ChartDataPoint, DatabaseResponse, UsageStats, TimeDistribution, DatabaseRow } from '@/src/types'
+# import { BONG_HITS_DATABASE_NAME, dayLookUpTable, getInsertStatements } from '@/src/constants'
+
+# Services:
+Service: DataService (Singleton)
+  Methods:
+    - getInstance() -> DataService
+    - if(DataService: any, instance: any)
+    - initialize() -> Promise<void>
+    - catch(error: any)
+    - getDatabase() -> Promise<SQLiteDatabase>
+    - if(this: any, db: any)
+    - if(this: any, initializationPromise: any)
+    - if(this: any, db: any)
+    - validateWeeklyData(data: DatabaseRow[]) -> ChartDataPoint[]
+    - if(dayIndex: any, 0: any, dayIndex: any, 7: any)
+    - validateMonthlyData(data: DatabaseRow[]) -> ChartDataPoint[]
+    - getWeeklyStats() -> Promise<DatabaseResponse<ChartDataPoint[]>>
+    - if(results: any, length: any)
+    - catch(error: any)
+    - getMonthlyStats() -> Promise<DatabaseResponse<ChartDataPoint[]>>
+    - if(results: any, length: any)
+    - catch(error: any)
+    - getUsageStats() -> Promise<DatabaseResponse<UsageStats>>
+    - if(result: any)
+    - catch(error: any)
+    - getTimeDistribution() -> Promise<DatabaseResponse<TimeDistribution>>
+    - catch(error: any)
+    - getDailyAverageDatapoints() -> Promise<DatabaseResponse<ChartDataPoint[]>>
+    - if(hourIndex: any, 0: any, hourIndex: any, 24: any)
+    - catch(error: any)
+    - cleanup()
+    - if(this: any, db: any)
+    - catch(error: any)
+
+# Type Definitions:
+  Interfaces:
+    - CountResult
+      - count: number
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/SafetyService.ts ===
+# Imports:
+# import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite'
+# import { AsyncStorage } from '@react-native-async-storage/async-storage'
+# import { RecommendationRequest, RecommendationResponse, SafetyValidationResult, DrugInteractionResult, OveruseDetectionResult, SafetyRecord, JournalEntry, UserProfile } from '../types/ai'
+
+# Services:
+Service: SafetyService (Singleton)
+  Methods:
+    - getInstance() -> SafetyService
+    - if(SafetyService: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(hasInitialized: any)
+    - catch(error: any)
+    - validateRecommendationRequest(request: RecommendationRequest) -> Promise<SafetyValidationResult>
+    - if(userProfile: any)
+    - if(userProfile: any, experience_level: any, beginner: any)
+    - if(coolingOffStatus: any, inCoolingOff: any)
+    - if(overuseCheck: any, detected: any)
+    - if(overuseCheck: any, level: any, severe: any)
+    - if(userProfile: any, medications: any, userProfile: any, medications: any, length: any, 0: any)
+    - if(interactionCheck: any, hasInteractions: any)
+    - if(interactionCheck: any, severity: any, severe: any)
+    - if(userProfile: any, experience_level: any, beginner: any)
+    - if(context: any, medical: any, medicalNeeds: any, medicalNeeds: any, length: any, 0: any)
+    - if(hasSensitiveCondition: any)
+    - catch(error: any)
+    - processRecommendationResponse(response: RecommendationResponse, userProfile: UserProfile, recentEntries: JournalEntry[]) -> Promise<RecommendationResponse>
+    - if(response: any, disclaimers: any, response: any, disclaimers: any, length: any, 0: any)
+    - if(userProfile: any, experience_level: any, beginner: any)
+    - if(recentEntries: any, length: any, 0: any)
+    - forEach(entry: any, if: any, entry: any, negative_effects: any)
+    - if(frequentNegativeEffects: any, length: any, 0: any)
+    - if(highDosageEntries: any, length: any, 2: any)
+    - if(userProfile: any, avoid_effects: any, userProfile: any, avoid_effects: any, length: any, 0: any)
+    - if(userProfile: any, medical_needs: any, userProfile: any, medical_needs: any, length: any, 0: any)
+    - catch(error: any)
+    - detectOverusePatterns(userId: string) -> Promise<OveruseDetectionResult>
+    - if(recentEntries: any, length: any, 5: any)
+    - if(riskFactors: any, length: any, 3: any)
+    - if(riskFactors: any, length: any, 2: any)
+    - if(riskFactors: any, length: any, 1: any)
+    - if(level: any, moderate: any, level: any, severe: any)
+    - catch(error: any)
+    - getRecentJournalEntries(userId: string, days: number) -> Promise<JournalEntry[]>
+    - extractUsageFeatures(entries: JournalEntry[]) -> any
+    - getWeeklyUsageCounts(entries: JournalEntry[]) -> number[]
+    - if(weekIndex: any, weeklyCounts: any, length: any)
+    - getWeeklyAverageDosages(entries: JournalEntry[]) -> number[]
+    - if(weekIndex: any, weeklyDosages: any, length: any)
+    - getEffectivenessRatios(entries: JournalEntry[]) -> number[]
+    - detectIncreasingTrend(values: number[]) -> boolean
+    - detectDecreasingTrend(values: number[]) -> boolean
+    - detectWithdrawalSymptoms(entries: JournalEntry[]) -> boolean
+    - for(let: any, i: any, 1: any, i: any, sortedEntries: any, length: any, i: any)
+    - if(diffHours: any, 48: any, currEntry: any, mood_before: any, Irritable: any, currEntry: any, mood_before: any, Anxious: any, currEntry: any, mood_before: any, Restless: any)
+    - checkMedicationInteractions(medications: string[]) -> Promise<DrugInteractionResult>
+    - if(highRiskMatches: any, length: any, 0: any)
+    - if(moderateRiskMatches: any, length: any, 0: any)
+    - catch(error: any)
+    - logSafetyConcern(data: {
+    userId: string;
+    concernType: 'overuse' | 'negative_effects' | 'interactions';
+    concernDetails: string;
+    timestamp: number;
+    resolutionSuggestions?: string[];
+    coolingOffUntil?: number;
+  }) -> Promise<void>
+    - if(this: any, db: any)
+    - catch(error: any)
+    - getSafetyHistory(userId: string) -> Promise<SafetyRecord[]>
+    - if(this: any, db: any)
+    - parse(row: any, resolution_suggestions: any) -> [],
+        cooling_off_until: row.cooling_off_until,
+        created_at: new Date(row.created_at).toISOString()
+      }));
+      
+    } catch (error)
+    - checkCoolingOffStatus(userId: string) -> Promise<
+    - if(this: any, db: any)
+    - if(result: any)
+    - catch(error: any)
+    - ensureInitialized() -> Promise<void>
+    - if(this: any, initialized: any)
+    - initializeEducationalContent() -> Promise<void>
+    - cleanup() -> Promise<void>
+    - if(this: any, db: any)
+    - if(isClosed: any)
+    - catch(error: any)
+    - isDbClosed() -> Promise<boolean>
+    - catch(error: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/StrainService.ts ===
+# Imports:
+# import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite'
+# import { STRAINS_DATABASE_NAME, SAMPLE_STRAINS } from '../constants'
+# import { Strain } from '../dbManager'
+
+# Services:
+Service: StrainService (Singleton)
+  Methods:
+    - getInstance() -> StrainService
+    - if(StrainService: any, instance: any)
+    - initialize() -> Promise<void>
+    - for(const: any, strain: any, of: any, SAMPLE_STRAINS: any)
+    - catch(insertError: any)
+    - catch(error: any)
+    - getDatabase() -> Promise<SQLiteDatabase>
+    - if(this: any, db: any)
+    - if(this: any, initializationPromise: any)
+    - if(this: any, db: any)
+    - parseTHCRange(thcRange: string)
+    - if(matches: any)
+    - searchStrains(query: string = '', filters: StrainSearchFilters = {}, pagination: PaginationParams = { page: 1, limit: 20 }) -> Promise<StrainSearchResult>
+    - if(filters: any, geneticType: any)
+    - if(filters: any, effects: any, length: any)
+    - if(filters: any, minTHC: any, undefined: any)
+    - if(filters: any, maxTHC: any, undefined: any)
+    - catch(error: any)
+    - getSortOrder(sort: any, StrainSearchFilters: any, sort: any) -> string
+    - switch(sort: any)
+    - getStrainById(id: number) -> Promise<Strain | null>
+    - catch(error: any)
+    - getPopularStrains(limit: number = 10) -> Promise<Strain[]>
+    - catch(error: any)
+    - getRelatedStrains(strain: Strain) -> Promise<Strain[]>
+    - catch(error: any)
+    - getStrainCategories() -> Promise<
+    - if(genetic_type: any)
+    - catch(error: any)
+    - cleanup() -> Promise<void>
+    - if(this: any, db: any)
+    - catch(error: any)
+
+# Type Definitions:
+  Interfaces:
+    - StrainSearchFilters
+      - geneticType: string
+      - effects: string[]
+      - minTHC: number
+      - maxTHC: number
+      - sort: 'rating' | 'name' | 'thc'
+    - PaginationParams
+      - page: number
+      - limit: number
+    - StrainSearchResult
+      - success: boolean
+      - data: Strain[]
+      - error: string
+      - total: number
+      - currentPage: number
+      - totalPages: number
+      - hasMore: boolean
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/AIService.ts ===
+# Imports:
+# import { DatabaseManager } from './database/DatabaseManager'
+# import { CacheManager } from './cache/CacheManager'
+# import { FeedbackService } from './feedback/FeedbackService'
+# import { AnthropicAPI } from './api/AnthropicAPI'
+# import { AIServiceError, AIServiceErrorType } from './types/errors'
+# ... and 9 more imports
+
+# Services:
+Service: AIService (Singleton)
+  Methods:
+    - getInstance() -> AIService
+    - if(AIService: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - catch(error: any)
+    - catch(error: any)
+    - catch(error: any)
+    - configure(options: {
+    useMockResponses?: boolean;
+    cacheEnabled?: boolean;
+    cacheTtl?: number;
+    cacheMaxSize?: number;
+  }) -> void
+    - if(options: any, useMockResponses: any, undefined: any)
+    - if(options: any, cacheEnabled: any, undefined: any, options: any, cacheTtl: any, undefined: any, options: any, cacheMaxSize: any, undefined: any)
+    - catch(error: any)
+    - checkInitialized() -> void
+    - if(this: any, initialized: any)
+    - getRealStrainRecommendations(request: RecommendationRequest) -> Promise<RecommendationResponse>
+    - if(allStrainsResult: any, data: any, allStrainsResult: any, data: any, length: any, 0: any)
+    - if(matchedStrains: any, matchedStrains: any, length: any, 0: any)
+    - catch(error: any)
+    - matchStrainsWithAI(desiredEffects: string[], strains: Strain[], context: any, string: any, medicalNeeds: any, string: any) -> Promise<Array<
+    - if(this: any, useMockResponses: any)
+    - map(strain: any, strain: any, name: any, strain: any, genetic_type: any, THC: ${strain.thc_range}) -> $
+    - if(strain: any)
+    - filter(match: any) -> match is
+    - catch(error: any)
+    - catch(error: any)
+    - matchStrainsSimple(desiredEffects: string[], strains: Strain[], context: any, string: any, medicalNeeds: any, string: any) -> Array<
+    - if(directMatch: any)
+    - if(hasEffect: any)
+    - if(hasPartialMatch: any)
+    - if(matchedEffects: any, length: any, 0: any)
+    - if(context: any, medical: any, strain: any, uses: any)
+    - getRecommendations(request: RecommendationRequest) -> Promise<RecommendationResponse>
+    - if(cachedResponse: any)
+    - if(this: any, useMockResponses: any)
+    - catch(error: any)
+    - formatRecommendationPrompt(request: RecommendationRequest) -> string
+    - parseRecommendationResponse(response: string) -> RecommendationResponse
+    - catch(error: any)
+    - getMockRecommendations(request: RecommendationRequest) -> RecommendationResponse
+    - submitRecommendationFeedback(userId: string, responseId: string, helpful: boolean, accurate: boolean, relevance: number, comments: any, string: any) -> Promise<string>
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - getChatResponse(request: ChatRequest) -> Promise<ChatResponse>
+    - if(cachedResponse: any)
+    - if(this: any, useMockResponses: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - formatChatMessages(request: ChatRequest) -> Array<
+    - if(request: any, previousMessages: any, request: any, previousMessages: any, length: any, 0: any)
+    - parseChatResponse(response: string) -> ChatResponse
+    - extractLinks(text: string) -> string[]
+    - if(matches: any)
+    - getMockChatResponse(request: ChatRequest) -> ChatResponse
+    - submitChatFeedback(userId: string, responseId: string, helpful: boolean, accurate: boolean, relevance: number, comments: any, string: any) -> Promise<string>
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - analyzeJournalEntries(userId: string, journalEntries: JournalEntry[]) -> Promise<JournalAnalysisResult>
+    - if(journalEntries: any, journalEntries: any, length: any, 0: any)
+    - if(cachedAnalysis: any)
+    - if(this: any, useMockResponses: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - formatJournalAnalysisPrompt(journalEntries: JournalEntry[]) -> string
+    - parseJournalAnalysisResponse(response: string) -> JournalAnalysisResult
+    - if(parsedResponse: any, patterns: any, parsedResponse: any, insights: any, parsedResponse: any, recommendations: any)
+    - catch(error: any)
+    - getMockJournalAnalysis(journalEntries: JournalEntry[]) -> JournalAnalysisResult
+    - if(journalEntries: any, length: any, 5: any)
+    - validateRecommendationSafety(request: RecommendationRequest) -> Promise<SafetyValidationResult>
+    - if(basicSafetyCheck: any, valid: any)
+    - if(interactionResult: any, hasInteractions: any, interactionResult: any, severity: any, severe: any)
+    - if(overuseResult: any, detected: any, overuseResult: any, level: any, severe: any)
+    - catch(error: any)
+    - performBasicSafetyCheck(request: RecommendationRequest) -> SafetyValidationResult
+    - if(request: any, userProfile: any, experience_level: any, beginner: any)
+    - checkDrugInteractions(request: RecommendationRequest) -> Promise<DrugInteractionResult>
+    - if(request: any, userProfile: any, medications: any, request: any, userProfile: any, medications: any, length: any, 0: any)
+    - if(highRiskFound: any)
+    - if(moderateRiskFound: any)
+    - detectOveruse(userId: string) -> Promise<OveruseDetectionResult>
+    - if(randomValue: any, 0: any, 01: any)
+    - if(randomValue: any, 0: any, 05: any)
+    - if(randomValue: any, 0: any, 10: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/api/AnthropicAPI.ts ===
+# Imports:
+# import { AIServiceError, AIServiceErrorType } from '../types/errors'
+# import { ANTHROPIC_API_URL, ANTHROPIC_API_VERSION, ANTHROPIC_API_KEY } from '../types/common'
+
+# Services:
+Service: AnthropicAPI
+  Methods:
+    - sendMessage(messages: Array<{ role: 'user' | 'assistant'; content: string }>, maxTokens: number = 1000, temperature: number = 0.7, model: string = 'claude-3-sonnet-20240229') -> Promise<string>
+    - if(response: any, ok: any)
+    - if(response: any, status: any, 401: any, response: any, status: any, 403: any)
+    - if(response: any, status: any, 429: any)
+    - if(response: any, status: any, 500: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+    - sendCompletion(prompt: string, maxTokens: number = 1000, temperature: number = 0.7, model: string = 'claude-3-sonnet-20240229') -> Promise<string>
+    - if(response: any, ok: any)
+    - if(response: any, status: any, 401: any, response: any, status: any, 403: any)
+    - if(response: any, status: any, 429: any)
+    - if(response: any, status: any, 500: any)
+    - catch(error: any)
+    - if(error: any, instanceof: any, AIServiceError: any)
+  API Endpoints:
+    - ${this.apiUrl}/messages
+    - ${this.apiUrl}/complete
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/cache/CacheManager.ts ===
+# Imports:
+# import { MemoryCache } from './MemoryCache'
+# import { PersistentCache } from './PersistentCache'
+# import { SHA256 } from '../utils/hash'
+# import { DEFAULT_CACHE_TTL, MAX_CACHE_SIZE, CacheDbEntry } from '../types/common'
+
+# Services:
+Service: CacheManager (Singleton)
+  Methods:
+    - getInstance() -> CacheManager
+    - if(CacheManager: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - configure(enabled: boolean, ttlMs: number = DEFAULT_CACHE_TTL, maxSize: number = MAX_CACHE_SIZE) -> void
+    - generateKey(requestData: any) -> string
+    - if(requestData: any, userProfile: any, requestData: any, userProfile: any, id: any)
+    - if(requestData: any, userId: any)
+    - catch(error: any)
+    - createStableRepresentation(obj: any) -> string
+    - if(obj: any, null: any, obj: any, undefined: any)
+    - if(typeof: any, obj: any, object: any)
+    - map(key: any, Skip: any, functions: any, and: any, undefined: any, values: any, if: any, typeof: any, obj: any, key: any, function: any, obj: any, key: any, undefined: any)
+    - if(this: any, enabled: any)
+    - if(this: any, initialized: any)
+    - if(memoryEntry: any)
+    - if(persistentData: any)
+    - catch(error: any)
+    - if(this: any, enabled: any)
+    - if(data: any, null: any, data: any, undefined: any)
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - delete(key: string) -> Promise<void>
+    - catch(error: any)
+    - deleteByPattern(pattern: string) -> Promise<number>
+    - catch(error: any)
+    - clear() -> Promise<void>
+    - catch(error: any)
+    - deleteForUser(userId: string) -> Promise<number>
+    - for(const: any, key: any, of: any, keys: any)
+    - catch(error: any)
+    - pruneCache() -> Promise<void>
+    - catch(error: any)
+    - loadFrequentEntries(limit: number = 20) -> Promise<void>
+    - for(const: any, entry: any, of: any, entries: any)
+    - if(ttl: any, 0: any)
+    - catch(error: any)
+    - catch(error: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/cache/MemoryCache.ts ===
+# Imports:
+# import { CacheEntry, MAX_CACHE_SIZE } from '../types/common'
+
+# Services:
+Service: MemoryCache
+  Methods:
+    - setMaxSize(size: number) -> void
+    - if(this: any, cache: any, size: any, this: any, maxSize: any)
+    - size() -> number
+    - has(key: string) -> boolean
+    - if(entry: any)
+    - delete(key: string) -> boolean
+    - clear() -> void
+    - keys() -> string[]
+    - deleteByPattern(pattern: string) -> number
+    - for(const: any, key: any, of: any, keys: any)
+    - deleteExpired() -> number
+    - for(const: any, key: any, entry: any, of: any, entries: any)
+    - if(entry: any, expiresAt: any, now: any)
+    - prune() -> void
+    - if(this: any, cache: any, size: any, this: any, maxSize: any)
+    - for(let: any, i: any, 0: any, i: any, entriesToRemove: any, i: any)
+    - evictOne() -> void
+    - if(this: any, cache: any, size: any, 0: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/cache/PersistentCache.ts ===
+# Imports:
+# import { CacheRepository } from '../database/repositories/CacheRepository'
+# import { CacheDbEntry } from '../types/common'
+# import { DatabaseManager } from '../database/DatabaseManager'
+
+# Services:
+Service: PersistentCache
+  Methods:
+    - ensureInitialized() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - set(key: string, data: any, ttl: number) -> Promise<void>
+    - if(data: any, null: any, data: any, undefined: any)
+    - catch(error: any)
+    - catch(error: any)
+    - if(entry: any)
+    - catch(error: any)
+    - catch(error: any)
+    - delete(key: string) -> Promise<void>
+    - catch(error: any)
+    - deleteByPattern(pattern: string) -> Promise<number>
+    - catch(error: any)
+    - clear() -> Promise<void>
+    - catch(error: any)
+    - deleteExpired() -> Promise<number>
+    - catch(error: any)
+    - getMostFrequentlyUsed(limit: number) -> Promise<CacheDbEntry[]>
+    - catch(error: any)
+    - getKeysForUser(userId: string) -> Promise<string[]>
+    - catch(error: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/database/DatabaseManager.ts ===
+# Imports:
+# import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite'
+# import { AI_USAGE_DB_NAME, RECOMMENDATION_FEEDBACK_DB_NAME, CACHE_DB_NAME } from '../types/common'
+
+# Services:
+Service: DatabaseManager (Singleton)
+  Methods:
+    - getInstance() -> DatabaseManager
+    - if(DatabaseManager: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - catch(error: any)
+    - catch(error: any)
+    - if(this: any, usageDb: any, this: any, feedbackDb: any, this: any, cacheDb: any)
+    - catch(error: any)
+    - getUsageDb() -> SQLiteDatabase
+    - if(this: any, usageDb: any)
+    - if(this: any, initialized: any)
+    - getFeedbackDb() -> SQLiteDatabase
+    - if(this: any, feedbackDb: any)
+    - if(this: any, initialized: any)
+    - getCacheDb() -> SQLiteDatabase
+    - if(this: any, cacheDb: any)
+    - if(this: any, initialized: any)
+    - openDatabase(dbName: string) -> Promise<SQLiteDatabase>
+    - catch(error: any)
+    - initializeUsageDb() -> Promise<void>
+    - catch(error: any)
+    - initializeFeedbackDb() -> Promise<void>
+    - catch(error: any)
+    - initializeCacheDb() -> Promise<void>
+    - catch(error: any)
+    - closeAll() -> Promise<void>
+    - if(this: any, usageDb: any)
+    - if(this: any, feedbackDb: any)
+    - if(this: any, cacheDb: any)
+    - catch(error: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/database/repositories/CacheRepository.ts ===
+# Imports:
+# import { SQLiteDatabase } from 'expo-sqlite'
+# import { DatabaseManager } from '../DatabaseManager'
+# import { CacheDbEntry, KeyEntry, CountResult } from '../../types/common'
+
+# Services:
+Service: CacheRepository
+  Methods:
+    - catch(error: any)
+    - ensureDatabase() -> SQLiteDatabase
+    - if(this: any, db: any)
+    - catch(error: any)
+    - storeResponse(key: string, data: string, timestamp: number, expiresAt: number, ttl: number) -> Promise<void>
+    - if(data: any)
+    - catch(error: any)
+    - getResponse(key: string) -> Promise<CacheDbEntry | null>
+    - if(results: any, length: any, 0: any)
+    - catch(error: any)
+    - updateStats(key: string, hitCount: number, lastAccessed: number) -> Promise<void>
+    - catch(error: any)
+    - deleteEntry(key: string) -> Promise<void>
+    - catch(error: any)
+    - deleteByPattern(pattern: string) -> Promise<number>
+    - if(keys: any, length: any, 0: any)
+    - catch(error: any)
+    - clearAll() -> Promise<void>
+    - catch(error: any)
+    - getCount() -> Promise<number>
+    - catch(error: any)
+    - deleteExpired() -> Promise<number>
+    - if(keys: any, length: any, 0: any)
+    - catch(error: any)
+    - getLeastRecentlyUsed(limit: number) -> Promise<KeyEntry[]>
+    - catch(error: any)
+    - getMostFrequentlyUsed(limit: number) -> Promise<CacheDbEntry[]>
+    - catch(error: any)
+    - getKeysForUser(userId: string) -> Promise<KeyEntry[]>
+    - catch(error: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/database/repositories/FeedbackRepository.ts ===
+# Imports:
+# import { SQLiteDatabase } from 'expo-sqlite'
+# import { DatabaseManager } from '../DatabaseManager'
+# import { UserFeedback, QualityScore, FeedbackPattern } from '../../types/feedback'
+# import { FeedbackStats, PatternEntry, QualityStats } from '../../types/feedback'
+
+# Services:
+Service: FeedbackRepository
+  Methods:
+    - catch(error: any)
+    - ensureDatabase() -> SQLiteDatabase
+    - if(this: any, db: any)
+    - catch(error: any)
+    - catch(error: any)
+    - storeQualityScore(evaluationId: string, responseId: string, qualityScore: QualityScore) -> Promise<void>
+    - catch(error: any)
+    - storePattern(pattern: FeedbackPattern) -> Promise<void>
+    - catch(error: any)
+    - getPattern(patternId: string) -> Promise<PatternEntry | null>
+    - if(results: any, length: any, 0: any)
+    - catch(error: any)
+    - getUserFeedback(userId: string) -> Promise<UserFeedback[]>
+    - catch(error: any)
+    - getUserFeedbackStats(userId: string) -> Promise<FeedbackStats>
+    - catch(error: any)
+    - getQualityScoreStats() -> Promise<QualityStats>
+    - catch(error: any)
+    - getPatternsByType(responseType: string) -> Promise<PatternEntry[]>
+    - catch(error: any)
+    - deleteUserFeedback(userId: string) -> Promise<number>
+    - catch(error: any)
+
+# Type Definitions:
+  Interfaces:
+    - RawFeedbackRow
+      - userId: string
+      - responseId: string
+      - responseType: 'recommendation' | 'chat'
+      - helpful: number
+      - accurate: number
+      - relevance: number
+      - comments: string
+      - timestamp: number
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/feedback/FeedbackService.ts ===
+# Imports:
+# import { FeedbackRepository } from '../database/repositories/FeedbackRepository'
+# import { UserFeedback, QualityScore, FeedbackPattern } from '../types/feedback'
+# import { AnthropicAPI } from '../api/AnthropicAPI'
+
+# Services:
+Service: FeedbackService (Singleton)
+  Methods:
+    - getInstance() -> FeedbackService
+    - if(FeedbackService: any, instance: any)
+    - initialize() -> Promise<void>
+    - if(this: any, initialized: any)
+    - catch(error: any)
+    - submitFeedback(feedback: UserFeedback) -> Promise<string>
+    - catch(error: any)
+    - evaluateResponseQuality(responseId: string, responseType: 'recommendation' | 'chat', responseData: any, any: any) -> Promise<QualityScore>
+    - if(useRealApi: any)
+    - catch(error: any)
+    - extractFeedbackPatterns(feedback: UserFeedback) -> Promise<void>
+    - if(existingPattern: any)
+    - catch(error: any)
+    - getUserFeedback(userId: string) -> Promise<UserFeedback[]>
+    - catch(error: any)
+    - getUserFeedbackStats(userId: string) -> Promise<any>
+    - catch(error: any)
+    - getQualityScoreStats() -> Promise<any>
+    - catch(error: any)
+    - deleteUserFeedback(userId: string) -> Promise<number>
+    - catch(error: any)
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/types/common.ts ===
+# Imports:
+# import { ANTHROPIC_API_KEY } from '@env'
+
+# Type Definitions:
+  Interfaces:
+    - CacheEntry
+      - key: string
+      - data: T
+      - timestamp: number
+      - expiresAt: number
+      - ttl: number
+      - hitCount: number
+      - lastAccessed: number
+    - CacheDbEntry
+      - key: string
+      - data: string
+      - timestamp: number
+      - expires_at: number
+      - ttl: number
+      - hit_count: number
+      - last_accessed: number
+    - KeyEntry
+      - key: string
+    - CountResult
+      - count: number
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/types/errors.ts ===
+# Services:
+Service: AIServiceError extends Error
+
+# Type Definitions:
+  Enums:
+    - AIServiceErrorType
+      - AIServiceErrorType
+      - NETWORK = 'network_error'
+      - AUTHENTICATION = 'authentication_error'
+      - RATE_LIMIT = 'rate_limit_error'
+      - SERVER = 'server_error'
+      - PARSING = 'parsing_error'
+      - TIMEOUT = 'timeout_error'
+      - UNKNOWN = 'unknown_error'
+}
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/types/feedback.ts ===
+# Type Definitions:
+  Interfaces:
+    - UserFeedback
+      - userId: string
+      - responseId: string
+      - responseType: 'recommendation' | 'chat'
+      - helpful: boolean
+      - accurate: boolean
+      - relevance: number
+      - comments: string
+      - timestamp: number
+    - QualityScore
+      - overallScore: number
+      - relevanceScore: number
+      - accuracyScore: number
+      - comprehensivenessScore: number
+      - safetyScore: number
+      - strengths: string[]
+      - weaknesses: string[]
+      - improvementSuggestions: string[]
+    - FeedbackPattern
+      - patternId: string
+      - responseType: 'recommendation' | 'chat'
+      - userProfileFactors: Record<string, any>
+      - requestFactors: Record<string, any>
+      - positiveOutcomeRate: number
+      - sampleSize: number
+      - lastUpdated: number
+    - PatternEntry
+      - pattern_id: string
+      - user_profile_factors: string
+      - request_factors: string
+      - positive_outcome_rate: number
+      - sample_size: number
+    - FeedbackStats
+      - total: number
+      - positive: number
+      - relevance_sum: number
+    - QualityStats
+      - avg_overall: number
+      - avg_relevance: number
+      - avg_safety: number
+      - total: number
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/types/requests.ts ===
+# Imports:
+# import { UserProfile, JournalEntry, ChatMessage } from '../../../types/ai'
+
+# Type Definitions:
+  Interfaces:
+    - RecommendationRequest
+      - userProfile: UserProfile
+      - journalEntries: JournalEntry[]
+      - desiredEffects: string[]
+      - medicalNeeds: string[]
+      - context: 'recreational' | 'medical' | 'wellness'
+      - locationCode: string
+    - ChatRequest
+      - message: string
+      - userProfile: UserProfile
+      - locationCode: string
+      - previousMessages: ChatMessage[]
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/types/responses.ts ===
+# Imports:
+# import { DosageSuggestion, StrainRecommendation } from '../../../types/ai'
+
+# Type Definitions:
+  Interfaces:
+    - RecommendationResponse
+      - recommendations: StrainRecommendation[]
+      - reasoning: string
+      - confidenceScore: number
+      - disclaimers: string[]
+      - dosageSuggestion: DosageSuggestion
+      - safetyNotes: string[]
+      - error: {
+    message: string
+      - type: string
+      - recoverable: boolean
+      - responseId: string
+    - ChatResponse
+      - response: string
+      - educationalLinks: string[]
+      - disclaimers: string[]
+      - regulatoryNotes: string[]
+      - followUpSuggestions: string[]
+    - JournalAnalysisResult
+      - patterns: string[]
+      - insights: string[]
+      - recommendations: string[]
+      - safetyFlags: string[]
+    - SafetyValidationResult
+      - valid: boolean
+      - reason: string
+      - modifications: any
+      - safetyFlags: string[]
+      - warningLevel: 'info' | 'warning' | 'critical'
+    - DrugInteractionResult
+      - hasInteractions: boolean
+      - details: string[]
+      - severity: 'mild' | 'moderate' | 'severe'
+      - recommendations: string[]
+    - OveruseDetectionResult
+      - detected: boolean
+      - level: 'mild' | 'moderate' | 'severe'
+      - details: string
+      - recommendedAction: string
+      - coolingOffPeriod: number
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/utils/hash.ts ===
+# Components:
+Component: SHA256 (functional)
+  Props:
+    - input: string
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/ai/utils/logging.ts ===
+# Type Definitions:
+  Enums:
+    - LogLevel
+      - LogLevel
+      - DEBUG = 0
+      - INFO = 1
+      - WARN = 2
+      - ERROR = 3
+      - NONE = 4
+}
+
+
+--------------------------------------------------------------------------------
+
+=== src/services/utils/hash.ts ===
+# Components:
+Component: SHA256 (functional)
+  Props:
+    - input: string
+
+
+--------------------------------------------------------------------------------
+
+=== src/types.ts ===
+# Type Definitions:
+  Interfaces:
+    - BongHit
+      - id: number
+      - timestamp: string
+      - duration_ms: number
+      - intensity: number
+      - notes: string
+    - BongHitStats
+      - averageDuration: number
+      - longestHit: number
+      - totalHits: number
+    - DailyStats
+      - date: string
+      - hitCount: number
+      - averageDuration: number
+    - AverageHourCount
+      - count: number
+      - hourOfDay: string
+    - Datapoint
+      - x: string | number
+      - y: number
+    - ChartDataPoint
+      - label: string
+      - value: number
+    - ChartDataset
+      - data: number[]
+      - color: (opacity?: number) => string
+      - strokeWidth: number
+    - ChartData
+      - labels: string[]
+      - datasets: ChartDataset[]
+      - legend: string[]
+    - DatabaseRow
+      - timestamp: string
+      - duration_ms: number
+      - day: string
+      - month: string
+      - hour: string
+      - hit_count: number
+      - count: number
+      - avg_duration: number
+      - max_duration: number
+      - total_hits: number
+      - avg_hits_per_day: number
+      - avg_duration_per_day: number
+      - daily_hits: number
+      - days_with_data: number
+      - weekday_avg: number
+      - weekday_total: number
+      - weekend_avg: number
+      - weekend_total: number
+      - peak_day_hits: number
+      - lowest_day_hits: number
+      - most_active_hour: number
+      - least_active_hour: number
+      - total_duration: number
+      - avg_hits_per_hour: number
+      - hits_std_dev: number
+      - morning: number
+      - afternoon: number
+      - evening: number
+      - night: number
+      - average_hits_per_day: number
+      - shortest_hit: number
+      - longest_hit: number
+      - consistency: number
+    - UsageStats
+      - averageHitsPerDay: number
+      - totalHits: number
+      - peakDayHits: number
+      - lowestDayHits: number
+      - averageDuration: number
+      - longestHit: number
+      - shortestHit: number
+      - mostActiveHour: number
+      - leastActiveHour: number
+      - totalDuration: number
+      - averageHitsPerHour: number
+      - consistency: number
+      - weekdayStats: WeekdayStats
+    - TimeDistribution
+      - morning: number
+      - afternoon: number
+      - evening: number
+      - night: number
+    - WeekdayStats
+      - weekday: { avg: number
+      - total: number
+      - weekend: { avg: number
+      - total: number
+    - WeeklyChartProps
+      - data: ChartDataPoint[]
+      - onPress: () => void
+    - MonthlyChartProps
+      - data: ChartDataPoint[]
+      - onPress: () => void
+    - NotificationProps
+      - averageHits: number
+      - percentageChange: number
+      - onDismiss: () => void
+    - DailyAverageCardProps
+      - data: ChartDataPoint[]
+      - averageHits: number
+      - onPress: () => void
+    - WeeklyUsageBannerProps
+      - weeklyData: ChartDataPoint[]
+      - average: number
+      - percentageChange: number
+      - onPress: () => void
+    - DatabaseResponse
+      - success: boolean
+      - data: T
+      - error: string
+    - UsageAnalytics
+      - dailyAverage: number
+      - weeklyAverage: number
+      - percentageChange: number
+      - lastUpdated: string
+    - SavedDevice
+      - id: string
+      - name: string
+    - DataState
+      - weeklyData: ChartDataPoint[]
+      - monthlyData: ChartDataPoint[]
+      - usageStats: UsageStats
+      - timeDistribution: TimeDistribution
+      - isLoading: boolean
+      - error: string | null
+
+
+--------------------------------------------------------------------------------
+
+=== src/types/ai.ts ===
+# Type Definitions:
+  Interfaces:
+    - UserProfile
+      - id: string
+      - experience_level: 'beginner' | 'intermediate' | 'experienced'
+      - preferred_effects: string[]
+      - medical_needs: string[]
+      - avoid_effects: string[]
+      - preferred_consumption_method: string
+      - thc_tolerance: number
+      - medications: string[]
+      - created_at: string
+      - updated_at: string
+    - ChatMessage
+      - id: string
+      - content: string
+      - role: 'user' | 'assistant'
+      - timestamp: string
+    - JournalEntry
+      - id: string
+      - user_id: string
+      - strain_id: number
+      - strain_name: string
+      - consumption_method: string
+      - dosage: number
+      - dosage_unit: string
+      - effects_felt: string[]
+      - rating: number
+      - effectiveness: number
+      - notes: string
+      - mood_before: string
+      - mood_after: string
+      - medical_symptoms_relieved: string[]
+      - negative_effects: string[]
+      - duration_minutes: number
+      - created_at: string
+    - RecommendationRequest
+      - userProfile: UserProfile
+      - journalEntries: JournalEntry[]
+      - desiredEffects: string[]
+      - medicalNeeds: string[]
+      - context: 'recreational' | 'medical' | 'wellness'
+      - locationCode: string
+    - StrainRecommendation
+      - strainId: number
+      - strainName: string
+      - matchScore: number
+      - reasoningFactors: {
+    factor: string
+      - weight: number
+      - alternativeStrains: {
+    strainId: number
+      - strainName: string
+      - reason: string
+    - DosageSuggestion
+      - minDosage: number
+      - maxDosage: number
+      - unit: string
+      - gradualApproach: boolean
+      - notes: string
+    - RecommendationResponse
+      - recommendations: StrainRecommendation[]
+      - reasoning: string
+      - confidenceScore: number
+      - disclaimers: string[]
+      - dosageSuggestion: DosageSuggestion
+      - safetyNotes: string[]
+      - error: {
+    message: string
+      - type: string
+      - recoverable: boolean
+    - ChatRequest
+      - message: string
+      - userProfile: UserProfile
+      - locationCode: string
+      - previousMessages: {
+    role: 'user' | 'assistant'
+      - content: string
+    - ChatResponse
+      - response: string
+      - educationalLinks: string[]
+      - disclaimers: string[]
+      - regulatoryNotes: string[]
+      - followUpSuggestions: string[]
+    - JournalAnalysisResult
+      - patterns: string[]
+      - insights: string[]
+      - recommendations: string[]
+      - safetyFlags: string[]
+    - SafetyValidationResult
+      - valid: boolean
+      - reason: string
+      - modifications: Partial<RecommendationRequest>
+      - safetyFlags: string[]
+      - warningLevel: 'info' | 'warning' | 'critical'
+    - DrugInteractionResult
+      - hasInteractions: boolean
+      - details: string[]
+      - severity: 'mild' | 'moderate' | 'severe'
+      - recommendations: string[]
+    - OveruseDetectionResult
+      - detected: boolean
+      - level: 'mild' | 'moderate' | 'severe'
+      - details: string
+      - recommendedAction: string
+      - coolingOffPeriod: number
+    - SafetyRecord
+      - id: string
+      - user_id: string
+      - concern_type: 'overuse' | 'negative_effects' | 'interactions'
+      - concern_details: string
+      - resolution_suggestions: string[]
+      - cooling_off_until: number | null
+      - created_at: string
+
+
+--------------------------------------------------------------------------------
+
+=== src/utils/animations.ts ===
+# Imports:
+# import { useCallback } from 'react'
+# import { Platform } from 'react-native'
+# import { FadeIn, FadeInDown, FadeInUp, withSpring, withTiming, WithTimingConfig, Easing, useSharedValue, useAnimatedStyle,  } from 'react-native-reanimated'
+
+# Hooks:
+Hook: useAnimatedPress
+  Parameters:
+    - scale: number
+    - 0: any
+    - 98: any
+  Uses hooks:
+    - useSharedValue
+    - useAnimatedStyle
+    - useCallback
+    - useCallback
+
+
+--------------------------------------------------------------------------------
+
+=== src/utils/filters.ts ===
+# Imports:
+# import { StrainSearchFilters } from '../services/StrainService'
+
+
+--------------------------------------------------------------------------------
