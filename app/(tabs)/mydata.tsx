@@ -33,6 +33,9 @@ import AIRecommendationCard from '../components/mydata/AIRecommendationCard';
 import { BongHitLogsCard } from '../components/mydata/BongHitLogsCard';
 import SubscriptionButton from '../components/mydata/SubscriptionButton';
 import SubscriptionModal from '../components/mydata/SubscriptionModal';
+import { AchievementsButton } from '../components/mydata/AchievementsButton';
+import { useAchievements } from '../context/AchievementContext';
+import { AchievementUnlockedNotification } from '../components/achievements/AchievementUnlockedNotification';
 
 const ROUTES = {
   DAILY_AVERAGE: "/dataOverviews/dailyAverageOverview",
@@ -54,6 +57,7 @@ export default memo(function MyData() {
     recentTimestamp: new Date().toISOString()
   });
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
+  const { stats, newlyUnlocked, clearNewlyUnlocked } = useAchievements();
   
   const { 
     weeklyData, 
@@ -97,18 +101,18 @@ export default memo(function MyData() {
   };
   
   const handleSubscribe = (planId: string) => {
-    console.log(`Selected plan: ${planId}`);
-    // Here you would implement your actual payment processing
-    // For example, using in-app purchases
-    
-    // For now, just close the modal
     setSubscriptionModalVisible(false);
-    
-    // Show a success message
-    Alert.alert(
-      "Subscription Processing",
-      "Your subscription request is being processed. This is a demo only."
-    );
+    // In a real app, this would process payment and update subscription status
+    Alert.alert('Subscription', `Successfully subscribed to plan: ${planId}`);
+  };
+
+  const handleAchievementsPress = () => {
+    router.push('/screens/AchievementsScreen' as any);
+  };
+  
+  const handleAchievementNotificationPress = () => {
+    clearNewlyUnlocked();
+    router.push('/screens/AchievementsScreen' as any);
   };
 
   // Sample strain data - in a real app, this would come from your database
@@ -225,6 +229,12 @@ export default memo(function MyData() {
 
           {/* AI Recommendations Card */}
           <AIRecommendationCard onPress={handleNavigateToAI} />
+
+          <AchievementsButton 
+            onPress={handleAchievementsPress}
+            unlocked={stats.unlocked}
+            total={stats.total}
+          />
         </View>
       </Animated.ScrollView>
 
@@ -242,6 +252,14 @@ export default memo(function MyData() {
         onClose={() => setSubscriptionModalVisible(false)}
         onSubscribe={handleSubscribe}
       />
+
+      {newlyUnlocked && (
+        <AchievementUnlockedNotification 
+          achievement={newlyUnlocked}
+          onPress={handleAchievementNotificationPress}
+          onDismiss={clearNewlyUnlocked}
+        />
+      )}
     </SafeAreaProvider>
   );
 });
