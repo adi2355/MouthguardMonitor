@@ -201,8 +201,6 @@ export default memo(function MyData() {
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
 
-          
-
           {/* AI Recommendations Card */}
           <AIRecommendationCard onPress={handleNavigateToAI} />
 
