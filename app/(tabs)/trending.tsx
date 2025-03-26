@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useStrains } from '../../src/hooks/useStrains';
 import { COLORS } from '../../src/constants';
 import { StrainSearchFilters } from '../../src/services/StrainService';
-import { Strain } from '../../src/dbManager';
+import { Strain } from "@/src/types";
 import { LinearGradient } from 'expo-linear-gradient';
 import LoadingView from '../components/shared/LoadingView';
 import Header from '../components/trending/Header';

@@ -11,7 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants';
 import LoadingView from '../components/shared/LoadingView';
-import { Strain } from '../../src/dbManager';
+import { Strain } from "@/src/types";
 import StrainService from '../../src/services/StrainService';
 import Animated, { FadeIn } from 'react-native-reanimated';
 

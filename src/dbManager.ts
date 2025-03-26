@@ -1,39 +1,19 @@
 // File: src/dbManager.ts
 
+//TODO: refactor into correct files
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
 import {
   BONG_HITS_DATABASE_NAME,
-  SAVED_DEVICES_DATABASE_NAME,
   STRAINS_DATABASE_NAME,
-  getInsertStatements,
-  getStrainInsertStatements,
   SAMPLE_STRAINS
 } from "./constants";
-import { BongHitStats, Datapoint, AverageHourCount, SavedDevice } from "./types";
+import { BongHitStats, Datapoint, AverageHourCount, SavedDevice, Strain } from "./types";
 import { Device } from 'react-native-ble-plx';
 
 const FIRST_LAUNCH_KEY = "hasLaunched";
 const SAVED_DEVICES_KEY: string = 'savedDevices';
-
-export interface Strain {
-  id?: number;
-  name: string;
-  overview: string;
-  genetic_type: string;
-  lineage: string;
-  thc_range: string;
-  cbd_level: string;
-  dominant_terpenes: string;
-  qualitative_insights: string;
-  effects: string;
-  negatives: string;
-  uses: string;
-  thc_rating: number;
-  user_rating: number;
-  combined_rating: number;
-  created_at?: string;
-}
 
 /**
  * Checks if the application is launching for the first time.
@@ -52,20 +32,23 @@ export async function isFirstLaunch(): Promise<boolean> {
  */
 export async function initializeAppOnFirstLaunch() {
   try {
-    await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
-    await initializeDatabase();
-
-    await AsyncStorage.setItem(SAVED_DEVICES_KEY, JSON.stringify([]));
+    await initializeExpoSqliteDbs();
+    await initializeAsyncDb();
   } catch (error) {
     console.error('[dbManager] Error initializing app:', error);
     throw error;
   }
 }
 
+export async function initializeAsyncDb(): Promise<void> {
+  await AsyncStorage.setItem(FIRST_LAUNCH_KEY, "true");
+  await AsyncStorage.setItem(SAVED_DEVICES_KEY, JSON.stringify([]));
+}
+
 /**
  * Initializes all databases and tables with initial data.
  */
-async function initializeDatabase(): Promise<void> {
+async function initializeExpoSqliteDbs(): Promise<void> {
   try {
     console.log('[dbManager] Starting database initialization...');
 
@@ -78,24 +61,9 @@ async function initializeDatabase(): Promise<void> {
         duration_ms INTEGER NOT NULL
       );` +
       `CREATE INDEX IF NOT EXISTS idx_timestamp 
-      ON ${BONG_HITS_DATABASE_NAME}(timestamp);` +
-      getInsertStatements()
+      ON ${BONG_HITS_DATABASE_NAME}(timestamp);`
     );
     console.log('[dbManager] BongHits database initialized');
-
-    // Initialize SavedDevices database
-    const savedDevicesDb = await openDatabaseAsync(SAVED_DEVICES_DATABASE_NAME);
-    await savedDevicesDb.execAsync(
-      'PRAGMA journal_mode = WAL;' +
-      `CREATE TABLE IF NOT EXISTS ${SAVED_DEVICES_DATABASE_NAME} (
-        uuid TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );` +
-      `CREATE INDEX IF NOT EXISTS idx_device_name 
-      ON ${SAVED_DEVICES_DATABASE_NAME}(name);`
-    );
-    console.log('[dbManager] SavedDevices database initialized');
 
     // Initialize Strains database
     const strainsDb = await openDatabaseAsync(STRAINS_DATABASE_NAME);
@@ -192,6 +160,7 @@ async function insertStrainData(db: SQLiteDatabase): Promise<void> {
 }
 
 /* ------------------------------------------------------------------
+   TODO: Segregate to correct file
    Helpers to validate results before returning them
  ------------------------------------------------------------------ */
 
@@ -440,7 +409,7 @@ export async function getSavedDevices(): Promise<SavedDevice[]> {
 
 export async function saveDevices(devices: Device[]): Promise<void> {
   console.log(devices)
-  let savedDevices: SavedDevice[] = []
+  let savedDevices: SavedDevice[] = [];
   try {
     savedDevices = await getSavedDevices();
   } catch(e) {
@@ -458,5 +427,3 @@ export async function saveDevices(devices: Device[]): Promise<void> {
   
   await AsyncStorage.setItem(SAVED_DEVICES_KEY, JSON.stringify(savedDevices));
 }
-
-// Export query functions

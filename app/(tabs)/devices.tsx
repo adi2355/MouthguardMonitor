@@ -57,19 +57,7 @@ export default function Devices() {
     bluetoothHandler.connectToDevice(deviceId)
       .then(() => {
         try {
-          bluetoothHandler.streamOnConnectedDevice((error: BleError | null, characteristic: Characteristic | null) => {
-            if (error) {
-              console.log("Stream error:", error);
-              return -1;
-            } else if (!characteristic?.value) {
-              console.log("No data was received");
-              return -1;
-            }
-            const rawData = base64.decode(characteristic.value);
-            console.log("Received data:", rawData);
-            Alert.alert(`Raw Data: ${rawData}`);
-          });
-
+          bluetoothHandler.streamOnConnectedDevice();
           if (device) {
             saveDevices([device])
               .then(() => updateSavedDevices())
@@ -290,6 +278,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 8,
+    marginTop: 30
   },
   headerTitle: {
     fontSize: 28,

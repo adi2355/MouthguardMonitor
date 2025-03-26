@@ -15,7 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useStrains } from '../../../src/hooks/useStrains';
-import { Strain } from '../../../src/dbManager';
+import { Strain } from "@/src/types";
 import { COLORS } from '../../../src/constants';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 

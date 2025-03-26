@@ -1,6 +1,6 @@
 import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
 import { STRAINS_DATABASE_NAME, SAMPLE_STRAINS } from "../constants";
-import { Strain } from "../dbManager";
+import { Strain } from "../types";
 
 export interface StrainSearchFilters {
   geneticType?: string;

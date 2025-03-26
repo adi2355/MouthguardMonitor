@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../../src/constants';
-import { Strain } from '../../../src/dbManager';
+import { Strain } from "@/src/types";
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface StrainsListProps {

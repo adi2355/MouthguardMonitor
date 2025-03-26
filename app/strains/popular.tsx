@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
-import { Strain } from '../../src/dbManager';
+import { Strain } from "@/src/types";
 import StrainService from '../../src/services/StrainService';
 
 // Define strain type

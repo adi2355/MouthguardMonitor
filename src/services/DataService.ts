@@ -7,117 +7,48 @@ import {
   TimeDistribution,
   DatabaseRow 
 } from "@/src/types";
-import { BONG_HITS_DATABASE_NAME, dayLookUpTable, getInsertStatements } from "@/src/constants";
+import { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "@/src/constants";
 
 interface CountResult {
   count: number;
 }
 
+/*
+ * 
+ */
+
 export class DataService {
   private static instance: DataService;
   private db: SQLiteDatabase | null = null;
-  private initializationPromise: Promise<void> | null = null;
-  
-  private constructor() {}
 
-  static getInstance(): DataService {
+  public static getInstance(): DataService {
     if (!DataService.instance) {
       DataService.instance = new DataService();
     }
     return DataService.instance;
   }
 
-  private async initialize(): Promise<void> {
-    try {
-      console.log('[DataService] Initializing database...');
-      this.db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+  private constructor() {
 
-      // Set up database with proper schema and mock data
-      await this.db.execAsync(`
-        PRAGMA journal_mode = WAL;
-        
-        DROP TABLE IF EXISTS ${BONG_HITS_DATABASE_NAME};
-        
-        CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
-          timestamp TIMESTAMP PRIMARY KEY NOT NULL,
-          duration_ms INTEGER NOT NULL
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_timestamp 
-        ON ${BONG_HITS_DATABASE_NAME}(timestamp);
-      `.concat(getInsertStatements()));
 
-      // Verify data was inserted
-      const [countResult] = await this.db.getAllAsync<CountResult>('SELECT COUNT(*) as count FROM ' + BONG_HITS_DATABASE_NAME);
-      console.log('[DataService] Initialized database with', countResult.count, 'records');
-
-    } catch (error) {
-      console.error('[DataService] Failed to initialize database:', error);
-      this.db = null;
-      throw error;
-    }
   }
 
-  private async getDatabase(): Promise<SQLiteDatabase> {
-    if (!this.db) {
-      if (!this.initializationPromise) {
-        this.initializationPromise = this.initialize();
+  public async cleanup() {
+    console.log('[DataService] Starting cleanup...');
+    if (this.db) {
+      try {
+        await this.db.closeAsync();
+        this.db = null;
+        this.initializationPromise = null;
+        console.log('[DataService] Cleanup completed successfully');
+      } catch (error) {
+        console.error('[DataService] Error during cleanup:', error);
+        throw error;
       }
-      await this.initializationPromise;
-      this.initializationPromise = null;
     }
-
-    if (!this.db) {
-      throw new Error('Database initialization failed');
-    }
-
-    // Verify database has data
-    const [countResult] = await this.db.getAllAsync<CountResult>(`
-      SELECT COUNT(*) as count FROM ${BONG_HITS_DATABASE_NAME}
-    `);
-    console.log('[DataService] Current database record count:', countResult.count);
-
-    return this.db;
   }
 
-  private handleError<T>(error: unknown, operation: string): DatabaseResponse<T> {
-    const errorMessage = error instanceof Error ? error.message : `Failed to ${operation}`;
-    console.error(`[DataService] Error in ${operation}:`, error);
-    return {
-      success: false,
-      error: errorMessage
-    };
-  }
-
-  private validateWeeklyData(data: DatabaseRow[]): ChartDataPoint[] {
-    console.log('[DataService] Validating weekly data:', data);
-    const weekData = Array.from({ length: 7 }, (_, i) => ({
-      label: dayLookUpTable.get(i) || "",
-      value: 0
-    }));
-    
-    data.forEach(row => {
-      const dayIndex = Number(row.day);
-      if (dayIndex >= 0 && dayIndex < 7) {
-        weekData[dayIndex].value = Number(row.hit_count || 0);
-      }
-    });
-    
-    console.log('[DataService] Validated weekly data:', weekData);
-    return weekData;
-  }
-
-  private validateMonthlyData(data: DatabaseRow[]): ChartDataPoint[] {
-    console.log('[DataService] Validating monthly data:', data);
-    const monthlyData = data.map(row => ({
-      label: new Date(2024, Number(row.month) - 1).toLocaleString('default', { month: 'short' }),
-      value: Number(row.hit_count || 0)
-    }));
-    console.log('[DataService] Validated monthly data:', monthlyData);
-    return monthlyData;
-  }
-
-  async getWeeklyStats(): Promise<DatabaseResponse<ChartDataPoint[]>> {
+  public async getWeeklyStats(): Promise<DatabaseResponse<ChartDataPoint[]>> {
     try {
       console.log('[DataService] Fetching weekly stats...');
       const db = await this.getDatabase();
@@ -155,7 +86,7 @@ export class DataService {
     }
   }
 
-  async getMonthlyStats(): Promise<DatabaseResponse<ChartDataPoint[]>> {
+  public async getMonthlyStats(): Promise<DatabaseResponse<ChartDataPoint[]>> {
     try {
       console.log('[DataService] Fetching monthly stats...');
       const db = await this.getDatabase();
@@ -193,7 +124,7 @@ export class DataService {
     }
   }
 
-  async getUsageStats(): Promise<DatabaseResponse<UsageStats>> {
+  public async getUsageStats(): Promise<DatabaseResponse<UsageStats>> {
     try {
       console.log('[DataService] Fetching usage stats...');
       const db = await this.getDatabase();
@@ -321,7 +252,7 @@ export class DataService {
     }
   }
 
-  async getTimeDistribution(): Promise<DatabaseResponse<TimeDistribution>> {
+  public async getTimeDistribution(): Promise<DatabaseResponse<TimeDistribution>> {
     try {
       const db = await this.getDatabase();
       const query = `
@@ -357,7 +288,7 @@ export class DataService {
     }
   }
 
-  async getDailyAverageDatapoints(): Promise<DatabaseResponse<ChartDataPoint[]>> {
+  public async getDailyAverageDatapoints(): Promise<DatabaseResponse<ChartDataPoint[]>> {
     try {
       console.log('[DataService] Fetching daily average datapoints...');
       const db = await this.getDatabase();
@@ -396,37 +327,73 @@ export class DataService {
     }
   }
 
-  async getAllBongHitLogs(): Promise<DatabaseResponse<BongHit[]>> {
+  private async initialize(): Promise<void> {
     try {
-      const db = await this.getDatabase();
-      const results = await db.getAllAsync<BongHit>(`
-        SELECT * FROM ${BONG_HITS_DATABASE_NAME} 
-        ORDER BY timestamp DESC
-      `);
-      
-      console.log('[DataService] Retrieved bong hit logs:', results.length);
-      
-      return {
-        success: true,
-        data: results
-      };
+      console.log('[DataService] Opening database...');
+      this.db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+      // Verify data was inserted
+      const [countResult] = await this.db.getAllAsync<CountResult>('SELECT COUNT(*) as count FROM ' + BONG_HITS_DATABASE_NAME);
+      console.log('[DataService] Opened database with', countResult.count, 'records');
+
     } catch (error) {
-      return this.handleError(error, 'getAllBongHitLogs');
+      console.error('[DataService] Failed to open database:', error);
+      this.db = null;
+      throw error;
     }
   }
 
-  async cleanup() {
-    console.log('[DataService] Starting cleanup...');
-    if (this.db) {
-      try {
-        await this.db.closeAsync();
-        this.db = null;
-        this.initializationPromise = null;
-        console.log('[DataService] Cleanup completed successfully');
-      } catch (error) {
-        console.error('[DataService] Error during cleanup:', error);
-        throw error;
+  private async getDatabase(): Promise<SQLiteDatabase> {
+    if (!this.db) {
+      this.db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
+
+      if (this.db === null) {
+        throw new Error('Database initialization failed');
       }
     }
+
+    // Verify database has data
+    const [countResult] = await this.db.getAllAsync<CountResult>(`
+      SELECT COUNT(*) as count FROM ${BONG_HITS_DATABASE_NAME}
+    `);
+    console.log('[DataService] Current database record count:', countResult.count);
+
+    return this.db;
+  }
+
+  private handleError<T>(error: unknown, operation: string): DatabaseResponse<T> {
+    const errorMessage = error instanceof Error ? error.message : `Failed to ${operation}`;
+    console.error(`[DataService] Error in ${operation}:`, error);
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+
+  private validateWeeklyData(data: DatabaseRow[]): ChartDataPoint[] {
+    console.log('[DataService] Validating weekly data:', data);
+    const weekData = Array.from({ length: 7 }, (_, i) => ({
+      label: dayLookUpTable.get(i) || "",
+      value: 0
+    }));
+    
+    data.forEach(row => {
+      const dayIndex = Number(row.day);
+      if (dayIndex >= 0 && dayIndex < 7) {
+        weekData[dayIndex].value = Number(row.hit_count || 0);
+      }
+    });
+    
+    console.log('[DataService] Validated weekly data:', weekData);
+    return weekData;
+  }
+
+  private validateMonthlyData(data: DatabaseRow[]): ChartDataPoint[] {
+    console.log('[DataService] Validating monthly data:', data);
+    const monthlyData = data.map(row => ({
+      label: new Date(2024, Number(row.month) - 1).toLocaleString('default', { month: 'short' }),
+      value: Number(row.hit_count || 0)
+    }));
+    console.log('[DataService] Validated monthly data:', monthlyData);
+    return monthlyData;
   }
 } 

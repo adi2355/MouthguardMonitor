@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import StrainService, { StrainSearchFilters } from '../services/StrainService';
-import { Strain } from '../dbManager';
+import { Strain } from "../types";
 
 export interface UseStrainState {
   strains: Strain[];

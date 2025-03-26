@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants';
-import { Strain } from '../../src/dbManager';
+import { Strain } from "@/src/types";
 import StrainService from '../../src/services/StrainService';
 
 export default function CompareStrains() {

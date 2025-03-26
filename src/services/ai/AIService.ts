@@ -29,7 +29,7 @@ import {
 import { MemoryCache } from './cache/MemoryCache';
 import { PersistentCache } from './cache/PersistentCache';
 import { StrainService } from '../StrainService';
-import { Strain } from '../../dbManager';
+import { Strain } from "@/src/types";
 
 const MODULE_NAME = 'AIService';
 

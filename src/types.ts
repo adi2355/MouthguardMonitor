@@ -182,3 +182,21 @@ export interface DataState {
     isLoading: boolean;
     error: string | null;
 }
+export interface Strain {
+  id?: number;
+  name: string;
+  overview: string;
+  genetic_type: string;
+  lineage: string;
+  thc_range: string;
+  cbd_level: string;
+  dominant_terpenes: string;
+  qualitative_insights: string;
+  effects: string;
+  negatives: string;
+  uses: string;
+  thc_rating: number;
+  user_rating: number;
+  combined_rating: number;
+  created_at?: string;
+}
