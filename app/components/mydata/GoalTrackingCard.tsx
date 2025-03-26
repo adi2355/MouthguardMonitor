@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../../src/constants';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface GoalTrackingCardProps {
@@ -15,89 +15,134 @@ const GoalTrackingCard = ({ currentUsage, goalUsage, onEditGoal }: GoalTrackingC
   // Calculate percentage of goal reached
   const goalPercentage = Math.min(Math.round((currentUsage / goalUsage) * 100), 100);
   const isExceeded = currentUsage > goalUsage;
+  
+  // Enhanced gradient combinations with type assertions
+  const gradientBase = ['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.08)', 'transparent'] as const;
+  const accentGradient = ['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.15)'] as const;
 
   return (
     <Animated.View 
-      entering={FadeIn.duration(400)}
+      entering={FadeInDown.springify()}
+      layout={Layout.springify()}
       style={styles.container}
     >
-      <TouchableOpacity 
-        onPress={onEditGoal}
-        style={styles.touchable}
-        activeOpacity={0.9}
-      >
-        <LinearGradient
-          colors={[
-            'rgba(0,230,118,0.15)',
-            'rgba(0,230,118,0.05)',
-            'transparent'
-          ]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-        />
-        
-        <View style={styles.content}>
-          <View style={styles.headerRow}>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title}>Daily Goal Tracking</Text>
-              <Text style={styles.subtitle}>
-                {isExceeded ? 'Goal exceeded today' : `${goalPercentage}% of daily goal reached`}
-              </Text>
-            </View>
-            
+      {/* Enhanced Background Gradient */}
+      <LinearGradient
+        colors={gradientBase}
+        style={styles.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Shimmer Effect Layer */}
+      <LinearGradient
+        colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent'] as const}
+        style={styles.shimmerEffect}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      
+      <View style={styles.content}>
+        {/* Enhanced Header */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
             <LinearGradient
-              colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.1)']}
+              colors={accentGradient}
               style={styles.iconContainer}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
               <MaterialCommunityIcons 
                 name="target" 
-                size={24} 
+                size={22} 
                 color={COLORS.primary}
               />
             </LinearGradient>
-          </View>
-
-          <View style={styles.statsContainer}>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBackground}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { 
-                      width: `${Math.min(goalPercentage, 100)}%`,
-                      backgroundColor: isExceeded ? '#FF5252' : COLORS.primary
-                    }
-                  ]} 
-                />
-              </View>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>Daily Goal Tracking</Text>
+              <Text style={styles.subtitle}>
+                {isExceeded ? 'Goal exceeded today' : `${goalPercentage}% of daily goal reached`}
+              </Text>
             </View>
-            
-            <View style={styles.progressLabels}>
-              <Text style={styles.progressText}>{currentUsage.toFixed(2)} hits</Text>
-              <Text style={styles.goalText}>Goal: {goalUsage} hits</Text>
-            </View>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.primaryDark]}
-              style={styles.button}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.buttonText}>Edit Goal</Text>
-              <MaterialCommunityIcons 
-                name="pencil" 
-                size={20} 
-                color="#000"
-              />
-            </LinearGradient>
           </View>
         </View>
-      </TouchableOpacity>
+
+        {/* Enhanced Stats Container */}
+        <View style={styles.statsContainer}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)'] as const}
+            style={styles.statsGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBackground}>
+                <LinearGradient
+                  colors={isExceeded ? 
+                    ['#FF5252', '#FF5252CC'] as const : 
+                    [COLORS.primary, `${COLORS.primary}CC`] as const
+                  }
+                  style={[styles.progressFill, { width: `${Math.min(goalPercentage, 100)}%` }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
+              
+              <View style={styles.progressLabels}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>Current</Text>
+                  <Text style={styles.statValue}>{currentUsage.toFixed(1)}</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>Goal</Text>
+                  <Text style={styles.statValue}>{goalUsage.toFixed(1)}</Text>
+                </View>
+              </View>
+            </View>
+          </LinearGradient>
+        </View>
+
+        {/* Message Box */}
+        <View style={styles.messageContainer}>
+          <LinearGradient
+            colors={accentGradient}
+            style={styles.statusIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <MaterialCommunityIcons
+              name={isExceeded ? "alert-circle-outline" : "check-circle-outline"}
+              size={24}
+              color={isExceeded ? "#FF5252" : COLORS.primary}
+            />
+          </LinearGradient>
+
+          <Text style={styles.messageText}>
+            {isExceeded 
+              ? `You've exceeded your daily goal by ${(currentUsage - goalUsage).toFixed(1)} hits. Consider adjusting your goal if this is intentional.`
+              : `You're ${goalPercentage < 100 ? 'on track to meet' : 'at'} your daily goal of ${goalUsage} hits.`
+            }
+          </Text>
+        </View>
+
+        {/* Action Button - Maintain original functionality */}
+        <TouchableOpacity style={styles.actionButton} onPress={onEditGoal}>
+          <LinearGradient
+            colors={[COLORS.primary, `${COLORS.primary}CC`] as const}
+            style={styles.actionGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Text style={styles.actionText}>Edit Goal</Text>
+            <MaterialCommunityIcons 
+              name="pencil" 
+              size={18} 
+              color="#FFF"
+            />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 };
@@ -106,10 +151,7 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: Platform.select({
-      ios: 'rgba(26, 26, 26, 0.8)',
-      android: 'rgba(26, 26, 26, 0.95)',
-    }),
+    backgroundColor: COLORS.cardBackground,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 16,
@@ -117,97 +159,142 @@ const styles = StyleSheet.create({
       ios: {
         shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
+        shadowOpacity: 0.2,
         shadowRadius: 12,
       },
       android: {
-        elevation: 6,
+        elevation: 8,
       },
     }),
   },
-  touchable: {
-    width: '100%',
+  backgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
+  },
+  shimmerEffect: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.4,
   },
   content: {
     padding: 20,
   },
-  headerRow: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  titleContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: 8,
-    letterSpacing: 0.35,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    letterSpacing: 0.25,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  titleContainer: {
+    marginLeft: 12,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
   },
   statsContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  statsGradient: {
     padding: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: 12,
-    marginBottom: 16,
   },
   progressContainer: {
-    marginBottom: 10,
+    gap: 16,
   },
   progressBackground: {
-    height: 8,
+    height: 10,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 4,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 5,
   },
   progressLabels: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    justifyContent: 'space-around',
   },
-  progressText: {
-    fontSize: 14,
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 13,
     color: COLORS.text.secondary,
+    marginBottom: 4,
   },
-  goalText: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
+  statValue: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.text.primary,
   },
-  buttonContainer: {
-    alignItems: 'flex-start',
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 16,
   },
-  button: {
+  messageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: COLORS.primary,
+    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    padding: 12,
+    borderRadius: 12,
   },
-  buttonText: {
+  statusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  messageText: {
+    flex: 1,
     fontSize: 14,
+    color: COLORS.text.secondary,
+    lineHeight: 20,
+  },
+  actionButton: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  actionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  actionText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#000000',
+    color: '#FFF',
     marginRight: 4,
   },
 });

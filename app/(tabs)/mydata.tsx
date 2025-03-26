@@ -160,8 +160,6 @@ export default memo(function MyData() {
         <Header />
 
         <View style={styles.mainContent}>
-          {/* Subscription Button */}
-          <SubscriptionButton onPress={() => setSubscriptionModalVisible(true)} />
           {/* Goals Section */}
           <Section title="Goals & Tracking">
             <GoalTrackingCard
@@ -171,14 +169,8 @@ export default memo(function MyData() {
             />
           </Section>
 
-          <Section title="Usage Data">
-            <BongHitLogsCard
-              totalHits={bongHitSummary.totalHits}
-              averageDuration={bongHitSummary.averageDuration}
-              recentTimestamp={bongHitSummary.recentTimestamp}
-              onPress={() => handleNavigation("BONG_HIT_LOGS")}
-            />
-            <DailyAverageCard
+          <Section title="Consumption Data">
+          <DailyAverageCard
               data={weeklyData}
               averageHits={usageStats.averageHitsPerDay}
               onPress={() => handleNavigation("DAILY_AVERAGE")}
@@ -188,17 +180,12 @@ export default memo(function MyData() {
               average={usageStats.averageHitsPerDay}
               onPress={() => handleNavigation("WEEKLY_AVERAGE")}
             />
-          </Section>
-
-          <Section title="Notifications & Medical">
-            {showNotification && (
-              <NotificationBanner
-                averageHits={usageStats.averageHitsPerDay}
-                percentageChange={percentageChange}
-                onDismiss={() => setShowNotification(false)}
-              />
-            )}
-            <MedicalCard />
+            <BongHitLogsCard
+              totalHits={bongHitSummary.totalHits}
+              averageDuration={bongHitSummary.averageDuration}
+              recentTimestamp={bongHitSummary.recentTimestamp}
+              onPress={() => handleNavigation("BONG_HIT_LOGS")}
+            />
           </Section>
 
           <Section title="Usage Overview">
@@ -206,17 +193,6 @@ export default memo(function MyData() {
               strainData={mockStrainData}
               totalHits={usageStats.totalHits || 100}
               onViewAll={() => handleNavigation("STRAIN_USAGE")}
-            />
-          </Section>
-
-          <Section title="Usage Charts">
-            <WeeklyOverviewChart 
-              data={weeklyData}
-              onPress={() => handleNavigation("WEEKLY_OVERVIEW")}
-            />
-            <MonthlyOverviewChart 
-              data={monthlyData}
-              onPress={() => handleNavigation("MONTHLY_OVERVIEW")}
             />
           </Section>
 

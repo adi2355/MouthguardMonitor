@@ -2,77 +2,129 @@ import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '@/src/constants';
-
-// Gradient configurations
-const gradients = {
-  section: ['rgba(0,230,118,0.1)', 'rgba(0,230,118,0.02)', 'transparent'] as const,
-  divider: ['rgba(0,230,118,0.1)', 'transparent'] as const,
-};
+import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 
 interface SectionProps {
   title: string;
   children: React.ReactNode;
 }
 
-const Section = memo(({ title, children }: SectionProps) => (
-  <View style={styles.sectionWrapper}>
-    <LinearGradient
-      colors={gradients.divider}
-      style={styles.sectionDivider}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-    />
-    <View style={styles.section}>
+const Section = memo(({ title, children }: SectionProps) => {
+  // Enhanced gradient combinations with type assertions
+  const gradientBase = ['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.08)', 'transparent'] as const;
+  const accentGradient = ['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.15)'] as const;
+
+  return (
+    <Animated.View 
+      entering={FadeInDown.springify()}
+      layout={Layout.springify()}
+      style={styles.container}
+    >
+      {/* Enhanced Background Gradient */}
       <LinearGradient
-        colors={gradients.section}
-        style={styles.sectionGradient}
+        colors={gradientBase}
+        style={styles.backgroundGradient}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
+        end={{ x: 1, y: 1 }}
       />
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+
+      {/* Shimmer Effect Layer */}
+      <LinearGradient
+        colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent'] as const}
+        style={styles.shimmerEffect}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      <View style={styles.content}>
+        {/* Section Header */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <LinearGradient
+              colors={accentGradient}
+              style={styles.iconContainer}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Text style={styles.iconText}>{title.charAt(0)}</Text>
+            </LinearGradient>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>{title}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Section Content */}
+        <View style={styles.sectionContent}>
+          {children}
+        </View>
       </View>
-      <View style={styles.sectionContent}>
-        {children}
-      </View>
-    </View>
-  </View>
-));
+    </Animated.View>
+  );
+});
 
 const styles = StyleSheet.create({
-  sectionWrapper: {
-    marginBottom: 32,
-    position: 'relative',
+  container: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: COLORS.cardBackground,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  sectionDivider: {
-    height: 1,
-    width: '100%',
+  backgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
+  },
+  shimmerEffect: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.4,
+  },
+  content: {
+    padding: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  section: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(26, 26, 26, 0.85)',
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  sectionGradient: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.5,
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  sectionHeader: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 230, 118, 0.1)',
-    marginBottom: 8,
+  iconText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
-  sectionTitle: {
-    fontSize: 20,
+  titleContainer: {
+    marginLeft: 12,
+  },
+  title: {
+    fontSize: 18,
     fontWeight: '600',
     color: COLORS.text.primary,
-    letterSpacing: 0.5,
+    marginBottom: 4,
   },
   sectionContent: {
-    padding: 12,
-    gap: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 16,
+    padding: 16,
   },
 });
 

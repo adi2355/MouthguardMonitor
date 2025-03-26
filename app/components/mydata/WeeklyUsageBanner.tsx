@@ -1,9 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '../../../src/constants';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import { COLORS } from "../../../src/constants";
+import Animated, { 
+  FadeInDown,
+  Layout
+} from 'react-native-reanimated';
 import { ChartDataPoint } from '../../../src/types';
 
 interface WeeklyUsageBannerProps {
@@ -12,96 +15,127 @@ interface WeeklyUsageBannerProps {
   onPress: () => void;
 }
 
-const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ weeklyData, average, onPress }) => {
+const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ 
+  weeklyData, 
+  average, 
+  onPress 
+}) => {
   // Calculate the percentage change from last week
   const currentWeekTotal = weeklyData.reduce((sum, day) => sum + day.value, 0);
   const weeklyAverage = currentWeekTotal / 7;
   const percentageChange = ((weeklyAverage - average) / average) * 100;
+  const isIncrease = percentageChange >= 0;
+  const statusColor = isIncrease ? COLORS.primary : '#FF5252';
   
+  // Enhanced gradient combinations with type assertions
+  const gradientBase = ['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.08)', 'transparent'] as const;
+  const accentGradient = ['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.15)'] as const;
+
   return (
     <Animated.View 
-      entering={FadeIn.duration(400)}
+      entering={FadeInDown.springify()}
+      layout={Layout.springify()}
       style={styles.container}
     >
-      <TouchableOpacity 
-        onPress={onPress}
-        style={styles.touchable}
-        activeOpacity={0.9}
-      >
-        <LinearGradient
-          colors={[
-            'rgba(0,230,118,0.15)',
-            'rgba(0,230,118,0.05)',
-            'transparent'
-          ]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-        />
-        
-        <View style={styles.content}>
-          <View style={styles.headerRow}>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title}>Weekly Usage</Text>
-              <Text style={styles.subtitle}>
-                {weeklyAverage.toFixed(1)} average hits per day
-              </Text>
-            </View>
-            
+      {/* Enhanced Background Gradient */}
+      <LinearGradient
+        colors={gradientBase}
+        style={styles.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Shimmer Effect Layer */}
+      <LinearGradient
+        colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent'] as const}
+        style={styles.shimmerEffect}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      <View style={styles.content}>
+        {/* Enhanced Header */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
             <LinearGradient
-              colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.1)']}
+              colors={accentGradient}
               style={styles.iconContainer}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
               <MaterialCommunityIcons 
                 name="chart-timeline-variant" 
-                size={24} 
+                size={22} 
                 color={COLORS.primary}
               />
             </LinearGradient>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>Weekly Usage</Text>
+              <Text style={styles.subtitle}>Last 7 days</Text>
+            </View>
           </View>
+        </View>
 
-          <View style={styles.statsRow}>
+        {/* Enhanced Stats Container */}
+        <View style={styles.statsContainer}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)'] as const}
+            style={styles.statsGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Daily Average</Text>
+              <Text style={styles.statValue}>{weeklyAverage.toFixed(1)}</Text>
+            </View>
+            <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Total Hits</Text>
               <Text style={styles.statValue}>{currentWeekTotal}</Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>vs Last Week</Text>
-              <View style={styles.changeContainer}>
-                <MaterialCommunityIcons 
-                  name={percentageChange >= 0 ? "trending-up" : "trending-down"} 
-                  size={16} 
-                  color={percentageChange >= 0 ? COLORS.primary : '#FF5252'} 
-                />
-                <Text style={[
-                  styles.changeText,
-                  { color: percentageChange >= 0 ? COLORS.primary : '#FF5252' }
-                ]}>
-                  {Math.abs(percentageChange).toFixed(1)}%
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <LinearGradient
-              colors={[COLORS.primary, COLORS.primaryDark]}
-              style={styles.button}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.buttonText}>View Weekly Analysis</Text>
-              <MaterialCommunityIcons 
-                name="chevron-right" 
-                size={20} 
-                color="#FFF"
-              />
-            </LinearGradient>
-          </View>
+          </LinearGradient>
         </View>
-      </TouchableOpacity>
+
+        {/* Message Box */}
+        <View style={styles.messageContainer}>
+          <LinearGradient
+            colors={accentGradient}
+            style={styles.statusIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <MaterialCommunityIcons
+              name={isIncrease ? "trending-up" : "trending-down"}
+              size={24}
+              color={statusColor}
+            />
+          </LinearGradient>
+
+          <Text style={styles.messageText}>
+            {isIncrease 
+              ? `Your weekly average has increased by ${Math.abs(percentageChange).toFixed(1)}% compared to last week`
+              : `Your weekly average has decreased by ${Math.abs(percentageChange).toFixed(1)}% compared to last week`
+            }
+          </Text>
+        </View>
+
+        {/* Action Button - Maintain original functionality */}
+        <TouchableOpacity style={styles.actionButton} onPress={onPress}>
+          <LinearGradient
+            colors={[COLORS.primary, `${COLORS.primary}CC`] as const}
+            style={styles.actionGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Text style={styles.actionText}>View Weekly Analysis</Text>
+            <MaterialCommunityIcons 
+              name="chevron-right" 
+              size={18} 
+              color="#FFF"
+            />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 };
@@ -110,74 +144,83 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: Platform.select({
-      ios: 'rgba(26, 26, 26, 0.8)',
-      android: 'rgba(26, 26, 26, 0.95)',
-    }),
+    backgroundColor: COLORS.cardBackground,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 16,
     ...Platform.select({
       ios: {
         shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
+        shadowOpacity: 0.2,
         shadowRadius: 12,
       },
       android: {
-        elevation: 6,
+        elevation: 8,
       },
     }),
   },
-  touchable: {
-    width: '100%',
-    minHeight: 160,
+  backgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
+  },
+  shimmerEffect: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.4,
   },
   content: {
     padding: 20,
   },
-  headerRow: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  titleContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: 8,
-    letterSpacing: 0.35,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    letterSpacing: 0.25,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  titleContainer: {
+    marginLeft: 12,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+  },
+  statsContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
     marginBottom: 20,
-    paddingTop: 8,
+  },
+  statsGradient: {
+    flexDirection: 'row',
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'space-around',
   },
   statItem: {
     flex: 1,
+    alignItems: 'center',
   },
   statLabel: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
+    fontSize: 13,
+    color: COLORS.text.secondary,
     marginBottom: 4,
   },
   statValue: {
@@ -185,30 +228,51 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.text.primary,
   },
-  changeContainer: {
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 16,
+  },
+  messageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    padding: 12,
+    borderRadius: 12,
   },
-  changeText: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  buttonContainer: {
-    alignItems: 'flex-start',
-  },
-  button: {
-    flexDirection: 'row',
+  statusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: COLORS.primary,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  buttonText: {
-    color: '#FFF',
+  messageText: {
+    flex: 1,
     fontSize: 14,
+    color: COLORS.text.secondary,
+    lineHeight: 20,
+  },
+  actionButton: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  actionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  actionText: {
+    fontSize: 15,
     fontWeight: '600',
+    color: '#FFF',
     marginRight: 4,
   },
 });

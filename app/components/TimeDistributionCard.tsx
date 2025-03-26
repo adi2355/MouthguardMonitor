@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from "../../src/constants";
 import { TimeDistribution } from "../../src/types";
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 
 interface TimeDistributionCardProps {
   timeData: TimeDistribution;
@@ -28,6 +28,10 @@ const ICONS_MAP: Record<TimeSlot, keyof typeof MaterialCommunityIcons.glyphMap> 
 
 const TimeDistributionCard = ({ timeData }: TimeDistributionCardProps) => {
   const total = Object.values(timeData).reduce((sum, val) => sum + val, 0);
+  
+  // Enhanced gradient combinations with type assertions
+  const gradientBase = ['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.08)', 'transparent'] as const;
+  const accentGradient = ['rgba(0,230,118,0.3)', 'rgba(0,230,118,0.15)'] as const;
 
   const TimeSlotComponent = ({ type, value }: { type: TimeSlot; value: number }) => {
     const percentage = total === 0 ? 0 : (value / total) * 100;
@@ -35,14 +39,14 @@ const TimeDistributionCard = ({ timeData }: TimeDistributionCardProps) => {
 
     return (
       <Animated.View 
-        entering={FadeIn.delay(type === 'morning' ? 200 : type === 'afternoon' ? 400 : type === 'evening' ? 600 : 800)}
+        entering={FadeInDown.delay(type === 'morning' ? 200 : type === 'afternoon' ? 400 : type === 'evening' ? 600 : 800).springify()}
         style={styles.timeSlot}
       >
         <View style={styles.timeSlotContent}>
           <View style={styles.timeSlotHeader}>
             <LinearGradient
               colors={[`${COLORS_MAP[type]}40`, `${COLORS_MAP[type]}20`]}
-              style={styles.iconContainer}
+              style={styles.timeSlotIconContainer}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
@@ -74,48 +78,91 @@ const TimeDistributionCard = ({ timeData }: TimeDistributionCardProps) => {
 
   return (
     <Animated.View 
-      entering={FadeIn.duration(400)}
+      entering={FadeInDown.springify()}
+      layout={Layout.springify()}
       style={styles.container}
     >
+      {/* Enhanced Background Gradient */}
       <LinearGradient
-        colors={[
-          'rgba(0,230,118,0.15)',
-          'rgba(0,230,118,0.05)',
-          'transparent'
-        ]}
-        style={StyleSheet.absoluteFill}
+        colors={gradientBase}
+        style={styles.backgroundGradient}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
+        end={{ x: 1, y: 1 }}
+      />
+
+      {/* Shimmer Effect Layer */}
+      <LinearGradient
+        colors={['transparent', 'rgba(255,255,255,0.05)', 'transparent'] as const}
+        style={styles.shimmerEffect}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
       />
       
       <View style={styles.content}>
-        <View style={styles.headerRow}>
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>Time Distribution</Text>
-            <Text style={styles.subtitle}>
-              Activity patterns throughout the day
-            </Text>
+        {/* Enhanced Header */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <LinearGradient
+              colors={accentGradient}
+              style={styles.iconContainer}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <MaterialCommunityIcons 
+                name="clock-outline" 
+                size={22} 
+                color={COLORS.primary}
+              />
+            </LinearGradient>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>Time Distribution</Text>
+              <Text style={styles.subtitle}>
+                Activity patterns throughout the day
+              </Text>
+            </View>
           </View>
-          
+        </View>
+        
+        {/* Stats Container - Using same styled container but with custom content */}
+        <View style={styles.statsContainer}>
           <LinearGradient
-            colors={['rgba(0,230,118,0.2)', 'rgba(0,230,118,0.1)']}
-            style={styles.headerIconContainer}
+            colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)'] as const}
+            style={styles.statsGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <MaterialCommunityIcons 
-              name="clock-outline" 
-              size={24} 
+            <View style={styles.distributionContent}>
+              <TimeSlotComponent type="morning" value={timeData.morning} />
+              <TimeSlotComponent type="afternoon" value={timeData.afternoon} />
+              <TimeSlotComponent type="evening" value={timeData.evening} />
+              <TimeSlotComponent type="night" value={timeData.night} />
+            </View>
+          </LinearGradient>
+        </View>
+        
+        {/* Message Box */}
+        <View style={styles.messageContainer}>
+          <LinearGradient
+            colors={accentGradient}
+            style={styles.statusIcon}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <MaterialCommunityIcons
+              name="chart-timeline-variant"
+              size={24}
               color={COLORS.primary}
             />
           </LinearGradient>
-        </View>
 
-        <View style={styles.distributionContent}>
-          <TimeSlotComponent type="morning" value={timeData.morning} />
-          <TimeSlotComponent type="afternoon" value={timeData.afternoon} />
-          <TimeSlotComponent type="evening" value={timeData.evening} />
-          <TimeSlotComponent type="night" value={timeData.night} />
+          <Text style={styles.messageText}>
+            Your usage is primarily during the {
+              Object.entries(timeData)
+                .sort((a, b) => b[1] - a[1])[0][0]
+            } hours, making up {
+              Math.floor((Math.max(...Object.values(timeData)) / total) * 100)
+            }% of your total consumption
+          </Text>
         </View>
       </View>
     </Animated.View>
@@ -126,57 +173,72 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: Platform.select({
-      ios: 'rgba(26, 26, 26, 0.8)',
-      android: 'rgba(26, 26, 26, 0.95)',
-    }),
+    backgroundColor: COLORS.cardBackground,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 16,
     ...Platform.select({
       ios: {
         shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
+        shadowOpacity: 0.2,
         shadowRadius: 12,
       },
       android: {
-        elevation: 6,
+        elevation: 8,
       },
     }),
+  },
+  backgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
+  },
+  shimmerEffect: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.4,
   },
   content: {
     padding: 20,
   },
-  headerRow: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 24,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  titleContainer: {
-    flex: 1,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: 8,
-    letterSpacing: 0.35,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    letterSpacing: 0.25,
-  },
-  headerIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  titleContainer: {
+    marginLeft: 12,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: COLORS.text.secondary,
+  },
+  statsContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  statsGradient: {
+    padding: 16,
   },
   distributionContent: {
     gap: 16,
@@ -191,7 +253,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  iconContainer: {
+  timeSlotIconContainer: {
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -226,6 +288,30 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
+  messageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    padding: 12,
+    borderRadius: 12,
+  },
+  statusIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  messageText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    lineHeight: 20,
+  },
 });
 
-export default TimeDistributionCard; 
+export default TimeDistributionCard;
