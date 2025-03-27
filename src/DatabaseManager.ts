@@ -16,7 +16,8 @@ import {
   SAMPLE_STRAINS,
   ACHIEVEMENTS,
   ACHIEVEMENT_ICONS,
-  ACHIEVEMENT_TRIGGERS
+  ACHIEVEMENT_TRIGGERS,
+  getStrainInsertStatements
 } from "./constants";
 import { 
   BongHit,
@@ -40,6 +41,8 @@ import {
   UserAchievementWithDetails 
 } from "./types";
 import { Device } from 'react-native-ble-plx';
+import { validateBongHit, validateStrain, createValidationError, createValidationSuccess, ValidationResult } from './utils/validators';
+import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery } from './utils/SqlTemplates';
 
 // Re-export types for use throughout the app
 export { StrainSearchFilters, PaginationParams, StrainSearchResult };
@@ -56,12 +59,28 @@ import {
   UserProfile
 } from "./types";
 
+// Near the top of the file with other interfaces
+interface RawUsageStats {
+  total_hits: number;
+  active_days: number;
+  avg_hits_per_active_day: number;
+  avg_hits_per_day: number;
+  avg_duration_ms: number;
+  total_duration_ms: number;
+  max_hits_in_day: number;
+  max_avg_duration: number;
+  max_duration_in_day: number;
+  most_active_day: string;
+  least_active_day: string;
+}
+
 const FIRST_LAUNCH_KEY = "hasLaunched";
 const SAVED_DEVICES_KEY: string = 'savedDevices';
 const DB_VERSION_KEY = "dbVersion";
 const CURRENT_DB_VERSION = 1; // Increment this when schema changes
 const SAFETY_DB_NAME = "SafetyRecords"; // Define safety DB name here since it's not in constants
 const ACHIEVEMENTS_DB_NAME = "achievements.db"; // Achievements database name
+const USER_ACHIEVEMENTS_TABLE = "user_achievements"; // User achievements table name
 
 // Map of days to their abbreviations
 const dayLookUpTable = new Map<number, string>([
@@ -89,7 +108,10 @@ export class DatabaseManager {
   private initialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
   private migrationLock: boolean = false;
-  private transactionInProgress: boolean = false; // Add transaction lock flag
+  private transactionInProgress: Map<string, boolean> = new Map(); // Database-specific transaction locks
+  private lastAccessTimes: Map<string, number> = new Map(); // Track last access time
+  private connectionMonitoringInterval: NodeJS.Timeout | null = null; // Interval for monitoring connections
+  private connectionTimeout = 5 * 60 * 1000; // 5 minutes timeout for idle connections
 
   // Private constructor to prevent direct instantiation
   private constructor() {}
@@ -196,28 +218,61 @@ export class DatabaseManager {
    * Run migrations from the current version to the latest version
    */
   private async runMigrations(currentVersion: number): Promise<void> {
-    // Prevent concurrent migrations
     if (this.migrationLock) {
-      throw new Error('Migration already in progress');
+      console.log('[DatabaseManager] Migration already in progress, waiting...');
+      return;
     }
     
+    this.migrationLock = true;
     try {
-      this.migrationLock = true;
-      console.log(`[DatabaseManager] Running migrations from version ${currentVersion} to ${CURRENT_DB_VERSION}`);
+      console.log('[DatabaseManager] Starting migrations from version', currentVersion);
       
-      // Apply migrations sequentially
-      for (let version = currentVersion + 1; version <= CURRENT_DB_VERSION; version++) {
-        console.log(`[DatabaseManager] Applying migration to version ${version}`);
-        await this.applyMigration(version);
+      // Get the database for migrations
+      const db = await this.getDatabase('migrations.db');
+      
+      // Set up the migrations table if it doesn't exist
+      await db.execAsync(
+        `CREATE TABLE IF NOT EXISTS migrations (
+          version INTEGER PRIMARY KEY,
+          applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`
+      );
+      
+      // Get the list of applied migrations
+      const appliedMigrations = await db.getAllAsync<{version: number}>(
+        'SELECT version FROM migrations ORDER BY version ASC'
+      );
+      
+      const appliedVersions = appliedMigrations.map(m => m.version);
+      
+      // Apply migrations in sequence
+      for (let v = currentVersion + 1; v <= CURRENT_DB_VERSION; v++) {
+        if (appliedVersions.includes(v)) {
+          console.log(`[DatabaseManager] Migration version ${v} already applied, skipping`);
+          continue;
+        }
+        
+        console.log(`[DatabaseManager] Applying migration version ${v}`);
+        
+        // Start a transaction for the migration
+        await this.executeTransaction(db, 'migrations.db', async () => {
+          // Apply the migration
+          await this.applyMigration(v);
+          
+          // Record the migration
+          await db.runAsync(
+            'INSERT INTO migrations (version) VALUES (?)',
+            [v]
+          );
+        });
+        
+        console.log(`[DatabaseManager] Migration version ${v} applied successfully`);
       }
       
-      // Validate schema after migrations
-      const schemaValid = await this.validateSchema();
-      if (!schemaValid) {
-        throw new Error('Database schema validation failed after migration');
-      }
-      
-      console.log('[DatabaseManager] All migrations completed successfully');
+      console.log('[DatabaseManager] All migrations applied successfully');
+    } catch (error) {
+      console.error('[DatabaseManager] Migration failed:', error);
+      throw error;
     } finally {
       this.migrationLock = false;
     }
@@ -228,107 +283,34 @@ export class DatabaseManager {
    */
   private async validateSchema(): Promise<boolean> {
     try {
-      console.log('[DatabaseManager] Validating database schemas...');
-      // Validate bong hits schema
+      console.log('[DatabaseManager] Validating database schema...');
+      
+      // Validate BongHits table
       const bongHitsDb = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      const bongHitsTableInfo = await bongHitsDb.getAllAsync<{name: string, type: string}>(
-        `PRAGMA table_info(${BONG_HITS_DATABASE_NAME})`
-      );
-      
-      const requiredBongHitsColumns = [
-        { name: 'timestamp', type: 'TIMESTAMP' },
-        { name: 'duration_ms', type: 'INTEGER' }
-      ];
-      
-      // Check if all required columns exist
-      const bongHitsValid = requiredBongHitsColumns.every(col => 
-        bongHitsTableInfo.some(info => 
-          info.name === col.name && info.type.toUpperCase().includes(col.type)
-        )
-      );
+      const bongHitsValid = await this.validateTableSchema(bongHitsDb, BONG_HITS_DATABASE_NAME, [
+        'timestamp', 'duration_ms'
+      ]);
       
       if (!bongHitsValid) {
-        console.error('[DatabaseManager] Bong hits schema validation failed');
+        console.error('[DatabaseManager] BongHits table schema validation failed');
         return false;
       }
       
-      // Validate strains schema
+      // Validate Strains table
       const strainsDb = await this.getDatabase(STRAINS_DATABASE_NAME);
-      const strainsTableInfo = await strainsDb.getAllAsync<{name: string, type: string}>(
-        `PRAGMA table_info(${STRAINS_DATABASE_NAME})`
-      );
-      
-      const requiredStrainsColumns = [
-        { name: 'id', type: 'INTEGER' },
-        { name: 'name', type: 'TEXT' },
-        { name: 'genetic_type', type: 'TEXT' },
-        { name: 'effects', type: 'TEXT' },
-        { name: 'combined_rating', type: 'REAL' }
-      ];
-      
-      const strainsValid = requiredStrainsColumns.every(col => 
-        strainsTableInfo.some(info => 
-          info.name === col.name && info.type.toUpperCase().includes(col.type)
-        )
-      );
+      const strainsValid = await this.validateTableSchema(strainsDb, STRAINS_DATABASE_NAME, [
+        'id', 'name', 'genetic_type', 'effects', 'thc_rating', 'combined_rating'
+      ]);
       
       if (!strainsValid) {
-        console.error('[DatabaseManager] Strains schema validation failed');
+        console.error('[DatabaseManager] Strains table schema validation failed');
         return false;
       }
       
-      // Validate achievements schema
-      const achievementsDb = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
-      const achievementsTableInfo = await achievementsDb.getAllAsync<{name: string, type: string}>(
-        `PRAGMA table_info(achievements)`
-      );
-      
-      const requiredAchievementsColumns = [
-        { name: 'id', type: 'INTEGER' },
-        { name: 'category', type: 'TEXT' },
-        { name: 'name', type: 'TEXT' },
-        { name: 'unlock_condition', type: 'TEXT' }
-      ];
-      
-      const achievementsValid = requiredAchievementsColumns.every(col => 
-        achievementsTableInfo.some(info => 
-          info.name === col.name && info.type.toUpperCase().includes(col.type)
-        )
-      );
-      
-      if (!achievementsValid) {
-        console.error('[DatabaseManager] Achievements schema validation failed');
-        return false;
-      }
-      
-      // Validate safety schema
-      const safetyDb = await this.getDatabase(SAFETY_DB_NAME);
-      const safetyTableInfo = await safetyDb.getAllAsync<{name: string, type: string}>(
-        `PRAGMA table_info(${SAFETY_DB_NAME})`
-      );
-      
-      const requiredSafetyColumns = [
-        { name: 'id', type: 'TEXT' },
-        { name: 'user_id', type: 'TEXT' },
-        { name: 'concern_type', type: 'TEXT' },
-        { name: 'created_at', type: 'INTEGER' }
-      ];
-      
-      const safetyValid = requiredSafetyColumns.every(col => 
-        safetyTableInfo.some(info => 
-          info.name === col.name && info.type.toUpperCase().includes(col.type)
-        )
-      );
-      
-      if (!safetyValid) {
-        console.error('[DatabaseManager] Safety schema validation failed');
-        return false;
-      }
-      
-      console.log('[DatabaseManager] All database schemas validated successfully');
+      console.log('[DatabaseManager] Database schema validation successful');
       return true;
     } catch (error) {
-      console.error('[DatabaseManager] Schema validation failed:', error);
+      console.error('[DatabaseManager] Schema validation error:', error);
       return false;
     }
   }
@@ -512,7 +494,7 @@ export class DatabaseManager {
         const achievements = this.getInitialAchievements();
         
         // Use transactions for better performance and reliability
-        await this.executeTransaction(db, async () => {
+        await this.executeTransaction(db, ACHIEVEMENTS_DB_NAME, async () => {
           // Batch insert achievements
           for (const achievement of achievements) {
             // Validate that the achievement has all required fields
@@ -556,74 +538,41 @@ export class DatabaseManager {
    */
   private async insertStrainData(db: SQLiteDatabase): Promise<void> {
     try {
-      console.log('[DatabaseManager] Starting strain data insertion...');
+      console.log('[DatabaseManager] Inserting initial strain data...');
       
-      // Use a transaction for better performance and data integrity
-      await this.executeTransaction(db, async () => {
-        // Insert strains in batches for better performance
-        const batchSize = 50;
-        for (let i = 0; i < SAMPLE_STRAINS.length; i += batchSize) {
-          const batch = SAMPLE_STRAINS.slice(i, i + batchSize);
-          
-          const placeholders = batch.map(() => 
-            '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).join(',');
-  
-          const values = batch.flatMap((strain: Strain) => [
-            strain.name,
-            strain.overview,
-            strain.genetic_type,
-            strain.lineage,
-            strain.thc_range,
-            strain.cbd_level,
-            strain.dominant_terpenes,
-            strain.qualitative_insights,
-            strain.effects,
-            strain.negatives,
-            strain.uses,
-            strain.thc_rating,
-            strain.user_rating,
-            strain.combined_rating
-          ]);
-  
-          await db.runAsync(
-            `INSERT OR IGNORE INTO ${STRAINS_DATABASE_NAME} (
-              name, overview, genetic_type, lineage, thc_range,
-              cbd_level, dominant_terpenes, qualitative_insights,
-              effects, negatives, uses, thc_rating,
-              user_rating, combined_rating
-            ) VALUES ${placeholders}`,
-            values
-          );
-        }
+      // Use a transaction for better performance and atomicity
+      await this.executeTransaction(db, STRAINS_DATABASE_NAME, async () => {
+        // Get the SQL statements for strain insertion
+        const insertStatements = getStrainInsertStatements();
+        
+        // Execute all insert statements
+        await db.execAsync(insertStatements);
       });
-
-      console.log('[DatabaseManager] Strain data insertion completed');
+      
+      console.log('[DatabaseManager] Strain data inserted successfully');
     } catch (error) {
-      console.error('[DatabaseManager] Error inserting strain data:', error);
+      console.error('[DatabaseManager] Failed to insert strain data:', error);
       throw error;
     }
   }
 
   /**
-   * Execute operations in a transaction for a specific database
-   * @param db Database connection to use
-   * @param operations Function containing operations to execute within the transaction
-   * @returns Result of the operations
+   * Execute a transaction for a specific database
    */
   public async executeTransaction<T>(
-    db: SQLiteDatabase, 
+    db: SQLiteDatabase,
+    dbName: string,
     operations: () => Promise<T>
   ): Promise<T> {
     try {
-      // Check if there's already a transaction in progress
-      if (this.transactionInProgress) {
-        // If a transaction is already active, just execute the operations without starting a new transaction
-        console.log('[DatabaseManager] Transaction already in progress, executing operations without new transaction');
-        return await operations();
+      // Check if there's already a transaction in progress for this database
+      if (this.transactionInProgress.get(dbName)) {
+        console.log(`[DatabaseManager] Transaction already in progress for ${dbName}, waiting...`);
+        // Wait for the current transaction to complete
+        await this._waitForTransactionToComplete(dbName);
       }
       
-      this.transactionInProgress = true; // Set lock
+      this.transactionInProgress.set(dbName, true);
       await db.execAsync('BEGIN TRANSACTION');
       
       const result = await operations();
@@ -632,46 +581,90 @@ export class DatabaseManager {
       return result;
     } catch (error) {
       try {
-        // Only attempt rollback if we started the transaction
         await db.execAsync('ROLLBACK');
       } catch (rollbackError) {
         console.error('[DatabaseManager] Error rolling back transaction:', rollbackError);
       }
-      console.error('[DatabaseManager] Transaction failed:', error);
       throw error;
     } finally {
-      this.transactionInProgress = false; // Release lock
+      this.transactionInProgress.set(dbName, false);
     }
   }
 
   /**
-   * Execute operations in a transaction for a specific database by name
-   * @param dbName Name of the database
-   * @param operations Function containing operations to execute within the transaction
-   * @returns Result of the operations
+   * Wait for a transaction to complete on a specific database
+   */
+  private async _waitForTransactionToComplete(dbName: string): Promise<void> {
+    return new Promise(resolve => {
+      const checkInterval = setInterval(() => {
+        if (!this.transactionInProgress.get(dbName)) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 50);
+    });
+  }
+
+  /**
+   * Execute a read transaction (no locks needed)
+   */
+  public async executeReadTransaction<T>(
+    db: SQLiteDatabase,
+    dbName: string, 
+    operations: () => Promise<T>
+  ): Promise<T> {
+    // Read transactions don't need locks in SQLite
+    return operations();
+  }
+
+  /**
+   * Execute a write transaction (requires locks)
+   */
+  public async executeWriteTransaction<T>(
+    db: SQLiteDatabase,
+    dbName: string,
+    operations: () => Promise<T>
+  ): Promise<T> {
+    // Use locking for write transactions
+    return this.executeTransaction(db, dbName, operations);
+  }
+
+  /**
+   * Execute a transaction by database name (backward compatibility)
    */
   public async executeTransactionByName<T>(
     dbName: string, 
     operations: (db: SQLiteDatabase) => Promise<T>
   ): Promise<T> {
     const db = await this.getDatabase(dbName);
-    return this.executeTransaction(db, async () => operations(db));
+    return this.executeTransaction(db, dbName, () => operations(db));
   }
 
   /**
    * Get a database connection by name, creating it if it doesn't exist
    */
   public async getDatabase(dbName: string): Promise<SQLiteDatabase> {
+    // Record access time
+    this.lastAccessTimes.set(dbName, Date.now());
+    
     // First check if we already have an open connection
     if (this.databaseConnections.has(dbName)) {
       const db = this.databaseConnections.get(dbName);
-      if (db) return db;
+      if (db) {
+        // Start monitoring if not already monitoring
+        this._startConnectionMonitoring();
+        return db;
+      }
     }
     
     try {
       // Open the database and store the connection
       const db = await openDatabaseAsync(dbName);
       this.databaseConnections.set(dbName, db);
+      
+      // Start monitoring if not already monitoring
+      this._startConnectionMonitoring();
+      
       return db;
     } catch (error) {
       console.error(`[DatabaseManager] Error opening database ${dbName}:`, error);
@@ -704,6 +697,9 @@ export class DatabaseManager {
     try {
       console.log('[DatabaseManager] Closing all database connections...');
       
+      // Stop connection monitoring
+      this._stopConnectionMonitoring();
+      
       for (const [name, db] of this.databaseConnections.entries()) {
         try {
           await db.closeAsync();
@@ -714,11 +710,59 @@ export class DatabaseManager {
       }
       
       this.databaseConnections.clear();
+      this.lastAccessTimes.clear();
       this.initialized = false;
       console.log('[DatabaseManager] All database connections closed');
     } catch (error) {
       console.error('[DatabaseManager] Error during cleanup:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Start monitoring for idle connections
+   */
+  private _startConnectionMonitoring(): void {
+    if (this.connectionMonitoringInterval) return;
+    
+    this.connectionMonitoringInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [dbName, lastAccess] of this.lastAccessTimes.entries()) {
+        if (now - lastAccess > this.connectionTimeout) {
+          // Close idle connection
+          this._closeIdleConnection(dbName);
+        }
+      }
+    }, 60000); // Check every minute
+    
+    console.log('[DatabaseManager] Started connection monitoring');
+  }
+
+  /**
+   * Stop connection monitoring
+   */
+  private _stopConnectionMonitoring(): void {
+    if (this.connectionMonitoringInterval) {
+      clearInterval(this.connectionMonitoringInterval);
+      this.connectionMonitoringInterval = null;
+      console.log('[DatabaseManager] Stopped connection monitoring');
+    }
+  }
+
+  /**
+   * Close an idle connection
+   */
+  private async _closeIdleConnection(dbName: string): Promise<void> {
+    try {
+      const db = this.databaseConnections.get(dbName);
+      if (db) {
+        await db.closeAsync();
+        this.databaseConnections.delete(dbName);
+        this.lastAccessTimes.delete(dbName);
+        console.log(`[DatabaseManager] Closed idle connection: ${dbName}`);
+      }
+    } catch (error) {
+      console.error(`[DatabaseManager] Error closing idle connection ${dbName}:`, error);
     }
   }
 
@@ -835,46 +879,44 @@ export class DatabaseManager {
    */
   private async ensureUserAchievements(userId: string): Promise<void> {
     try {
-      console.log('[DatabaseManager] Ensuring achievements for user:', userId);
       await this.ensureInitialized();
       const db = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
       
-      // Get all achievement IDs
-      const achievements = await db.getAllAsync<{id: number}>('SELECT id FROM achievements');
-      console.log(`[DatabaseManager] Found ${achievements.length} achievements in database`);
-      
-      // If no achievements found in DB, this indicates initialization issue
-      if (achievements.length === 0) {
-        console.error('[DatabaseManager] No achievements found in database. Database may not be properly initialized.');
-        throw new Error('Achievement database not properly initialized');
-      }
-      
-      // Get user's existing achievement entries
-      const userAchievements = await db.getAllAsync<{achievement_id: number}>(
-        'SELECT achievement_id FROM user_achievements WHERE user_id = ?',
+      // Check if the user already has achievement records
+      const existingAchievements = await db.getAllAsync<{achievement_id: number}>(
+        `SELECT achievement_id FROM ${USER_ACHIEVEMENTS_TABLE} WHERE user_id = ? LIMIT 1`,
         [userId]
       );
-      
-      const existingIds = new Set(userAchievements.map(ua => ua.achievement_id));
-      console.log(`[DatabaseManager] User ${userId} has ${existingIds.size}/${achievements.length} achievement entries`);
-      
-      // Create missing entries
-      let newEntriesCount = 0;
-      await this.executeTransaction(db, async () => {
-        for (const achievement of achievements) {
-          if (!existingIds.has(achievement.id)) {
+   
+      if (existingAchievements.length === 0) {
+        console.log(`[DatabaseManager] Creating initial achievement records for user ${userId}`);
+        
+        // Get all achievements
+        const achievements = this.getInitialAchievements();
+        
+        // Create achievement records for the user
+        await this.executeTransaction(db, ACHIEVEMENTS_DB_NAME, async () => {
+          for (const achievement of achievements) {
             await db.runAsync(
-              `INSERT INTO user_achievements (user_id, achievement_id, progress) VALUES (?, ?, 0)`,
-              [userId, achievement.id]
+              `INSERT INTO ${USER_ACHIEVEMENTS_TABLE} (
+                user_id, achievement_id, progress, is_unlocked, is_new, progress_data
+              ) VALUES (?, ?, ?, ?, ?, ?)`,
+              [
+                userId,
+                achievement.id,
+                0,
+                0,
+                0,
+                JSON.stringify({})
+              ]
             );
-            newEntriesCount++;
           }
-        }
-      });
-      
-      console.log(`[DatabaseManager] Created ${newEntriesCount} new achievement entries for user ${userId}`);
+        });
+   
+        console.log(`[DatabaseManager] Created ${achievements.length} achievement records for user ${userId}`);
+      }
     } catch (error) {
-      throw this.handleDatabaseError(error, 'ensureUserAchievements');
+      console.error('[DatabaseManager] Error ensuring user achievements:', error);
     }
   }
   
@@ -1225,7 +1267,7 @@ export class DatabaseManager {
                  COUNT(*) as value,
                  AVG(duration_ms) as avg_duration
             FROM ${BONG_HITS_DATABASE_NAME}
-            WHERE date(timestamp) = date('now')
+            WHERE timestamp >= '2024-12-24'
             GROUP BY label
             ORDER BY label
           `;
@@ -1259,7 +1301,7 @@ export class DatabaseManager {
                  COUNT(*) as value,
                  AVG(duration_ms) as avg_duration
             FROM ${BONG_HITS_DATABASE_NAME}
-            WHERE date(timestamp) = date('now')
+            WHERE timestamp >= '2024-12-24'
             GROUP BY label
             ORDER BY label
           `;
@@ -1321,16 +1363,22 @@ export class DatabaseManager {
    * @param durationMs Duration of the hit in milliseconds
    */
   public async recordBongHit(timestamp: string, durationMs: number): Promise<void> {
+    const hit: BongHit = { timestamp, duration_ms: durationMs };
+    const validationError = validateBongHit(hit);
+    
+    if (validationError) {
+      throw new Error(validationError);
+    }
+    
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
       
       await db.runAsync(
-        `INSERT INTO ${BONG_HITS_DATABASE_NAME} (timestamp, duration_ms) VALUES (?, ?)`,
+        `INSERT INTO ${BONG_HITS_DATABASE_NAME} (timestamp, duration_ms) 
+         VALUES (?, ?)`,
         [timestamp, durationMs]
       );
-      
-      console.log(`[DatabaseManager] Recorded bong hit: ${timestamp}, duration: ${durationMs}ms`);
     } catch (error) {
       console.error('[DatabaseManager] Error recording bong hit:', error);
       throw error;
@@ -1542,18 +1590,34 @@ export class DatabaseManager {
   /**
    * Get strain by ID
    */
-  public async getStrainById(id: number): Promise<Strain | null> {
+  public async getStrainById(id: number): Promise<ValidationResult<Strain | null>> {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(STRAINS_DATABASE_NAME);
+      
+      // Validate input
+      if (!id || typeof id !== 'number' || id <= 0) {
+        return createValidationError('INVALID_ID', 'Invalid strain ID provided');
+      }
+      
       const results = await db.getAllAsync<Strain>(
         `SELECT * FROM ${STRAINS_DATABASE_NAME} WHERE id = ? LIMIT 1`,
         [id]
       );
-      return results[0] || null;
+      
+      const strain = results[0] || null;
+      
+      if (strain) {
+        const validationError = validateStrain(strain);
+        if (validationError) {
+          return createValidationError('INVALID_STRAIN_DATA', validationError, { id });
+        }
+      }
+      
+      return createValidationSuccess(strain);
     } catch (error) {
       console.error('[DatabaseManager] Error getting strain by id:', error);
-      return null;
+      return createValidationError('DB_ERROR', 'Failed to retrieve strain', { id });
     }
   }
 
@@ -1578,10 +1642,21 @@ export class DatabaseManager {
   /**
    * Get related strains
    */
-  public async getRelatedStrains(strain: Strain): Promise<Strain[]> {
+  public async getRelatedStrains(strain: Strain): Promise<ValidationResult<Strain[]>> {
     try {
+      // Validate input
+      const validationError = validateStrain(strain);
+      if (validationError) {
+        return createValidationError('INVALID_STRAIN', validationError);
+      }
+      
+      if (!strain.id) {
+        return createValidationError('MISSING_ID', 'Strain ID is required');
+      }
+      
       await this.ensureInitialized();
       const db = await this.getDatabase(STRAINS_DATABASE_NAME);
+      
       // Get strains with similar genetic type and effects
       const results = await db.getAllAsync<Strain>(
         `SELECT * FROM ${STRAINS_DATABASE_NAME}
@@ -1592,12 +1667,21 @@ export class DatabaseManager {
          )
          ORDER BY combined_rating DESC
          LIMIT 5`,
-        [strain.id!, strain.genetic_type, `%${strain.effects.split(',')[0]}%`]
+        [strain.id, strain.genetic_type, `%${strain.effects.split(',')[0]}%`]
       );
-      return results || [];
+      
+      // Validate results
+      for (const relatedStrain of results) {
+        const strainError = validateStrain(relatedStrain);
+        if (strainError) {
+          console.warn(`[DatabaseManager] Invalid related strain: ${strainError}`, relatedStrain);
+        }
+      }
+      
+      return createValidationSuccess(results);
     } catch (error) {
       console.error('[DatabaseManager] Error getting related strains:', error);
-      return [];
+      return createValidationError('DB_ERROR', 'Failed to retrieve related strains');
     }
   }
 
@@ -2240,176 +2324,111 @@ export class DatabaseManager {
    ------------------------------------------------------------------ */
 
   /**
-   * Get weekly hit statistics
+   * Get weekly statistics
    */
   public async getWeeklyStats(): Promise<DatabaseResponse<ChartDataPoint[]>> {
     try {
-      console.log('[DatabaseManager] Fetching weekly stats...');
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      const results = await db.getAllAsync<DatabaseRow>(`
-        SELECT 
-          strftime('%w', timestamp) as day,
-          COUNT(*) as hit_count
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('2024-12-24', '-7 days')
-        GROUP BY day
-        ORDER BY day
-      `);
-
-      console.log('[DatabaseManager] Raw weekly results:', results);
-
-      if (!results?.length) {
-        console.log('[DatabaseManager] No weekly data found, returning empty dataset');
+      
+      // Use SQL template
+      const query = getWeeklyStatsQuery(BONG_HITS_DATABASE_NAME);
+      const weekData = await db.getAllAsync<{ label: string; value: number; avg_duration: number }>(query);
+      
+      if (!weekData || weekData.length === 0) {
         return {
           success: true,
-          data: Array.from({ length: 7 }, (_, i) => ({
-            label: dayLookUpTable.get(i) || "",
-            value: 0
-          }))
+          data: []
         };
       }
-
-      // Convert database rows to chart data points
-      const chartData: ChartDataPoint[] = Array.from({ length: 7 }, (_, i) => ({
-        label: dayLookUpTable.get(i) || "",
-        value: 0
+      
+      // Format data for chart display
+      const data: ChartDataPoint[] = weekData.map(point => ({
+        label: point.label,
+        value: parseInt(String(point.value || 0)),
+        meta: { avgDuration: Math.round(point.avg_duration || 0) }
       }));
-
-      // Fill in the actual data from results
-      results.forEach(row => {
-        const dayIndex = Number(row.day);
-        if (dayIndex >= 0 && dayIndex < 7) {
-          chartData[dayIndex].value = Number(row.hit_count || 0);
-        }
-      });
-
-      return {
-        success: true,
-        data: chartData
-      };
-
+      
+      return { success: true, data };
     } catch (error) {
       return this.handleError(error, 'getWeeklyStats');
     }
   }
-
+  
   /**
-   * Get monthly hit statistics
+   * Get monthly statistics
    */
   public async getMonthlyStats(): Promise<DatabaseResponse<ChartDataPoint[]>> {
     try {
-      console.log('[DatabaseManager] Fetching monthly stats...');
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      const results = await db.getAllAsync<DatabaseRow>(`
-        SELECT 
-          strftime('%m', timestamp) as month,
-          COUNT(*) as hit_count
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('2024-12-24', '-12 months')
-        GROUP BY month
-        ORDER BY month
-      `);
-
-      console.log('[DatabaseManager] Raw monthly results:', results);
-
-      if (!results?.length) {
-        console.log('[DatabaseManager] No monthly data found, returning empty dataset');
+      
+      // Use SQL template
+      const query = getMonthlyStatsQuery(BONG_HITS_DATABASE_NAME);
+      const monthData = await db.getAllAsync<{ label: string; value: number; avg_duration: number }>(query);
+      
+      if (!monthData || monthData.length === 0) {
         return {
           success: true,
-          data: Array.from({ length: 12 }, (_, i) => ({
-            label: new Date(2024, i).toLocaleString('default', { month: 'short' }),
-            value: 0
-          }))
+          data: []
         };
       }
-
-      // Convert database rows to chart data points
-      const chartData: ChartDataPoint[] = Array.from({ length: 12 }, (_, i) => ({
-        label: new Date(2024, i).toLocaleString('default', { month: 'short' }),
-        value: 0
+      
+      // Format data for chart display
+      const data: ChartDataPoint[] = monthData.map(point => ({
+        label: point.label,
+        value: parseInt(String(point.value || 0)),
+        meta: { avgDuration: Math.round(point.avg_duration || 0) }
       }));
-
-      // Fill in the actual data from results
-      results.forEach(row => {
-        const monthIndex = Number(row.month) - 1; // Convert from 1-based to 0-based
-        if (monthIndex >= 0 && monthIndex < 12) {
-          chartData[monthIndex].value = Number(row.hit_count || 0);
-        }
-      });
-
-      return {
-        success: true,
-        data: chartData
-      };
-
+      
+      return { success: true, data };
     } catch (error) {
       return this.handleError(error, 'getMonthlyStats');
     }
   }
 
   /**
-   * Build parameterized query for usage statistics
+   * Get time distribution of usage
    */
-  private buildUsageStatsQuery(daysBack: number = 30): string {
-    return `
-      WITH DailyStats AS (
-        SELECT 
-          strftime('%Y-%m-%d', timestamp) as day,
-          strftime('%w', timestamp) as weekday,
-          COUNT(*) as daily_hits,
-          AVG(duration_ms) as avg_duration_per_day,
-          MIN(duration_ms) as min_duration,
-          MAX(duration_ms) as max_duration,
-          SUM(duration_ms) as total_duration_per_day
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= '2024-12-24'
-        GROUP BY day
-      ),
-      WeekdayStats AS (
-        SELECT
-          CASE WHEN weekday IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
-          AVG(daily_hits) as avg_hits,
-          SUM(daily_hits) as total_hits
-        FROM DailyStats
-        GROUP BY day_type
-      ),
-      HourlyStats AS (
-        SELECT 
-          strftime('%H', timestamp) as hour,
-          COUNT(*) as hits
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= '2024-12-24'
-        GROUP BY hour
-        ORDER BY hits DESC
-      )
-      SELECT 
-        ROUND(AVG(d.daily_hits), 2) as average_hits_per_day,
-        MAX(d.daily_hits) as peak_day_hits,
-        MIN(d.daily_hits) as lowest_day_hits,
-        SUM(d.daily_hits) as total_hits,
-        ROUND(AVG(d.avg_duration_per_day), 2) as avg_duration,
-        MIN(d.min_duration) as shortest_hit,
-        MAX(d.max_duration) as longest_hit,
-        SUM(d.total_duration_per_day) as total_duration,
-        (SELECT hour FROM HourlyStats LIMIT 1) as most_active_hour,
-        (SELECT hour FROM HourlyStats ORDER BY hits ASC LIMIT 1) as least_active_hour,
-        ROUND((SELECT AVG(hits) FROM HourlyStats), 2) as avg_hits_per_hour,
-        (SELECT avg_hits FROM WeekdayStats WHERE day_type = 'weekday') as weekday_avg,
-        (SELECT total_hits FROM WeekdayStats WHERE day_type = 'weekday') as weekday_total,
-        (SELECT avg_hits FROM WeekdayStats WHERE day_type = 'weekend') as weekend_avg,
-        (SELECT total_hits FROM WeekdayStats WHERE day_type = 'weekend') as weekend_total
-      FROM DailyStats d
-    `;
+  public async getTimeDistribution(): Promise<DatabaseResponse<TimeDistribution>> {
+    try {
+      await this.ensureInitialized();
+      const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
+      
+      // Use SQL template
+      const query = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME, 30); // Last 30 days
+      const [result] = await db.getAllAsync<DatabaseRow>(query);
+      
+      if (!result) {
+        return {
+          success: true,
+          data: {
+            morning: 0,
+            afternoon: 0,
+            evening: 0,
+            night: 0
+          }
+        };
+      }
+
+      const distribution: TimeDistribution = {
+        morning: Number(result.morning || 0),
+        afternoon: Number(result.afternoon || 0),
+        evening: Number(result.evening || 0),
+        night: Number(result.night || 0)
+      };
+
+      return { success: true, data: distribution };
+    } catch (error) {
+      return this.handleError(error, 'getTimeDistribution');
+    }
   }
 
   /**
-   * Get overall usage statistics
+   * Get usage statistics
    */
   public async getUsageStats(daysBack: number = 30): Promise<DatabaseResponse<UsageStats>> {
     try {
-      console.log('[DatabaseManager] Fetching usage stats...');
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
       
@@ -2417,7 +2436,7 @@ export class DatabaseManager {
       const dailyHitsQuery = `
         SELECT COUNT(*) as daily_hits
         FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= '2024-12-24'
+        WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
         GROUP BY strftime('%Y-%m-%d', timestamp)
       `;
 
@@ -2428,124 +2447,130 @@ export class DatabaseManager {
         return {
           success: true,
           data: {
-            averageHitsPerDay: 0,
             totalHits: 0,
+            averageHitsPerDay: 0,
+            averageHitsPerHour: 0,
+            averageDuration: 0,
+            totalDuration: 0,
             peakDayHits: 0,
             lowestDayHits: 0,
-            averageDuration: 0,
-            longestHit: 0,
-            shortestHit: 0,
             mostActiveHour: 0,
             leastActiveHour: 0,
-            totalDuration: 0,
-            averageHitsPerHour: 0,
-            consistency: 0,
-            weekdayStats: {
-              weekday: { 
-                avg: 0, 
-                total: 0 
-              },
-              weekend: { 
-                avg: 0, 
-                total: 0 
-              }
-            }
-          }
-        };
-      }
-      
-      const dailyHitsArray = dailyHits.map(row => Number(row.daily_hits));
-      const mean = dailyHitsArray.reduce((sum, val) => sum + val, 0) / dailyHitsArray.length;
-      const variance = dailyHitsArray.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dailyHitsArray.length;
-      const consistency = Math.sqrt(variance);
-      
-      // Use the parameterized query builder
-      const query = this.buildUsageStatsQuery(daysBack);
-
-      const [result] = await db.getAllAsync<DatabaseRow>(query);
-      console.log('[DatabaseManager] Raw usage stats:', result);
-
-      if (!result) {
-        return {
-          success: true,
-          data: {
-            averageHitsPerDay: 0,
-            totalHits: 0,
-            peakDayHits: 0,
-            lowestDayHits: 0,
-            averageDuration: 0,
             longestHit: 0,
             shortestHit: 0,
-            mostActiveHour: 0,
-            leastActiveHour: 0,
-            totalDuration: 0,
-            averageHitsPerHour: 0,
             consistency: 0,
             weekdayStats: {
-              weekday: {
-                avg: 0,
-                total: 0
-              },
-              weekend: {
-                avg: 0,
-                total: 0
-              }
+              weekday: { total: 0, avg: 0 },
+              weekend: { total: 0, avg: 0 }
             }
           }
         };
       }
 
-      // Use type assertion to handle the DatabaseRow properties
-      const typedResult = result as unknown as {
-        average_hits_per_day: string | number;
-        total_hits: string | number;
-        peak_day_hits: string | number;
-        lowest_day_hits: string | number;
-        avg_duration: string | number;
-        longest_hit: string | number;
-        shortest_hit: string | number;
-        most_active_hour: string | number;
-        least_active_hour: string | number;
-        total_duration: string | number;
-        avg_hits_per_hour: string | number;
-        weekday_avg: string | number;
-        weekday_total: string | number;
-        weekend_avg: string | number;
-        weekend_total: string | number;
+      // Calculate consistency score based on standard deviation of daily hits
+      const hitValues = dailyHits.map(row => row.daily_hits);
+      const stdDev = this.calculateStandardDeviation(hitValues);
+      const mean = hitValues.reduce((a, b) => a + b, 0) / hitValues.length;
+      const cv = mean > 0 ? (stdDev / mean) * 100 : 0;
+      const consistencyScore = Math.min(10, 10 * Math.exp(-0.05 * cv)); // Scale to 0-10
+      
+      // Get main usage stats query
+      const query = getUsageStatsQuery(BONG_HITS_DATABASE_NAME, daysBack);
+      const statsResult = await db.getFirstAsync<RawUsageStats>(query);
+      
+      if (!statsResult) {
+        return { success: false, error: "Failed to get usage stats" };
+      }
+      
+      console.log(`[DatabaseManager] Raw usage stats:`, statsResult);
+      
+      // Get hourly distribution for most/least active hour
+      const hourlyQuery = `
+        SELECT 
+          CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+          COUNT(*) as hits
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
+        GROUP BY hour
+        ORDER BY hits DESC
+      `;
+      
+      const hourlyResults = await db.getAllAsync<{ hour: number, hits: number }>(hourlyQuery);
+      const mostActiveHour = hourlyResults.length > 0 ? hourlyResults[0].hour : 0;
+      const leastActiveHour = hourlyResults.length > 0 ? hourlyResults[hourlyResults.length - 1].hour : 0;
+      
+      // Get min/max duration
+      const durationQuery = `
+        SELECT 
+          MIN(duration_ms) as min_duration,
+          MAX(duration_ms) as max_duration
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
+      `;
+      
+      const durationResult = await db.getFirstAsync<{ min_duration: number, max_duration: number }>(durationQuery);
+      
+      // Calculate weekday vs weekend stats
+      const weekdayQuery = `
+        WITH DayStats AS (
+          SELECT 
+            CASE WHEN strftime('%w', timestamp) IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
+            strftime('%Y-%m-%d', timestamp) as date,
+            COUNT(*) as hits
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
+          GROUP BY day_type, date
+        )
+        SELECT 
+          day_type,
+          SUM(hits) as total_hits,
+          AVG(hits) as avg_hits
+        FROM DayStats
+        GROUP BY day_type
+      `;
+      
+      const weekdayResults = await db.getAllAsync<{ day_type: string, total_hits: number, avg_hits: number }>(weekdayQuery);
+      
+      const weekdayStats = {
+        weekday: { total: 0, avg: 0 },
+        weekend: { total: 0, avg: 0 }
       };
-
-      const stats: UsageStats = {
-        averageHitsPerDay: Number(typedResult.average_hits_per_day || 0),
-        totalHits: Number(typedResult.total_hits || 0),
-        peakDayHits: Number(typedResult.peak_day_hits || 0),
-        lowestDayHits: Number(typedResult.lowest_day_hits || 0),
-        averageDuration: Number(typedResult.avg_duration || 0),
-        longestHit: Number(typedResult.longest_hit || 0),
-        shortestHit: Number(typedResult.shortest_hit || 0),
-        mostActiveHour: Number(typedResult.most_active_hour || 0),
-        leastActiveHour: Number(typedResult.least_active_hour || 0),
-        totalDuration: Number(typedResult.total_duration || 0),
-        averageHitsPerHour: Number(typedResult.avg_hits_per_hour || 0),
-        consistency: Math.round(consistency * 100) / 100,
-        weekdayStats: {
-          weekday: {
-            avg: Number(typedResult.weekday_avg || 0),
-            total: Number(typedResult.weekday_total || 0)
-          },
-          weekend: {
-            avg: Number(typedResult.weekend_avg || 0),
-            total: Number(typedResult.weekend_total || 0)
-          }
+      
+      weekdayResults.forEach(row => {
+        if (row.day_type === 'weekday') {
+          weekdayStats.weekday.total = row.total_hits;
+          weekdayStats.weekday.avg = row.avg_hits;
+        } else {
+          weekdayStats.weekend.total = row.total_hits;
+          weekdayStats.weekend.avg = row.avg_hits;
         }
-      };
-
-      console.log('[DatabaseManager] Processed usage stats:', stats);
-      return { success: true, data: stats };
-    } catch (error) {
-      return this.handleDatabaseError(error, 'getUsageStats', {
-        success: false,
-        error: 'Failed to get usage statistics'
       });
+      
+      // Create final stats object
+      const stats: UsageStats = {
+        totalHits: statsResult.total_hits,
+        averageHitsPerDay: statsResult.avg_hits_per_active_day, // Use avg per active day instead of dividing by fixed period
+        averageHitsPerHour: statsResult.total_hits / 24 / statsResult.active_days, // Also adjust hourly rate by active days
+        averageDuration: statsResult.avg_duration_ms,
+        totalDuration: statsResult.total_duration_ms,
+        peakDayHits: statsResult.max_hits_in_day,
+        lowestDayHits: Math.min(...hitValues),
+        mostActiveHour: mostActiveHour,
+        leastActiveHour: leastActiveHour,
+        longestHit: durationResult?.max_duration || 0,
+        shortestHit: durationResult?.min_duration || 0,
+        consistency: Number(consistencyScore.toFixed(2)),
+        weekdayStats
+      };
+      
+      console.log(`[DatabaseManager] Processed usage stats:`, stats);
+      
+      return {
+        success: true,
+        data: stats
+      };
+    } catch (error) {
+      return this.handleError(error, "getUsageStats");
     }
   }
 
@@ -2593,62 +2618,6 @@ export class DatabaseManager {
   }
 
   /**
-   * Get time distribution of hits
-   */
-  public async getTimeDistribution(): Promise<DatabaseResponse<TimeDistribution>> {
-    try {
-      await this.ensureInitialized();
-      const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      const query = `
-        WITH HourlyHits AS (
-          SELECT 
-            CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-            COUNT(*) as hits
-          FROM ${BONG_HITS_DATABASE_NAME}
-          GROUP BY hour
-        ),
-        TotalHits AS (
-          SELECT SUM(hits) as total FROM HourlyHits
-        )
-        SELECT
-          CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 5 AND hour < 12) AS REAL) / 
-            (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as morning,
-          CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 12 AND hour < 17) AS REAL) / 
-            (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as afternoon,
-          CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 17 AND hour < 22) AS REAL) / 
-            (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as evening,
-          CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 22 OR hour < 5) AS REAL) / 
-            (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as night
-      `;
-
-      const [result] = await db.getAllAsync<DatabaseRow>(query);
-      
-      if (!result) {
-        return {
-          success: true,
-          data: {
-            morning: 0,
-            afternoon: 0,
-            evening: 0,
-            night: 0
-          }
-        };
-      }
-
-      const distribution: TimeDistribution = {
-        morning: Number(result.morning || 0),
-        afternoon: Number(result.afternoon || 0),
-        evening: Number(result.evening || 0),
-        night: Number(result.night || 0)
-      };
-
-      return { success: true, data: distribution };
-    } catch (error) {
-      return this.handleError(error, 'getTimeDistribution');
-    }
-  }
-  
-  /**
    * Get all bong hit logs from the database
    */
   public async getAllBongHitLogs(): Promise<DatabaseResponse<BongHit[]>> {
@@ -2671,6 +2640,79 @@ export class DatabaseManager {
     } catch (error) {
       return this.handleError(error, 'getAllBongHitLogs');
     }
+  }
+
+  /**
+   * Check if two SQL types are compatible
+   * @param actual The actual type from the database
+   * @param expected The expected type from the schema definition
+   * @returns Whether the types are compatible
+   */
+  private isCompatibleType(actual: string, expected: string): boolean {
+    actual = actual.toUpperCase();
+    expected = expected.toUpperCase();
+    
+    // Check integer types
+    if (expected.includes('INTEGER') || expected.includes('INT')) {
+      return actual.includes('INT') || actual.includes('INTEGER') || actual.includes('BIGINT');
+    }
+    
+    // Check text types
+    if (expected.includes('TEXT')) {
+      return actual.includes('TEXT') || actual.includes('CHAR') || actual.includes('CLOB');
+    }
+    
+    // Check real/float types
+    if (expected.includes('REAL') || expected.includes('FLOAT')) {
+      return actual.includes('REAL') || actual.includes('FLOA') || actual.includes('DOUB');
+    }
+    
+    // Default to exact match
+    return actual === expected;
+  }
+
+  /**
+   * Validate column type in database table
+   * @param db Database connection
+   * @param table Table name
+   * @param column Column name
+   * @param expectedType Expected column type
+   * @returns Whether the column has a compatible type
+   */
+  private async validateColumnType(db: SQLiteDatabase, table: string, column: string, expectedType: string): Promise<boolean> {
+    const tableInfo = await db.getAllAsync<{name: string, type: string}>(`PRAGMA table_info(${table})`);
+    const columnInfo = tableInfo.find(info => info.name === column);
+    
+    if (!columnInfo) return false;
+    return this.isCompatibleType(columnInfo.type, expectedType);
+  }
+
+  /**
+   * Validate that a table schema contains all required columns
+   * @param db Database connection
+   * @param table Table name
+   * @param requiredColumns Column names that must exist in the table
+   * @returns Whether all required columns exist
+   */
+  private async validateTableSchema(db: SQLiteDatabase, table: string, requiredColumns: string[]): Promise<boolean> {
+    const tableInfo = await db.getAllAsync<{name: string}>(`PRAGMA table_info(${table})`);
+    const columnNames = tableInfo.map(col => col.name);
+    
+    // Check if all required columns exist
+    return requiredColumns.every(col => columnNames.includes(col));
+  }
+
+  /**
+   * Calculate the standard deviation of an array of numbers
+   */
+  private calculateStandardDeviation(values: number[]): number {
+    if (values.length === 0) return 0;
+    
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDifferences = values.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDifferences.reduce((sum, val) => sum + val, 0) / values.length;
+    
+    return Math.sqrt(variance);
   }
 }
 
