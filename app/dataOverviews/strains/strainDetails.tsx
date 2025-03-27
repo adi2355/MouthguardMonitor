@@ -8,13 +8,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Platform,
-  StatusBar
+  StatusBar,
+  Alert
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { useStrains } from '../../../src/hooks/useStrains';
+import { useStrainsRepository } from '@/src/providers/AppProvider';
 import { Strain } from "@/src/types";
 import { COLORS } from '../../../src/constants';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
@@ -106,13 +107,13 @@ const RatingBadge = ({ rating }: { rating: number }) => (
 );
 
 export default function StrainDetails() {
-  const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { getStrainDetails, getRelatedStrains, isLoading } = useStrains();
+  const params = useLocalSearchParams();
+  const strainsRepository = useStrainsRepository();
   
+  const [loading, setLoading] = useState(true);
   const [strain, setStrain] = useState<Strain | null>(null);
   const [relatedStrains, setRelatedStrains] = useState<Strain[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Hide the default stack navigator
   useEffect(() => {
@@ -124,50 +125,51 @@ export default function StrainDetails() {
   }, []);
 
   useEffect(() => {
-    const loadStrainData = async () => {
+    const strainId = Number(params.id);
+    if (!strainId) {
+      Alert.alert('Error', 'Invalid strain ID provided');
+      router.back();
+      return;
+    }
+    
+    loadStrainDetails(strainId);
+  }, [params.id]);
+  
+  const loadStrainDetails = async (strainId: number) => {
+    try {
       setLoading(true);
-      if (id) {
-        try {
-          const strainData = await getStrainDetails(Number(id));
-          if (strainData) {
-            setStrain(strainData);
-            // Get truly similar strains by genetic type and effects
-            const similar = await getRelatedStrains(strainData);
-            
-            // Filter to ensure we're getting truly similar strains
-            // Sort by genetic similarity and effect similarity
-            const sortedSimilar = similar.sort((a, b) => {
-              // Check if genetic type matches
-              const aTypeMatch = a.genetic_type === strainData.genetic_type ? 2 : 0;
-              const bTypeMatch = b.genetic_type === strainData.genetic_type ? 2 : 0;
-              
-              // Check effect overlap
-              const aEffects = a.effects.split(',').map(e => e.trim().toLowerCase());
-              const bEffects = b.effects.split(',').map(e => e.trim().toLowerCase());
-              const strainEffects = strainData.effects.split(',').map(e => e.trim().toLowerCase());
-              
-              const aEffectMatches = aEffects.filter(e => strainEffects.includes(e)).length;
-              const bEffectMatches = bEffects.filter(e => strainEffects.includes(e)).length;
-              
-              // Calculate similarity score (higher is more similar)
-              const aScore = aTypeMatch + aEffectMatches;
-              const bScore = bTypeMatch + bEffectMatches;
-              
-              return bScore - aScore;
-            }).slice(0, 5); // Take only top 5 most similar
-            
-            setRelatedStrains(sortedSimilar);
-          }
-        } catch (error) {
-          console.error('Error loading strain data:', error);
-        } finally {
-          setLoading(false);
-        }
+      
+      // Fetch strain details by ID
+      const strainResult = await strainsRepository.getStrainById(strainId);
+      
+      if (!strainResult.success) {
+        // Check for error property on failed validation result
+        Alert.alert('Error', strainResult.error || 'Failed to load strain details');
+        router.back();
+        return;
       }
-    };
-
-    loadStrainData();
-  }, [id, getStrainDetails, getRelatedStrains]);
+      
+      if (!strainResult.data) {
+        Alert.alert('Error', 'Strain not found');
+        router.back();
+        return;
+      }
+      
+      setStrain(strainResult.data);
+      
+      // Fetch related strains
+      const relatedResult = await strainsRepository.getRelatedStrains(strainResult.data);
+      
+      if (relatedResult.success && relatedResult.data) {
+        setRelatedStrains(relatedResult.data);
+      }
+    } catch (error) {
+      console.error('Error loading strain details:', error);
+      Alert.alert('Error', 'Failed to load strain details');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleBackPress = useCallback(() => {
     router.back();
@@ -177,6 +179,7 @@ export default function StrainDetails() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading strain details...</Text>
       </View>
     );
   }
@@ -184,11 +187,9 @@ export default function StrainDetails() {
   if (!strain) {
     return (
       <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle-outline" size={64} color={COLORS.text.tertiary} />
         <Text style={styles.errorText}>Strain not found</Text>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={handleBackPress}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -579,5 +580,10 @@ const styles = StyleSheet.create({
   },
   relatedStrainRatingContainer: {
     marginLeft: 'auto',
+  },
+  loadingText: {
+    color: COLORS.text.secondary,
+    marginTop: 16,
+    fontSize: 16,
   },
 });

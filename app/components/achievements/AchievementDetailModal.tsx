@@ -144,6 +144,9 @@ export const AchievementDetailModal: React.FC<AchievementDetailModalProps> = ({
   );
 };
 
+// Add default export for expo-router
+export default AchievementDetailModal;
+
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,

@@ -4,13 +4,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AchievementCard } from '../components/achievements/AchievementCard';
 import { AchievementDetailModal } from '../components/achievements/AchievementDetailModal';
-import { databaseManager } from '../../src/DatabaseManager';
 import { UserAchievementWithDetails } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { COLORS } from '../../src/constants';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { DatabaseResponse } from '../../src/types';
+import { useAchievements } from '../context/AchievementContext';
 
 // Shared categories for filtering
 const ACHIEVEMENT_CATEGORIES = [
@@ -31,83 +30,38 @@ const ACHIEVEMENT_CATEGORIES = [
 type AchievementListItem = string | UserAchievementWithDetails;
 
 export default function AchievementsScreen() {
-  const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedAchievement, setSelectedAchievement] = useState<UserAchievementWithDetails | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [stats, setStats] = useState({
-    total: 0,
-    unlocked: 0,
-    percentComplete: 0
-  });
+  const [refreshing, setRefreshing] = useState(false);
   
-  const loadAchievements = async () => {
+  // Use the achievements context instead of direct database access
+  const { achievements, stats, loading, loadAchievements } = useAchievements();
+  
+  const loadData = async () => {
     try {
-      setLoading(true);
-      // In a real app, you'd get the actual user ID
-      const userId = 'current-user';
-      
       console.log('[AchievementsScreen] Fetching user achievements...');
-      // Fetch achievements
-      const userAchievements = await databaseManager.getUserAchievements(userId);
-      console.log('[AchievementsScreen] Received achievements:', userAchievements?.length || 0);
-      
-      if (userAchievements && Array.isArray(userAchievements)) {
-        setAchievements(userAchievements);
-        
-        // Calculate stats
-        const totalCount = userAchievements.length;
-        const unlockedCount = userAchievements.filter((a: UserAchievementWithDetails) => a.isUnlocked).length;
-        
-        setStats({
-          total: totalCount,
-          unlocked: unlockedCount,
-          percentComplete: totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0
-        });
-        
-        // Clear new flags
-        console.log('[AchievementsScreen] Clearing achievement new flags...');
-        await databaseManager.clearAchievementNewFlags(userId);
-      } else {
-        // Handle case where achievements are not returned as expected
-        console.error('[AchievementsScreen] Failed to load achievements: Invalid response format');
-        setAchievements([]);
-        setStats({
-          total: 0,
-          unlocked: 0,
-          percentComplete: 0
-        });
-      }
+      await loadAchievements();
     } catch (error) {
       console.error('[AchievementsScreen] Failed to load achievements:', error instanceof Error ? error.message : 'Unknown error');
-      // Set empty state when there's an error
-      setAchievements([]);
-      setStats({
-        total: 0,
-        unlocked: 0,
-        percentComplete: 0
-      });
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
   
   useEffect(() => {
-    loadAchievements();
+    loadData();
   }, []);
   
   useFocusEffect(
     useCallback(() => {
-      loadAchievements();
+      loadData();
     }, [])
   );
   
   const onRefresh = () => {
     setRefreshing(true);
-    loadAchievements();
+    loadData();
   };
   
   const handleAchievementPress = (achievement: UserAchievementWithDetails) => {

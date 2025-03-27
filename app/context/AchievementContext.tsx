@@ -1,7 +1,12 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { databaseManager } from '../../src/DatabaseManager';
+import { DatabaseManager, ACHIEVEMENTS_DB_NAME } from '../../src/DatabaseManager';
 import { UserAchievementWithDetails } from '../../src/types';
-import { DatabaseResponse } from '../../src/types';
+import { AchievementsRepository } from '../../src/repositories/AchievementsRepository';
+
+// Create an instance of DatabaseManager and AchievementsRepository
+const databaseManager = new DatabaseManager();
+// We'll initialize the repository with null for now and set it properly in useEffect
+let achievementsRepository: AchievementsRepository | null = null;
 
 interface AchievementContextType {
   achievements: UserAchievementWithDetails[];
@@ -43,6 +48,7 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   const [achievements, setAchievements] = useState<UserAchievementWithDetails[]>([]);
   const [newlyUnlocked, setNewlyUnlocked] = useState<UserAchievementWithDetails | null>(null);
   const [loading, setLoading] = useState(false);
+  const [repositoryReady, setRepositoryReady] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     unlocked: 0,
@@ -51,13 +57,45 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   
   // In a real app, you'd get this from authentication context or similar
   const userId = 'current-user';
+
+  // Initialize the repository
+  useEffect(() => {
+    const initRepository = async () => {
+      try {
+        // Initialize the database
+        await databaseManager.initialize();
+        // Get the database connection
+        const db = await databaseManager.getDatabase(ACHIEVEMENTS_DB_NAME);
+        // Create the repository
+        achievementsRepository = new AchievementsRepository(db);
+        setRepositoryReady(true);
+      } catch (error) {
+        console.error('Failed to initialize achievements repository:', error);
+      }
+    };
+
+    initRepository();
+
+    // Cleanup function
+    return () => {
+      // Close database connections when unmounted
+      databaseManager.cleanup().catch(err => {
+        console.error('Error cleaning up database connections:', err);
+      });
+    };
+  }, []);
   
   const loadAchievements = async () => {
+    if (!repositoryReady || !achievementsRepository) {
+      console.warn('Achievements repository not ready');
+      return;
+    }
+
     try {
       setLoading(true);
       
-      // Fetch achievements - note that getUserAchievements returns an array directly, not a DatabaseResponse
-      const userAchievements = await databaseManager.getUserAchievements(userId);
+      // Fetch achievements using the repository
+      const userAchievements = await achievementsRepository.getUserAchievements(userId);
       
       if (userAchievements && Array.isArray(userAchievements)) {
         setAchievements(userAchievements);
@@ -73,7 +111,7 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
         });
         
         // Clear new flags
-        await databaseManager.clearAchievementNewFlags(userId);
+        await achievementsRepository.clearAchievementNewFlags(userId);
         console.log(`[AchievementContext] Loaded ${userAchievements.length} achievements`);
       } else {
         console.error('Failed to load achievements: Invalid response format');
@@ -98,9 +136,14 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   };
   
   const checkAchievements = async (actionType: string, data: any) => {
+    if (!repositoryReady || !achievementsRepository) {
+      console.warn('Achievements repository not ready');
+      return;
+    }
+
     try {
       // Check for newly unlocked achievements based on the action
-      const unlockedAchievements = await databaseManager.checkAchievements(userId, actionType, data);
+      const unlockedAchievements = await achievementsRepository.checkAchievements(userId, actionType, data);
       
       if (unlockedAchievements && Array.isArray(unlockedAchievements) && unlockedAchievements.length > 0) {
         // Set the most recent achievement as newly unlocked for notification
@@ -118,10 +161,12 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
     setNewlyUnlocked(null);
   };
   
-  // Load achievements on initial mount
+  // Load achievements when repository is ready
   useEffect(() => {
-    loadAchievements();
-  }, []);
+    if (repositoryReady) {
+      loadAchievements();
+    }
+  }, [repositoryReady]);
   
   const value = {
     achievements,
@@ -138,4 +183,7 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
       {children}
     </AchievementContext.Provider>
   );
-}; 
+};
+
+// Add default export for expo-router
+export default AchievementProvider; 

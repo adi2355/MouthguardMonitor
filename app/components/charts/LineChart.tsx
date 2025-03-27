@@ -20,6 +20,9 @@ const LineChart: React.FC<LineChartProps> = ({
   width = screenWidth - 64,
   height = 220
 }) => {
+  // Validate data to prevent NaN values
+  const validatedData = data.map(val => (isNaN(val) ? 0 : val));
+  
   const chartConfig = {
     backgroundColor: 'transparent',
     backgroundGradientFrom: 'transparent',
@@ -52,7 +55,7 @@ const LineChart: React.FC<LineChartProps> = ({
           labels,
           datasets: [
             {
-              data,
+              data: validatedData,
               color: (opacity = 1) => color ? `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}` : `rgba(0, 230, 118, ${opacity})`,
               strokeWidth: 2
             }

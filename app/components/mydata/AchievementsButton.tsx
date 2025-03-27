@@ -122,4 +122,7 @@ const styles = StyleSheet.create({
   chevron: {
     marginLeft: 8,
   },
-}); 
+});
+
+// Add default export for expo-router
+export default AchievementsButton; 

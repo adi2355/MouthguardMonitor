@@ -28,3 +28,6 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(0, 230, 118, 0.1)',
     }
 });
+
+// Add default export for expo-router
+export default Card;

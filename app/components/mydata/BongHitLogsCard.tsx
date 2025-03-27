@@ -269,3 +269,6 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
 });
+
+// Add default export for expo-router
+export default BongHitLogsCard;

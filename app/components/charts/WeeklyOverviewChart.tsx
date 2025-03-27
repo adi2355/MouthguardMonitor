@@ -13,18 +13,24 @@ interface WeeklyOverviewChartProps {
 }
 
 const WeeklyOverviewChart: React.FC<WeeklyOverviewChartProps> = ({ data, onPress }) => {
+  // Validate data to prevent NaN values
+  const validatedData = data.map(item => ({
+    ...item,
+    value: isNaN(item.value) ? 0 : item.value
+  }));
+  
   const chartData = {
-    labels: data.map(item => item.label),
+    labels: validatedData.map(item => item.label),
     datasets: [{
-      data: data.map(item => item.value)
+      data: validatedData.map(item => item.value)
     }]
   };
 
-  // Calculate weekly stats
-  const totalHits = data.reduce((sum, day) => sum + day.value, 0);
+  // Calculate weekly stats using validated data
+  const totalHits = validatedData.reduce((sum, day) => sum + day.value, 0);
   const avgHits = totalHits / 7;
-  const maxHits = Math.max(...data.map(day => day.value));
-  const maxDay = data.find(day => day.value === maxHits)?.label || '';
+  const maxHits = Math.max(...validatedData.map(day => day.value));
+  const maxDay = validatedData.find(day => day.value === maxHits)?.label || '';
 
   return (
     <Animated.View 

@@ -70,6 +70,9 @@ export const AchievementCard: React.FC<AchievementCardProps> = ({ achievement, o
   );
 };
 
+// Export default for expo-router
+export default AchievementCard;
+
 const styles = StyleSheet.create({
   container: {
     height: 80,

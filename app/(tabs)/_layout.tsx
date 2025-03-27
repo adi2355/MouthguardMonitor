@@ -14,11 +14,15 @@ export default function TabLayout() {
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.5)',
         headerShown: false,
       }}
+      initialRouteName="index"
     >
       <Tabs.Screen
         name="index"
         options={{
-          href: null,
+          title: 'Home',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="home" size={24} color={color} />
+          ),
         }}
       />
       <Tabs.Screen

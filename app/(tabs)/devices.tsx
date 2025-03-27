@@ -1,7 +1,7 @@
 import { BluetoothContext, BluetoothHandler } from '@/src/contexts/BluetoothContext';
-import { getSavedDevices, saveDevices } from '@/src/DatabaseManager';
+import { databaseManager } from '@/src/DatabaseManager';
 import { SavedDevice } from '@/src/types';
-import React, { useState, useEffect, useRef, useContext } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-p
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '@/src/constants';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useBluetoothService } from '@/src/providers/AppProvider';
 
 export default function Devices() {
   const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
@@ -29,13 +30,14 @@ export default function Devices() {
   //Track devices to avoid duplicate keys when scanning
   const undiscoveredDeviceSet: React.MutableRefObject<Set<string>> = useRef(new Set<string>());
   
-  const bluetoothHandler: BluetoothHandler = useContext(BluetoothContext)!;
+  // Use BluetoothService instead of BluetoothContext
+  const bluetoothService = useBluetoothService();
 
   useEffect(() => {
     updateSavedDevices();
     
     // Check if there's already a connected device
-    const connectedDevice = bluetoothHandler.getConnectedDevice();
+    const connectedDevice = bluetoothService.getConnectedDevice();
     if (connectedDevice) {
       setDeviceConnectedId(connectedDevice.id);
     }
@@ -54,20 +56,10 @@ export default function Devices() {
     
     setConnectionError(null);
 
-    bluetoothHandler.connectToDevice(deviceId)
+    bluetoothService.connectToDevice(deviceId)
       .then(() => {
-        try {
-          bluetoothHandler.streamOnConnectedDevice();
-          if (device) {
-            saveDevices([device])
-              .then(() => updateSavedDevices())
-              .catch(err => console.error("Error saving device:", err));
-          }
-          setDeviceConnectedId(deviceId);
-        } catch (error) {
-          console.error("Error setting up stream:", error);
-          setConnectionError("Failed to stream data from device");
-        }
+        // The connection and streaming is handled by the service
+        setDeviceConnectedId(deviceId);
       })
       .catch(error => {
         console.error("Connection error:", error);
@@ -76,13 +68,14 @@ export default function Devices() {
   }
   
   function updateSavedDevices() {
-    getSavedDevices()
+    bluetoothService.getSavedDevices()
       .then(devices => {
         console.log("Saved devices:", devices);
+        // The service directly returns the devices array without the response wrapper
         setSavedDevices(devices);
-   
+       
         // Prevent saved devices from showing during scanning
-        devices.forEach(device => {
+        devices.forEach((device: SavedDevice) => {
           undiscoveredDeviceSet.current.add(device.id);
         });
       })
@@ -94,7 +87,6 @@ export default function Devices() {
   }
 
   function scanDevices(): void {
-    const manager: BleManager = bluetoothHandler.getBLEManager();
     setScanning(true);
     setScannedDevices([]);
     
@@ -102,24 +94,20 @@ export default function Devices() {
     const savedIds = new Set(savedDevices.map(device => device.id));
     undiscoveredDeviceSet.current = savedIds;
 
-    manager.startDeviceScan(null, null, (error: BleError | null, device: Device | null) => {
-      if (error) {
-        console.error('Error scanning devices:', error.message);
-        setScanning(false);
-        return;
-      }
-
-      if (device && device.name && !undiscoveredDeviceSet.current.has(device.id)) {
-        undiscoveredDeviceSet.current.add(device.id); // Add device ID to the Set
-        setScannedDevices((prevDevices) => [...prevDevices, device]);
-      }
-    });
-
-    // Stop scanning after 10 seconds
-    setTimeout(() => {
-      manager.stopDeviceScan();
+    bluetoothService.scanForDevices(
+      (device) => {
+        if (device && device.name && !undiscoveredDeviceSet.current.has(device.id)) {
+          undiscoveredDeviceSet.current.add(device.id); // Add device ID to the Set
+          setScannedDevices((prevDevices) => [...prevDevices, device]);
+        }
+      },
+      10000 // 10 second timeout
+    ).then(() => {
       setScanning(false);
-    }, 10000);
+    }).catch(error => {
+      console.error('Error scanning devices:', error);
+      setScanning(false);
+    });
   }
 
   // Renders device

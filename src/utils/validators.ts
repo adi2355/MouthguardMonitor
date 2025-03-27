@@ -77,6 +77,18 @@ export function isValidISOTimestamp(timestamp: string): boolean {
 }
 
 /**
+ * Validate that a value is not empty (null, undefined, or empty string)
+ * @param value The value to validate
+ * @param fieldName The name of the field for the error message
+ * @throws Error if the value is empty
+ */
+export function validateNotEmpty(value: any, fieldName: string): void {
+  if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+    throw new Error(`${fieldName} is required and cannot be empty`);
+  }
+}
+
+/**
  * Create a validation error result
  * @param code Error code
  * @param message Error message

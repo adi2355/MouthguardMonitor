@@ -215,6 +215,9 @@ export const StrainsList = memo(({
   
 });
 
+// Export default for expo-router
+export default StrainsList;
+
 const styles = StyleSheet.create({
   content: {
     paddingBottom: 80, // Space for the compare bar
@@ -338,5 +341,3 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
 });
-
-export default StrainsList;

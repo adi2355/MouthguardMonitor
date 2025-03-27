@@ -171,6 +171,7 @@ export interface UsageAnalytics {
 export interface SavedDevice {
     id: string;
     name: string;
+    lastConnected?: number; // Timestamp in milliseconds
 }
 
 // State management types

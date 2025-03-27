@@ -13,20 +13,28 @@ interface MonthlyOverviewChartProps {
 }
 
 const MonthlyOverviewChart: React.FC<MonthlyOverviewChartProps> = ({ data, onPress }) => {
+  // Validate data to prevent NaN values
+  const validatedData = data.map(item => ({
+    ...item,
+    value: isNaN(item.value) ? 0 : item.value
+  }));
+  
   const chartData = {
-    labels: data.map(item => item.label),
+    labels: validatedData.map(item => item.label),
     datasets: [{
-      data: data.map(item => item.value)
+      data: validatedData.map(item => item.value)
     }]
   };
 
-  // Calculate monthly stats
-  const totalHits = data.reduce((sum, month) => sum + month.value, 0);
-  const avgHits = totalHits / data.length;
-  const maxHits = Math.max(...data.map(month => month.value));
-  const maxMonth = data.find(month => month.value === maxHits)?.label || '';
-  const monthlyGrowth = data.length > 1 
-    ? ((data[data.length - 1].value - data[0].value) / data[0].value * 100).toFixed(1)
+  // Calculate monthly stats with validated data
+  const totalHits = validatedData.reduce((sum, month) => sum + month.value, 0);
+  const avgHits = totalHits / validatedData.length;
+  const maxHits = Math.max(...validatedData.map(month => month.value));
+  const maxMonth = validatedData.find(month => month.value === maxHits)?.label || '';
+  
+  // Prevent division by zero and handle potential NaN values
+  const monthlyGrowth = validatedData.length > 1 && validatedData[0].value !== 0
+    ? ((validatedData[validatedData.length - 1].value - validatedData[0].value) / validatedData[0].value * 100).toFixed(1)
     : '0';
 
   return (

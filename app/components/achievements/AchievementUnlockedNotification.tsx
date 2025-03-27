@@ -118,6 +118,9 @@ export const AchievementUnlockedNotification: React.FC<AchievementUnlockedNotifi
   );
 };
 
+// Add default export for expo-router
+export default AchievementUnlockedNotification;
+
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
