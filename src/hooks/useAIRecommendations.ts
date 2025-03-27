@@ -10,7 +10,7 @@ import {
   JournalEntry,
   SafetyValidationResult,
   SafetyRecord
-} from '../types/ai';
+} from '../types';
 import { DatabaseResponse } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -38,9 +38,16 @@ export const useAIRecommendations = () => {
       if (isInitialized.current) return;
       
       try {
+        // First ensure database is initialized
+        await databaseManager.ensureInitialized();
+        
+        // Then initialize AI service
         await aiService.initialize();
-        await databaseManager.initialize();
+        
         isInitialized.current = true;
+        
+        // Load cached recommendations only after initialization
+        await loadCachedRecommendations();
       } catch (err) {
         console.error('Error initializing AI or Database services:', err);
         setError('Failed to initialize recommendation services');
@@ -48,9 +55,6 @@ export const useAIRecommendations = () => {
     };
     
     initServices();
-    
-    // Load cached recommendations if available
-    loadCachedRecommendations();
     
     return () => {
       // Cleanup only if not already called

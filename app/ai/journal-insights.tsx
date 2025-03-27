@@ -10,7 +10,7 @@ import {
 import { Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import useAIRecommendations from '../../src/hooks/useAIRecommendations';
-import { UserProfile } from '../../src/types/ai';
+import { UserProfile } from '../../src/types';
 import { COLORS } from '../../src/constants';
 import LoadingView from '../components/shared/LoadingView';
 import ErrorView from '../components/shared/ErrorView';

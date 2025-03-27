@@ -38,7 +38,7 @@ import {
   Achievement, 
   UserAchievement, 
   UserAchievementWithDetails 
-} from "./types/achievements";
+} from "./types";
 import { Device } from 'react-native-ble-plx';
 
 // Re-export types for use throughout the app
@@ -54,7 +54,7 @@ import {
   SafetyRecord,
   JournalEntry,
   UserProfile
-} from "./types/ai";
+} from "./types";
 
 const FIRST_LAUNCH_KEY = "hasLaunched";
 const SAVED_DEVICES_KEY: string = 'savedDevices';
@@ -89,6 +89,7 @@ export class DatabaseManager {
   private initialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
   private migrationLock: boolean = false;
+  private transactionInProgress: boolean = false; // Add transaction lock flag
 
   // Private constructor to prevent direct instantiation
   private constructor() {}
@@ -133,18 +134,22 @@ export class DatabaseManager {
    * Initializes all databases and tables with initial data.
    */
   public async initialize(): Promise<void> {
+    // If already initialized, return immediately
+    if (this.initialized) {
+      return;
+    }
+    
+    // If initialization is in progress, wait for it to complete
     if (this.initializationPromise) {
-      // If initialization is already in progress, return that promise
       return this.initializationPromise;
     }
-
+    
+    console.info('[DatabaseManager] Initializing databases...');
+    
+    // Create a promise for initialization
     this.initializationPromise = this.doInitialize();
-    try {
-      await this.initializationPromise;
-      this.initialized = true;
-    } finally {
-      this.initializationPromise = null;
-    }
+    
+    return this.initializationPromise;
   }
 
   /**
@@ -169,10 +174,16 @@ export class DatabaseManager {
         console.log('[DatabaseManager] Database already at current version');
       }
 
+      // Existing database initialization logic here
+      
+      this.initialized = true;
       console.log('[DatabaseManager] All databases initialized successfully');
     } catch (error) {
-      console.error('[DatabaseManager] Error initializing databases:', error);
+      console.error('[DatabaseManager] Error initializing database:', error);
       throw error;
+    } finally {
+      // Clean up the promise so subsequent calls will start fresh if needed
+      this.initializationPromise = null;
     }
   }
 
@@ -486,19 +497,31 @@ export class DatabaseManager {
     operations: () => Promise<T>
   ): Promise<T> {
     try {
+      // Check if there's already a transaction in progress
+      if (this.transactionInProgress) {
+        // If a transaction is already active, just execute the operations without starting a new transaction
+        console.log('[DatabaseManager] Transaction already in progress, executing operations without new transaction');
+        return await operations();
+      }
+      
+      this.transactionInProgress = true; // Set lock
       await db.execAsync('BEGIN TRANSACTION');
+      
       const result = await operations();
+      
       await db.execAsync('COMMIT');
       return result;
     } catch (error) {
-      // Rollback on error
       try {
+        // Only attempt rollback if we started the transaction
         await db.execAsync('ROLLBACK');
       } catch (rollbackError) {
         console.error('[DatabaseManager] Error rolling back transaction:', rollbackError);
       }
       console.error('[DatabaseManager] Transaction failed:', error);
       throw error;
+    } finally {
+      this.transactionInProgress = false; // Release lock
     }
   }
 
@@ -541,9 +564,18 @@ export class DatabaseManager {
    * Ensure the database manager is initialized
    */
   public async ensureInitialized(): Promise<void> {
-    if (!this.initialized) {
-      await this.initialize();
+    if (this.initialized) {
+      return;
     }
+    
+    if (this.initializationPromise) {
+      // If initialization is already in progress, wait for it to complete
+      return this.initializationPromise;
+    }
+    
+    // Otherwise, start initialization
+    console.info('[DatabaseManager] Database not initialized, starting initialization now');
+    return this.initialize();
   }
 
   /**

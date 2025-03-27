@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { UserAchievementWithDetails } from '../../../src/types/achievements';
+import { UserAchievementWithDetails } from '../../../src/types';
 import { COLORS } from '../../../src/constants';
 
 interface AchievementDetailModalProps {

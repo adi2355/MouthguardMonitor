@@ -3,6 +3,7 @@ import { MemoryCache } from './MemoryCache';
 import { PersistentCache } from './PersistentCache';
 import { SHA256 } from '../utils/hash';
 import { DEFAULT_CACHE_TTL, MAX_CACHE_SIZE, CacheDbEntry } from '../types/common';
+import { DatabaseManager } from '../database/DatabaseManager';
 
 const MODULE_NAME = 'CacheManager';
 
@@ -17,6 +18,7 @@ export class CacheManager {
   private enabled: boolean = true;
   private defaultTtl: number = DEFAULT_CACHE_TTL;
   private initialized: boolean = false;
+  private initializationPromise: Promise<void> | null = null;
 
   private constructor() {
     this.memoryCache = new MemoryCache(MAX_CACHE_SIZE);
@@ -38,26 +40,43 @@ export class CacheManager {
    * Initialize the cache manager
    */
   public async initialize(): Promise<void> {
+    // If already initialized, return immediately
     if (this.initialized) {
-      Logger.debug(MODULE_NAME, 'Already initialized');
+      console.debug('[CacheManager] Already initialized');
       return;
     }
-
-    try {
-      Logger.info(MODULE_NAME, 'Initializing cache manager');
-      
-      // Load frequently accessed entries into memory cache
-      await this.loadFrequentEntries();
-      
-      // Delete expired entries
-      await this.pruneCache();
-      
-      this.initialized = true;
-      Logger.info(MODULE_NAME, 'Cache manager initialized successfully');
-    } catch (error) {
-      Logger.logError(MODULE_NAME, error as Error, 'Failed to initialize cache manager');
-      throw error;
+    
+    // If initialization is already in progress, wait for it to complete
+    if (this.initializationPromise) {
+      return this.initializationPromise;
     }
+    
+    console.info('[CacheManager] Initializing cache manager');
+    
+    // Create a promise for initialization
+    this.initializationPromise = (async () => {
+      try {
+        // Wait for DatabaseManager to be initialized first
+        const dbManager = DatabaseManager.getInstance();
+        await dbManager.initialize();
+        
+        // Load frequently accessed entries into memory cache
+        await this.loadFrequentEntries();
+        
+        // Delete expired entries
+        await this.pruneCache();
+        
+        this.initialized = true;
+        console.info('[CacheManager] Cache manager initialized successfully');
+      } catch (error) {
+        console.error('[CacheManager] Failed to initialize cache manager:', error);
+        throw error;
+      } finally {
+        this.initializationPromise = null;
+      }
+    })();
+    
+    return this.initializationPromise;
   }
 
   /**

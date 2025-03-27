@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AchievementCard } from '../components/achievements/AchievementCard';
 import { AchievementDetailModal } from '../components/achievements/AchievementDetailModal';
 import { databaseManager } from '../../src/DatabaseManager';
-import { UserAchievementWithDetails } from '../../src/types/achievements';
+import { UserAchievementWithDetails } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { COLORS } from '../../src/constants';

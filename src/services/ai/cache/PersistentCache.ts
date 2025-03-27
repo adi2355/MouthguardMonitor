@@ -27,12 +27,13 @@ export class PersistentCache {
     }
 
     try {
-      // Make sure the database is initialized
-      await DatabaseManager.getInstance().initialize();
+      // Make sure the database is initialized - use initialize method
+      const dbManager = DatabaseManager.getInstance();
+      await dbManager.initialize();
       this.initialized = true;
-      Logger.debug(MODULE_NAME, 'Database initialized');
+      console.debug('[PersistentCache] Database initialized');
     } catch (error) {
-      Logger.logError(MODULE_NAME, error as Error, 'Failed to initialize database');
+      console.error('[PersistentCache] Failed to initialize database:', error);
       throw new Error('Cache database not initialized');
     }
   }

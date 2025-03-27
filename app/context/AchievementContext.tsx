@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { databaseManager } from '../../src/DatabaseManager';
-import { UserAchievementWithDetails } from '../../src/types/achievements';
+import { UserAchievementWithDetails } from '../../src/types';
 import { DatabaseResponse } from '../../src/types';
 
 interface AchievementContextType {

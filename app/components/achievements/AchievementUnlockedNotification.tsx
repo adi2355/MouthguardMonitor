@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { UserAchievementWithDetails } from '../../../src/types/achievements';
+import { UserAchievementWithDetails } from '../../../src/types';
 import { COLORS } from '../../../src/constants';
 
 interface AchievementUnlockedNotificationProps {

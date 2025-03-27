@@ -11,7 +11,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import useAIRecommendations from '../../src/hooks/useAIRecommendations';
-import { RecommendationRequest, StrainRecommendation, UserProfile } from '../../src/types/ai';
+import { RecommendationRequest, StrainRecommendation, UserProfile } from '../../src/types';
 import { COLORS } from '../../src/constants';
 import LoadingView from '../components/shared/LoadingView';
 import ErrorView from '../components/shared/ErrorView';

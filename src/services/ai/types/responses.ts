@@ -1,4 +1,4 @@
-import { DosageSuggestion, StrainRecommendation } from '../../../types/ai';
+import { DosageSuggestion, StrainRecommendation } from '../../../types';
 
 export interface RecommendationResponse {
   recommendations: StrainRecommendation[];
@@ -34,7 +34,7 @@ export interface JournalAnalysisResult {
 export interface SafetyValidationResult {
   valid: boolean;
   reason?: string;
-  modifications?: any; // Using any instead of Partial<RecommendationRequest> to avoid circular dependency
+  modifications?: Partial<any>; // Changed from Partial<RecommendationRequest> to avoid circular dependency
   safetyFlags?: string[];
   warningLevel?: 'info' | 'warning' | 'critical';
 }

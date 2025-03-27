@@ -1,4 +1,4 @@
-import { UserProfile, JournalEntry, ChatMessage } from '../../../types/ai';
+import { UserProfile, JournalEntry, ChatMessage } from '../../../types';
 
 export interface RecommendationRequest {
   userProfile: UserProfile;

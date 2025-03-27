@@ -25,7 +25,7 @@ import {
   StrainRecommendation, 
   DosageSuggestion,
   ChatMessage
-} from '../../types/ai';
+} from '../../types';
 import { MemoryCache } from './cache/MemoryCache';
 import { PersistentCache } from './cache/PersistentCache';
 import { databaseManager } from "../../DatabaseManager";
@@ -67,34 +67,50 @@ export class AIService {
    * Initialize the AI service and its dependencies
    */
   public async initialize(): Promise<void> {
+    // If already initialized, return immediately
     if (this.initialized) {
-      Logger.debug(MODULE_NAME, 'Already initialized');
       return;
     }
-
-    try {
-      Logger.info(MODULE_NAME, 'Initializing AI service');
-      
-      // Initialize dependencies
-      try {
-        await this.cacheManager.initialize();
-      } catch (error) {
-        Logger.logError(MODULE_NAME, error as Error, 'Failed to initialize cache manager, continuing with limited functionality');
-      }
-      
-      try {
-        await this.feedbackService.initialize();
-      } catch (error) {
-        Logger.logError(MODULE_NAME, error as Error, 'Failed to initialize feedback service, continuing with limited functionality');
-      }
-      
-      this.initialized = true;
-      Logger.info(MODULE_NAME, 'AI service initialized successfully');
-    } catch (error) {
-      Logger.logError(MODULE_NAME, error as Error, 'Failed to initialize AI service');
-      // Set initialized to true anyway to prevent repeated initialization attempts
-      this.initialized = true;
+    
+    // If initialization is in progress, wait for it to complete
+    if (this.initializationPromise) {
+      return this.initializationPromise;
     }
+
+    console.info('[AIService] Initializing AI service');
+    
+    // Create a promise for initialization
+    this.initializationPromise = (async () => {
+      try {
+        // First ensure DatabaseManager is initialized
+        await databaseManager.ensureInitialized();
+        
+        // Initialize cache manager
+        console.info('[CacheManager] Initializing cache manager');
+        this.cacheManager = CacheManager.getInstance();
+        await this.cacheManager.initialize();
+        console.info('[CacheManager] Cache manager initialized successfully');
+        
+        // Initialize feedback service (after cache manager)
+        console.info('[FeedbackService] Initializing feedback service');
+        this.feedbackService = FeedbackService.getInstance();
+        await this.feedbackService.initialize();
+        console.info('[FeedbackService] Feedback service initialized successfully');
+        
+        // Initialize API client - use existing method
+        this.api = new AnthropicAPI();
+        
+        this.initialized = true;
+        console.info('[AIService] AI service initialized successfully');
+      } catch (error) {
+        console.error('[AIService] Failed to initialize:', error);
+        throw error;
+      } finally {
+        this.initializationPromise = null;
+      }
+    })();
+    
+    return this.initializationPromise;
   }
 
   /**
@@ -130,10 +146,11 @@ export class AIService {
    */
   private checkInitialized(): void {
     if (!this.initialized) {
-      // Auto-initialize instead of throwing an error
-      Logger.warn(MODULE_NAME, 'AI service not initialized, initializing now...');
-      this.initialize().catch(error => {
-        Logger.logError(MODULE_NAME, error as Error, 'Failed to auto-initialize AI service');
+      console.warn('[AIService] AI service not initialized, initializing now...');
+      // Instead of throwing an error, start initialization and continue
+      // This prevents errors when components try to use the service before initialization
+      this.initialize().catch(err => {
+        console.error('[AIService] Initialization failed:', err);
       });
     }
   }
