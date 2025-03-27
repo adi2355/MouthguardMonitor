@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants';
 import { Strain } from "@/src/types";
-import StrainService from '../../src/services/StrainService';
+import { databaseManager } from '../../src/DatabaseManager';
 
 export default function CompareStrains() {
   const { ids } = useLocalSearchParams();

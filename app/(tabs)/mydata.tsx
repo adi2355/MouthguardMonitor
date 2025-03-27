@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
 import { useDataService } from '../../src/hooks/useDataService';
-import { DataService } from '../../src/services/DataService';
+import { databaseManager } from "../../src/DatabaseManager";
 import { BongHit } from '../../src/types';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -71,8 +71,8 @@ export default memo(function MyData() {
   useEffect(() => {
     const fetchBongHitData = async () => {
       try {
-        const dataService = DataService.getInstance();
-        const bongHitLogsResponse = await dataService.getAllBongHitLogs();
+        const dataService = databaseManager;
+        const bongHitLogsResponse = await databaseManager.getAllBongHitLogs();
         
         if (bongHitLogsResponse.success && bongHitLogsResponse.data && bongHitLogsResponse.data.length > 0) {
           const logs = bongHitLogsResponse.data;

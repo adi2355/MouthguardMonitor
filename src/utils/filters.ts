@@ -1,4 +1,4 @@
-import { StrainSearchFilters } from '../services/StrainService';
+import { StrainSearchFilters } from '../DatabaseManager';
 
 export const hasActiveFilters = (filters: StrainSearchFilters): boolean => {
   return !!(

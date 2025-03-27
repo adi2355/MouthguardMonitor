@@ -182,6 +182,7 @@ export interface DataState {
     isLoading: boolean;
     error: string | null;
 }
+
 export interface Strain {
   id?: number;
   name: string;
@@ -199,4 +200,37 @@ export interface Strain {
   user_rating: number;
   combined_rating: number;
   created_at?: string;
+}
+
+/**
+ * Filters for searching strains
+ */
+export interface StrainSearchFilters {
+  geneticType?: 'Indica' | 'Sativa' | 'Hybrid';
+  effects?: string[];
+  sort?: 'name' | 'rating' | 'thc' | 'cbd';
+  minTHC?: number;
+  maxTHC?: number;
+  minCBD?: number;
+  maxCBD?: number;
+  category?: string;
+}
+
+/**
+ * Pagination parameters for search results
+ */
+export interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
+/**
+ * Strain search result
+ */
+export interface StrainSearchResult<T> {
+  data: T[];
+  total: number;
+  currentPage: number;
+  totalPages: number;
+  hasMore: boolean;
 }

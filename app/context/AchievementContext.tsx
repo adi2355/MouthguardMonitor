@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { AchievementService } from '../../src/services/AchievementService';
+import { DatabaseService } from '../../src/services/DatabaseService';
 import { UserAchievementWithDetails } from '../../src/types/achievements';
 
 interface AchievementContextType {
@@ -54,10 +54,10 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   const loadAchievements = async () => {
     try {
       setLoading(true);
-      const achievementService = AchievementService.getInstance();
+      const dbService = DatabaseService.getInstance();
       
       // Fetch achievements
-      const userAchievements = await achievementService.getUserAchievements(userId);
+      const userAchievements = await dbService.getUserAchievements(userId);
       setAchievements(userAchievements);
       
       // Calculate stats
@@ -71,7 +71,7 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
       });
       
       // Clear new flags
-      await achievementService.clearNewFlags(userId);
+      await dbService.clearAchievementNewFlags(userId);
     } catch (error) {
       console.error('Failed to load achievements:', error);
     } finally {
@@ -81,10 +81,10 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   
   const checkAchievements = async (actionType: string, data: any) => {
     try {
-      const achievementService = AchievementService.getInstance();
+      const dbService = DatabaseService.getInstance();
       
       // Check for newly unlocked achievements based on the action
-      const unlocked = await achievementService.checkAchievements(userId, actionType, data);
+      const unlocked = await dbService.checkAchievements(userId, actionType, data);
       
       if (unlocked.length > 0) {
         // Set the most recent achievement as newly unlocked for notification

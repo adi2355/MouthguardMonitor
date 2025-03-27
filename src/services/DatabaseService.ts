@@ -3,7 +3,7 @@ import { SQLiteDatabase } from "expo-sqlite";
 import { 
   // Generic types
   BongHit, ChartDataPoint, DatabaseResponse, UsageStats, TimeDistribution,
-  Strain, DatabaseRow
+  Strain, DatabaseRow, Datapoint
 } from "@/src/types";
 import {
   Achievement, UserAchievement, UserAchievementWithDetails

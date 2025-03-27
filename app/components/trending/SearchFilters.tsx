@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { StrainSearchFilters } from '../../../src/DatabaseManager';
 import { COLORS } from '../../../src/constants';
-import { StrainSearchFilters } from '../../../src/services/StrainService';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface SearchFiltersProps {

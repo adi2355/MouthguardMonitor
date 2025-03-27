@@ -12,72 +12,42 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
 import { Strain } from "@/src/types";
-import StrainService from '../../src/services/StrainService';
-
-// Define strain type
-interface Strain {
-  id: string;
-  name: string;
-  description: string;
-  thcContent?: string;
-  type: 'sativa' | 'indica' | 'hybrid';
-}
-
-// Sample data
-const strains: Strain[] = [
-  { 
-    id: '1', 
-    name: 'Blue Dream', 
-    description: 'Hybrid strain with sweet berry aroma',
-    thcContent: '18-24%',
-    type: 'hybrid'
-  },
-  { 
-    id: '2', 
-    name: 'OG Kush', 
-    description: 'Classic strain with earthy pine scent',
-    thcContent: '20-25%',
-    type: 'hybrid'
-  },
-  { 
-    id: '3', 
-    name: 'Gorilla Glue', 
-    description: 'Powerful hybrid with diesel notes',
-    thcContent: '25-28%',
-    type: 'hybrid'
-  },
-  { 
-    id: '4', 
-    name: 'Gelato', 
-    description: 'Sweet and creamy hybrid strain',
-    thcContent: '17-22%',
-    type: 'hybrid'
-  },
-  { 
-    id: '5', 
-    name: 'Sour Diesel', 
-    description: 'Energetic sativa with diesel aroma',
-    thcContent: '19-25%',
-    type: 'sativa'
-  }
-];
+import { databaseManager } from '../../src/DatabaseManager';
 
 const PopularStrains = () => {
   const router = useRouter();
+  const [strains, setStrains] = useState<Strain[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadStrains = async () => {
+      try {
+        setLoading(true);
+        const popularStrains = await databaseManager.getPopularStrains();
+        setStrains(popularStrains);
+      } catch (error) {
+        console.error('Failed to load popular strains', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStrains();
+  }, []);
 
   const renderItem = ({ item }: { item: Strain }) => (
     <TouchableOpacity 
       style={styles.strainItem}
-      onPress={() => router.push(`/strains/${item.id}`)}
+      onPress={() => item.id && router.push({pathname: `/strains/${item.id}`} as any)}
     >
       <View style={styles.iconContainer}>
         <MaterialCommunityIcons name="cannabis" size={24} color="#fff" />
       </View>
       <View style={styles.textContainer}>
         <Text style={styles.strainName}>{item.name}</Text>
-        <Text style={styles.strainDescription}>{item.description}</Text>
-        {item.thcContent && (
-          <Text style={styles.thcContent}>THC: {item.thcContent}</Text>
+        <Text style={styles.strainDescription}>{item.overview}</Text>
+        {item.thc_range && (
+          <Text style={styles.thcContent}>THC: {item.thc_range}</Text>
         )}
       </View>
       <MaterialCommunityIcons 
@@ -106,7 +76,7 @@ const PopularStrains = () => {
       <FlatList
         data={strains}
         renderItem={renderItem}
-        keyExtractor={item => item.id}
+        keyExtractor={item => item.id ? item.id.toString() : ''}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
       />

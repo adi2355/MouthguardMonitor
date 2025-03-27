@@ -2,11 +2,12 @@
 import React, { memo } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../../src/constants';
 import { LinearGradient } from 'expo-linear-gradient';
-import { StrainSearchFilters } from '../../../src/services/StrainService';
+import { StrainSearchFilters } from '../../../src/DatabaseManager';
 import { hasActiveFilters } from '../../../src/utils/filters';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, FadeIn } from 'react-native-reanimated';
 
 interface SearchBarProps {
   searchQuery: string;

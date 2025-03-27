@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import StrainService, { StrainSearchFilters } from '../services/StrainService';
+import { StrainSearchFilters, PaginationParams } from '../DatabaseManager';
+import { databaseManager } from '../DatabaseManager';
 import { Strain } from "../types";
 
 export interface UseStrainState {
@@ -55,8 +56,8 @@ export function useStrains(): UseStrainState & UseStrainActions {
       setState(prev => ({ ...prev, isLoading: true }));
       
       const [popularStrains, categories] = await Promise.all([
-        StrainService.getPopularStrains(),
-        StrainService.getStrainCategories()
+        databaseManager.getPopularStrains(),
+        databaseManager.getStrainCategories()
       ]);
 
       setState(prev => ({
@@ -83,7 +84,7 @@ export function useStrains(): UseStrainState & UseStrainActions {
       setState(prev => ({ ...prev, isLoading: true }));
       setFilters(newFilters);
 
-      const result = await StrainService.searchStrains(query, newFilters, { page, limit: 10 });
+      const result = await databaseManager.searchStrains(query, newFilters, { page, limit: 10 });
 
       setState(prev => ({
         ...prev,
@@ -140,7 +141,7 @@ export function useStrains(): UseStrainState & UseStrainActions {
 
   const getStrainDetails = useCallback(async (id: number): Promise<Strain | null> => {
     try {
-      return await StrainService.getStrainById(id);
+      return await databaseManager.getStrainById(id);
     } catch (error) {
       console.error('[useStrains] Error getting strain details:', error);
       return null;
@@ -149,7 +150,7 @@ export function useStrains(): UseStrainState & UseStrainActions {
 
   const getRelatedStrains = useCallback(async (strain: Strain): Promise<Strain[]> => {
     try {
-      return await StrainService.getRelatedStrains(strain);
+      return await databaseManager.getRelatedStrains(strain);
     } catch (error) {
       console.error('[useStrains] Error getting related strains:', error);
       return [];

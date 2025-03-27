@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
 import { COLORS } from '../../src/constants';
-import { DataService } from '../../src/services/DataService';
+import { databaseManager } from "../../src/DatabaseManager";
 import LoadingView from '../components/shared/LoadingView';
 import ErrorView from '../components/shared/ErrorView';
 import * as FileSystem from 'expo-file-system';
@@ -27,8 +27,8 @@ const BongHitLogs = () => {
   const fetchLogs = async () => {
     try {
       setIsLoading(true);
-      const dataService = DataService.getInstance();
-      const response = await dataService.getAllBongHitLogs();
+      const dataService = databaseManager;
+      const response = await databaseManager.getAllBongHitLogs();
       
       if (response.success && response.data) {
         setLogs(response.data);

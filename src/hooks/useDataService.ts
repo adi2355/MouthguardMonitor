@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DataService } from '@/src/services/DataService';
+import { databaseManager } from '@/src/DatabaseManager';
 import { DataState, ChartDataPoint, UsageStats, WeekdayStats } from '@/src/types';
 
 const DEFAULT_STATE: DataState = {
@@ -38,7 +38,6 @@ export function useDataService() {
 
   useEffect(() => {
     let isMounted = true;
-    const service = DataService.getInstance();
 
     const loadData = async () => {
       try {
@@ -49,27 +48,24 @@ export function useDataService() {
         if (!isMounted) return;
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-        // Run timestamp diagnostic to check data range
-        await service.checkTimestampRange();
-
         // Fetch data sequentially to avoid race conditions
         console.log('[useDataService] Fetching weekly stats...');
-        const weeklyStats = await service.getWeeklyStats();
+        const weeklyStats = await databaseManager.getWeeklyStats();
         if (!isMounted) return;
         console.log('[useDataService] Weekly stats:', weeklyStats);
 
         console.log('[useDataService] Fetching monthly stats...');
-        const monthlyStats = await service.getMonthlyStats();
+        const monthlyStats = await databaseManager.getMonthlyStats();
         if (!isMounted) return;
         console.log('[useDataService] Monthly stats:', monthlyStats);
 
         console.log('[useDataService] Fetching usage stats...');
-        const usageStats = await service.getUsageStats();
+        const usageStats = await databaseManager.getUsageStats();
         if (!isMounted) return;
         console.log('[useDataService] Usage stats:', usageStats);
 
         console.log('[useDataService] Fetching time distribution...');
-        const timeDistribution = await service.getTimeDistribution();
+        const timeDistribution = await databaseManager.getTimeDistribution();
         if (!isMounted) return;
         console.log('[useDataService] Time distribution:', timeDistribution);
 
@@ -126,9 +122,6 @@ export function useDataService() {
     return () => {
       console.log('[useDataService] Cleaning up...');
       isMounted = false;
-      service.cleanup().catch(error => {
-        console.error('[useDataService] Error during cleanup:', error);
-      });
     };
   }, []); // Empty dependency array as we only want to run this once
 

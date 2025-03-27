@@ -1,12 +1,14 @@
 // components/trending/Header.tsx
-import React from 'react';
+import React, { useState, memo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '../../../src/constants';
-import { StrainSearchFilters } from '../../../src/services/StrainService';
+import { StrainSearchFilters } from '../../../src/DatabaseManager';
 import { hasActiveFilters } from '../../../src/utils/filters';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import SearchBar from './SearchBar';
 
 interface HeaderProps {
   searchQuery: string;

@@ -28,7 +28,7 @@ import {
 } from '../../types/ai';
 import { MemoryCache } from './cache/MemoryCache';
 import { PersistentCache } from './cache/PersistentCache';
-import { StrainService } from '../StrainService';
+import { databaseManager } from "../../DatabaseManager";
 import { Strain } from "@/src/types";
 
 const MODULE_NAME = 'AIService';
@@ -39,21 +39,17 @@ const MODULE_NAME = 'AIService';
  */
 export class AIService {
   private static instance: AIService;
-  private databaseManager: DatabaseManager;
   private cacheManager: CacheManager;
   private feedbackService: FeedbackService;
   private api: AnthropicAPI;
-  private strainService: StrainService;
   private initialized: boolean = false;
   private useMockResponses: boolean = false;
   private initializationPromise: Promise<void> | null = null;
 
   private constructor() {
-    this.databaseManager = DatabaseManager.getInstance();
     this.cacheManager = CacheManager.getInstance();
     this.feedbackService = FeedbackService.getInstance();
     this.api = new AnthropicAPI();
-    this.strainService = StrainService.getInstance();
     Logger.debug(MODULE_NAME, 'Initialized');
   }
 
@@ -80,12 +76,6 @@ export class AIService {
       Logger.info(MODULE_NAME, 'Initializing AI service');
       
       // Initialize dependencies
-      try {
-        await this.databaseManager.initialize();
-      } catch (error) {
-        Logger.logError(MODULE_NAME, error as Error, 'Failed to initialize database manager, continuing with limited functionality');
-      }
-      
       try {
         await this.cacheManager.initialize();
       } catch (error) {
@@ -160,7 +150,7 @@ export class AIService {
       Logger.info(MODULE_NAME, `Desired effects: ${desiredEffects.join(', ')}`);
       
       // Get all strains from the database
-      const allStrainsResult = await this.strainService.searchStrains('', {}, { page: 1, limit: 100 });
+      const allStrainsResult = await databaseManager.searchStrains('', {}, { page: 1, limit: 100 });
       Logger.info(MODULE_NAME, `All strains search result: Found ${allStrainsResult.data?.length || 0} strains`);
       
       if (!allStrainsResult.data || allStrainsResult.data.length === 0) {

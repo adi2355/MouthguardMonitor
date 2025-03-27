@@ -12,7 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../src/constants';
 import LoadingView from '../components/shared/LoadingView';
 import { Strain } from "@/src/types";
-import StrainService from '../../src/services/StrainService';
+import { databaseManager } from '../../src/DatabaseManager';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface CompareRowProps {
@@ -72,7 +72,7 @@ export default function CompareScreen() {
       setError(null);
       const uniqueIds = [...new Set(strainIds)]; // Remove duplicates
       const loadedStrains = await Promise.all(
-        uniqueIds.map(id => StrainService.getStrainById(id))
+        uniqueIds.map(id => databaseManager.getStrainById(id))
       );
       
       const validStrains = loadedStrains.filter((strain): strain is Strain => 
