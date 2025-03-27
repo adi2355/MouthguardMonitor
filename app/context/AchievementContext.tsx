@@ -56,17 +56,15 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
     try {
       setLoading(true);
       
-      // Fetch achievements
-      const achievementsResponse: DatabaseResponse<UserAchievementWithDetails[]> = 
-        await databaseManager.getUserAchievements(userId);
+      // Fetch achievements - note that getUserAchievements returns an array directly, not a DatabaseResponse
+      const userAchievements = await databaseManager.getUserAchievements(userId);
       
-      if (achievementsResponse.success && achievementsResponse.data) {
-        const userAchievements = achievementsResponse.data;
+      if (userAchievements && Array.isArray(userAchievements)) {
         setAchievements(userAchievements);
         
         // Calculate stats
         const totalCount = userAchievements.length;
-        const unlockedCount = userAchievements.filter((a: UserAchievementWithDetails) => a.isUnlocked).length;
+        const unlockedCount = userAchievements.filter(a => a.isUnlocked).length;
         
         setStats({
           total: totalCount,
@@ -76,11 +74,24 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
         
         // Clear new flags
         await databaseManager.clearAchievementNewFlags(userId);
+        console.log(`[AchievementContext] Loaded ${userAchievements.length} achievements`);
       } else {
-        console.error('Failed to load achievements:', achievementsResponse.error);
+        console.error('Failed to load achievements: Invalid response format');
+        setAchievements([]);
+        setStats({
+          total: 0,
+          unlocked: 0,
+          percentComplete: 0
+        });
       }
     } catch (error) {
-      console.error('Failed to load achievements:', error);
+      console.error('Failed to load achievements:', error instanceof Error ? error.message : 'Unknown error');
+      setAchievements([]);
+      setStats({
+        total: 0,
+        unlocked: 0,
+        percentComplete: 0
+      });
     } finally {
       setLoading(false);
     }
@@ -89,18 +100,17 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   const checkAchievements = async (actionType: string, data: any) => {
     try {
       // Check for newly unlocked achievements based on the action
-      const unlockedResponse: DatabaseResponse<UserAchievementWithDetails[]> = 
-        await databaseManager.checkAchievements(userId, actionType, data);
+      const unlockedAchievements = await databaseManager.checkAchievements(userId, actionType, data);
       
-      if (unlockedResponse.success && unlockedResponse.data && unlockedResponse.data.length > 0) {
+      if (unlockedAchievements && Array.isArray(unlockedAchievements) && unlockedAchievements.length > 0) {
         // Set the most recent achievement as newly unlocked for notification
-        setNewlyUnlocked(unlockedResponse.data[0]);
+        setNewlyUnlocked(unlockedAchievements[0]);
         
         // Refresh the achievements list to reflect changes
         loadAchievements();
       }
     } catch (error) {
-      console.error('Failed to check achievements:', error);
+      console.error('Failed to check achievements:', error instanceof Error ? error.message : 'Unknown error');
     }
   };
   

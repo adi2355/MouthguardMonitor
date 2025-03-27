@@ -620,7 +620,17 @@ export class DatabaseManager {
    */
   public async getUserAchievements(userId: string): Promise<UserAchievementWithDetails[]> {
     try {
+      console.log('[DatabaseManager] Getting user achievements for', userId);
       await this.ensureInitialized();
+      
+      // Make sure achievements database is initialized
+      try {
+        await this.initializeAchievementsDb();
+      } catch (error) {
+        console.error('[DatabaseManager] Error ensuring achievements database is initialized:', error);
+        return [];
+      }
+      
       const db = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
       
       // First ensure user has entries for all achievements
@@ -641,6 +651,8 @@ export class DatabaseManager {
         [userId]
       );
       
+      console.log(`[DatabaseManager] Found ${results.length} achievements for user ${userId}`);
+      
       // Convert SQLite's numeric booleans to actual booleans
       return results.map(achievement => ({
         ...achievement,
@@ -649,6 +661,7 @@ export class DatabaseManager {
       }));
     } catch (error) {
       console.error('[DatabaseManager] Failed to get user achievements:', error);
+      // Return empty array instead of throwing
       return [];
     }
   }
@@ -672,9 +685,9 @@ export class DatabaseManager {
       }
       
       return unlockedAchievements;
-    } catch (error) {
+      } catch (error) {
       console.error('[DatabaseManager] Failed to check achievements:', error);
-      return [];
+        return [];
     }
   }
   
@@ -749,11 +762,55 @@ export class DatabaseManager {
    */
   private async ensureUserAchievements(userId: string): Promise<void> {
     try {
+      console.log('[DatabaseManager] Ensuring achievements for user:', userId);
       await this.ensureInitialized();
       const db = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
       
       // Get all achievement IDs
       const achievements = await db.getAllAsync<{id: number}>('SELECT id FROM achievements');
+      console.log(`[DatabaseManager] Found ${achievements.length} achievements in database`);
+      
+      // If no achievements found in DB, try to initialize
+      if (achievements.length === 0) {
+        console.log('[DatabaseManager] No achievements found in database, attempting to initialize...');
+        const initialAchievements = this.getInitialAchievements();
+        
+        if (!initialAchievements || initialAchievements.length === 0) {
+          console.error('[DatabaseManager] ACHIEVEMENTS array is empty or not properly imported');
+          return;
+        }
+        
+        console.log(`[DatabaseManager] Importing ${initialAchievements.length} achievements...`);
+        
+        // Insert achievements
+        await this.executeTransaction(db, async () => {
+          for (const achievement of initialAchievements) {
+            await db.runAsync(
+              `INSERT INTO achievements 
+                (id, category, name, unlock_condition, notes, icon, complexity)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                achievement.id,
+                achievement.category,
+                achievement.name,
+                achievement.unlockCondition,
+                achievement.notes || "",
+                achievement.icon || this.getCategoryIcon(achievement.category),
+                achievement.complexity || 1
+              ]
+            );
+          }
+        });
+        
+        // Re-query for achievement IDs
+        const refreshedAchievements = await db.getAllAsync<{id: number}>('SELECT id FROM achievements');
+        console.log(`[DatabaseManager] Successfully imported ${refreshedAchievements.length} achievements`);
+        
+        if (refreshedAchievements.length === 0) {
+          console.error('[DatabaseManager] Failed to import achievements');
+          return;
+        }
+      }
       
       // Get user's existing achievement entries
       const userAchievements = await db.getAllAsync<{achievement_id: number}>(
@@ -762,8 +819,10 @@ export class DatabaseManager {
       );
       
       const existingIds = new Set(userAchievements.map(ua => ua.achievement_id));
+      console.log(`[DatabaseManager] User ${userId} has ${existingIds.size}/${achievements.length} achievement entries`);
       
       // Create missing entries
+      let newEntriesCount = 0;
       await this.executeTransaction(db, async () => {
         for (const achievement of achievements) {
           if (!existingIds.has(achievement.id)) {
@@ -771,9 +830,12 @@ export class DatabaseManager {
               `INSERT INTO user_achievements (user_id, achievement_id, progress) VALUES (?, ?, 0)`,
               [userId, achievement.id]
             );
+            newEntriesCount++;
           }
         }
       });
+      
+      console.log(`[DatabaseManager] Created ${newEntriesCount} new achievement entries for user ${userId}`);
     } catch (error) {
       console.error('[DatabaseManager] Failed to ensure user achievements:', error);
     }
@@ -886,7 +948,25 @@ export class DatabaseManager {
    * Get initial achievements list
    */
   private getInitialAchievements(): Achievement[] {
+    // Make sure ACHIEVEMENTS is defined and has values
+    if (!ACHIEVEMENTS || !Array.isArray(ACHIEVEMENTS) || ACHIEVEMENTS.length === 0) {
+      console.error('[DatabaseManager] ACHIEVEMENTS array is not properly defined in constants.ts');
+      // Return a minimal set of achievements to prevent the app from crashing
+      return [
+        {
+          id: 1,
+          category: "Getting Started",
+          name: "First Steps",
+          unlockCondition: "Open the app for the first time",
+          notes: "Welcome to Canova!",
+          icon: "trophy",
+          complexity: 1
+        }
+      ];
+    }
+    
     // Return achievements from constants
+    console.log(`[DatabaseManager] Returning ${ACHIEVEMENTS.length} achievements from constants`);
     return ACHIEVEMENTS;
   }
   
