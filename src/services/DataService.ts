@@ -1,4 +1,4 @@
-import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
+import { SQLiteDatabase } from "expo-sqlite";
 import { 
   BongHit, 
   ChartDataPoint, 
@@ -8,18 +8,18 @@ import {
   DatabaseRow 
 } from "@/src/types";
 import { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "@/src/constants";
+import { databaseManager } from "@/src/DatabaseManager";
 
 interface CountResult {
   count: number;
 }
 
 /*
- * 
+ * Service for accessing and managing bong hit data
  */
 
 export class DataService {
   private static instance: DataService;
-  private db: SQLiteDatabase | null = null;
 
   public static getInstance(): DataService {
     if (!DataService.instance) {
@@ -29,22 +29,17 @@ export class DataService {
   }
 
   private constructor() {
-
-
+    // Initialize on first use
   }
 
   public async cleanup() {
     console.log('[DataService] Starting cleanup...');
-    if (this.db) {
-      try {
-        await this.db.closeAsync();
-        this.db = null;
-        this.initializationPromise = null;
-        console.log('[DataService] Cleanup completed successfully');
-      } catch (error) {
-        console.error('[DataService] Error during cleanup:', error);
-        throw error;
-      }
+    try {
+      // No need to close the database directly, the DatabaseManager handles that
+      console.log('[DataService] Cleanup completed successfully');
+    } catch (error) {
+      console.error('[DataService] Error during cleanup:', error);
+      throw error;
     }
   }
 
@@ -138,6 +133,15 @@ export class DataService {
       `;
 
       const dailyHits = await db.getAllAsync<{ daily_hits: number }>(dailyHitsQuery);
+      
+      // Handle case with no data
+      if (!dailyHits.length) {
+        return {
+          success: true,
+          data: this.getEmptyUsageStats()
+        };
+      }
+      
       const dailyHitsArray = dailyHits.map(row => Number(row.daily_hits));
       const mean = dailyHitsArray.reduce((sum, val) => sum + val, 0) / dailyHitsArray.length;
       const variance = dailyHitsArray.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dailyHitsArray.length;
@@ -199,24 +203,7 @@ export class DataService {
       if (!result) {
         return {
           success: true,
-          data: {
-            averageHitsPerDay: 0,
-            totalHits: 0,
-            peakDayHits: 0,
-            lowestDayHits: 0,
-            averageDuration: 0,
-            longestHit: 0,
-            shortestHit: 0,
-            mostActiveHour: 0,
-            leastActiveHour: 0,
-            totalDuration: 0,
-            averageHitsPerHour: 0,
-            consistency: 0,
-            weekdayStats: {
-              weekday: { avg: 0, total: 0 },
-              weekend: { avg: 0, total: 0 }
-            }
-          }
+          data: this.getEmptyUsageStats()
         };
       }
 
@@ -327,37 +314,10 @@ export class DataService {
     }
   }
 
-  private async initialize(): Promise<void> {
-    try {
-      console.log('[DataService] Opening database...');
-      this.db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-      // Verify data was inserted
-      const [countResult] = await this.db.getAllAsync<CountResult>('SELECT COUNT(*) as count FROM ' + BONG_HITS_DATABASE_NAME);
-      console.log('[DataService] Opened database with', countResult.count, 'records');
-
-    } catch (error) {
-      console.error('[DataService] Failed to open database:', error);
-      this.db = null;
-      throw error;
-    }
-  }
-
   private async getDatabase(): Promise<SQLiteDatabase> {
-    if (!this.db) {
-      this.db = await openDatabaseAsync(BONG_HITS_DATABASE_NAME);
-
-      if (this.db === null) {
-        throw new Error('Database initialization failed');
-      }
-    }
-
-    // Verify database has data
-    const [countResult] = await this.db.getAllAsync<CountResult>(`
-      SELECT COUNT(*) as count FROM ${BONG_HITS_DATABASE_NAME}
-    `);
-    console.log('[DataService] Current database record count:', countResult.count);
-
-    return this.db;
+    // Use centralized database manager instead of managing our own connection
+    await databaseManager.ensureInitialized();
+    return databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
   }
 
   private handleError<T>(error: unknown, operation: string): DatabaseResponse<T> {
@@ -395,5 +355,116 @@ export class DataService {
     }));
     console.log('[DataService] Validated monthly data:', monthlyData);
     return monthlyData;
+  }
+
+  private getEmptyUsageStats(): UsageStats {
+    return {
+      averageHitsPerDay: 0,
+      totalHits: 0,
+      peakDayHits: 0,
+      lowestDayHits: 0,
+      averageDuration: 0,
+      longestHit: 0,
+      shortestHit: 0,
+      mostActiveHour: 0,
+      leastActiveHour: 0,
+      totalDuration: 0,
+      averageHitsPerHour: 0,
+      consistency: 0,
+      weekdayStats: {
+        weekday: { avg: 0, total: 0 },
+        weekend: { avg: 0, total: 0 }
+      }
+    };
+  }
+
+  /**
+   * Diagnostic function to check timestamp range of records
+   */
+  public async checkTimestampRange(): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      const results = await db.getAllAsync<{min_ts: string, max_ts: string, count: number}>(`
+        SELECT 
+          MIN(timestamp) as min_ts,
+          MAX(timestamp) as max_ts,
+          COUNT(*) as count
+        FROM ${BONG_HITS_DATABASE_NAME}
+      `);
+
+      if (results.length && results[0]) {
+        const range = results[0];
+        console.log('[DataService] TIMESTAMP DIAGNOSTIC:');
+        console.log('  - Earliest record:', range.min_ts);
+        console.log('  - Latest record:', range.max_ts);
+        console.log('  - Record count:', range.count);
+        
+        // Check how many records fall in various date ranges
+        const recentCounts = await db.getAllAsync<{range_name: string, count: number}>(`
+          SELECT 
+            'Since 2024-12-24' as range_name,
+            COUNT(*) as count
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= '2024-12-24'
+          
+          UNION ALL
+          
+          SELECT 
+            'Last 7 days' as range_name,
+            COUNT(*) as count
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= date('now', '-7 days')
+          
+          UNION ALL
+          
+          SELECT 
+            'Last 30 days' as range_name,
+            COUNT(*) as count
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= date('now', '-30 days')
+          
+          UNION ALL
+          
+          SELECT 
+            'Last 365 days' as range_name,
+            COUNT(*) as count
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= date('now', '-365 days')
+        `);
+        
+        console.log('[DataService] RECORDS BY TIME RANGE:');
+        recentCounts.forEach(item => {
+          console.log(`  - ${item.range_name}: ${item.count} records`);
+        });
+      }
+    } catch (error) {
+      console.error('[DataService] Error checking timestamp range:', error);
+    }
+  }
+
+  /**
+   * Get all bong hit logs from the database
+   * @returns Promise with database response containing array of BongHit objects
+   */
+  public async getAllBongHitLogs(): Promise<DatabaseResponse<BongHit[]>> {
+    try {
+      console.log('[DataService] Fetching all bong hit logs...');
+      const db = await this.getDatabase();
+      const results = await db.getAllAsync<BongHit>(`
+        SELECT 
+          timestamp,
+          duration_ms
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ORDER BY timestamp DESC
+      `);
+
+      console.log('[DataService] Retrieved', results.length, 'bong hit logs');
+      return {
+        success: true,
+        data: results
+      };
+    } catch (error) {
+      return this.handleError(error, 'getAllBongHitLogs');
+    }
   }
 } 

@@ -1,4 +1,4 @@
-import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
+import { SQLiteDatabase } from "expo-sqlite";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   RecommendationRequest, 
@@ -10,6 +10,7 @@ import {
   JournalEntry,
   UserProfile
 } from '../types/ai';
+import { databaseManager } from '../DatabaseManager';
 
 // Constants for safety thresholds
 const SAFETY_DB_NAME = "SafetyRecords";
@@ -20,7 +21,6 @@ const MINIMUM_AGE_REQUIREMENT = 21; // Minimum age for recommendations
 
 export class SafetyService {
   private static instance: SafetyService;
-  private db: SQLiteDatabase | null = null;
   private initialized: boolean = false;
   
   private constructor() {}
@@ -39,28 +39,8 @@ export class SafetyService {
     try {
       console.log('[SafetyService] Initializing safety database...');
       
-      this.db = await openDatabaseAsync(SAFETY_DB_NAME);
-      
-      // Create tables for safety records
-      await this.db.execAsync(`
-        PRAGMA journal_mode = WAL;
-        
-        CREATE TABLE IF NOT EXISTS ${SAFETY_DB_NAME} (
-          id TEXT PRIMARY KEY NOT NULL,
-          user_id TEXT NOT NULL,
-          concern_type TEXT NOT NULL,
-          concern_details TEXT NOT NULL,
-          resolution_suggestions TEXT,
-          cooling_off_until INTEGER,
-          created_at INTEGER NOT NULL
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_user_id 
-        ON ${SAFETY_DB_NAME}(user_id);
-        
-        CREATE INDEX IF NOT EXISTS idx_created_at 
-        ON ${SAFETY_DB_NAME}(created_at);
-      `);
+      // Database initialization is now handled by DatabaseManager
+      await databaseManager.ensureInitialized();
       
       // Initialize educational content if not already done
       const hasInitialized = await AsyncStorage.getItem('safety_initialized');
@@ -671,7 +651,7 @@ export class SafetyService {
     }
   }
   
-  // Log a safety concern for a user
+  // Log a safety concern for a user - update database access
   async logSafetyConcern(data: {
     userId: string;
     concernType: 'overuse' | 'negative_effects' | 'interactions';
@@ -683,13 +663,14 @@ export class SafetyService {
     try {
       await this.ensureInitialized();
       
-      if (!this.db) {
-        throw new Error('Safety database not initialized');
-      }
-      
+      const db = await this.getDatabase();
       const id = `concern_${Date.now()}`;
       
-      await this.db.execAsync(`
+      const resolutionSuggestionsJSON = data.resolutionSuggestions ? 
+        JSON.stringify(data.resolutionSuggestions) : null;
+      
+      // Use run instead of execAsync for parameterized queries
+      await db.runAsync(`
         INSERT INTO ${SAFETY_DB_NAME} (
           id,
           user_id,
@@ -698,16 +679,17 @@ export class SafetyService {
           resolution_suggestions,
           cooling_off_until,
           created_at
-        ) VALUES (
-          '${id}',
-          '${data.userId}',
-          '${data.concernType}',
-          '${data.concernDetails}',
-          ${data.resolutionSuggestions ? `'${JSON.stringify(data.resolutionSuggestions)}'` : 'NULL'},
-          ${data.coolingOffUntil ? data.coolingOffUntil : 'NULL'},
-          ${data.timestamp}
-        )
-      `);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          data.userId,
+          data.concernType,
+          data.concernDetails,
+          resolutionSuggestionsJSON,
+          data.coolingOffUntil || null,
+          data.timestamp
+        ]
+      );
       
       console.log('[SafetyService] Safety concern logged for user', data.userId);
       
@@ -722,17 +704,15 @@ export class SafetyService {
     try {
       await this.ensureInitialized();
       
-      if (!this.db) {
-        return [];
-      }
+      const db = await this.getDatabase();
       
-      const result = await this.db.getAllAsync<any>(`
+      const records = await db.getAllAsync(`
         SELECT * FROM ${SAFETY_DB_NAME}
-        WHERE user_id = '${userId}'
+        WHERE user_id = ?
         ORDER BY created_at DESC
-      `);
+      `, [userId]);
       
-      return result.map((row: any) => ({
+      return records.map((row: any) => ({
         id: row.id,
         user_id: row.user_id,
         concern_type: row.concern_type as 'overuse' | 'negative_effects' | 'interactions',
@@ -750,7 +730,7 @@ export class SafetyService {
     }
   }
   
-  // Check if a user is in a cooling off period
+  // Check cooling off status - update database access
   async checkCoolingOffStatus(userId: string): Promise<{
     inCoolingOff: boolean;
     endTime?: number;
@@ -759,28 +739,33 @@ export class SafetyService {
     try {
       await this.ensureInitialized();
       
-      if (!this.db) {
-        return { inCoolingOff: false };
-      }
+      const db = await this.getDatabase();
       
-      const now = Date.now();
+      const nowTimestamp = Date.now();
       
-      const [result] = await this.db.getAllAsync<any>(`
-        SELECT * FROM ${SAFETY_DB_NAME}
-        WHERE user_id = '${userId}' AND cooling_off_until > ${now}
+      // Use parameterized query with getAllAsync
+      const results = await db.getAllAsync<{cooling_off_until: number, concern_details: string}>(`
+        SELECT cooling_off_until, concern_details 
+        FROM ${SAFETY_DB_NAME}
+        WHERE user_id = ? 
+        AND cooling_off_until IS NOT NULL 
+        AND cooling_off_until > ?
         ORDER BY cooling_off_until DESC
-        LIMIT 1
-      `);
+        LIMIT 1`,
+        [userId, nowTimestamp]
+      );
       
-      if (!result) {
-        return { inCoolingOff: false };
+      const record = results[0];
+      
+      if (record && record.cooling_off_until) {
+        return {
+          inCoolingOff: true,
+          endTime: record.cooling_off_until,
+          reason: record.concern_details
+        };
       }
       
-      return {
-        inCoolingOff: true,
-        endTime: result.cooling_off_until,
-        reason: result.concern_details
-      };
+      return { inCoolingOff: false };
       
     } catch (error) {
       console.error('[SafetyService] Error checking cooling off status:', error);
@@ -862,34 +847,16 @@ export class SafetyService {
     await AsyncStorage.setItem('educational_content', JSON.stringify(educationalContent));
   }
   
-  // Cleanup resources
-  async cleanup(): Promise<void> {
-    if (this.db) {
-      try {
-        // Check if the database is already closed
-        const isClosed = await this.isDbClosed();
-        if (!isClosed) {
-          await this.db.closeAsync();
-        }
-        this.db = null;
-        this.initialized = false;
-      } catch (error) {
-        console.error('[SafetyService] Error during cleanup:', error);
-      }
-    }
+  // Get database connection from DatabaseManager
+  private async getDatabase(): Promise<SQLiteDatabase> {
+    await this.ensureInitialized();
+    return databaseManager.getDatabase(SAFETY_DB_NAME);
   }
-
-  // Helper method to check if the database is closed
-  private async isDbClosed(): Promise<boolean> {
-    try {
-      // Try a simple query - if it fails with a "database is closed" error, the DB is closed
-      await this.db?.execAsync('SELECT 1');
-      return false; // Query succeeded, database is open
-    } catch (error) {
-      // If the error message contains "closed", the database is already closed
-      const errorMessage = String(error);
-      return errorMessage.includes('closed') || errorMessage.includes('not open');
-    }
+  
+  // Cleanup method updated to remove database close code
+  async cleanup(): Promise<void> {
+    this.initialized = false;
+    console.log('[SafetyService] Cleanup completed');
   }
 }
 

@@ -1,5 +1,5 @@
 import { BluetoothContext, BluetoothHandler } from '@/src/contexts/BluetoothContext';
-import { getSavedDevices, saveDevices } from '@/src/dbManager';
+import { getSavedDevices, saveDevices } from '@/src/DatabaseManager';
 import { SavedDevice } from '@/src/types';
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import {

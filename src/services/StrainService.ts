@@ -1,6 +1,7 @@
-import { openDatabaseAsync, SQLiteDatabase } from "expo-sqlite";
-import { STRAINS_DATABASE_NAME, SAMPLE_STRAINS } from "../constants";
+import { SQLiteDatabase } from "expo-sqlite";
+import { STRAINS_DATABASE_NAME } from "../constants";
 import { Strain } from "../types";
+import { databaseManager } from "../DatabaseManager";
 
 export interface StrainSearchFilters {
   geneticType?: string;
@@ -27,8 +28,6 @@ export interface StrainSearchResult {
 
 export class StrainService {
   private static instance: StrainService;
-  private db: SQLiteDatabase | null = null;
-  private initializationPromise: Promise<void> | null = null;
 
   private constructor() {}
 
@@ -39,112 +38,10 @@ export class StrainService {
     return StrainService.instance;
   }
 
-  private async initialize(): Promise<void> {
-    try {
-      console.log('[StrainService] Initializing database...');
-      this.db = await openDatabaseAsync(STRAINS_DATABASE_NAME);
-
-      // Drop existing table to ensure clean state
-      await this.db.execAsync(`DROP TABLE IF EXISTS ${STRAINS_DATABASE_NAME};`);
-
-      // Create table and indexes
-      await this.db.execAsync(`
-        PRAGMA journal_mode = WAL;
-        
-        CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          overview TEXT,
-          genetic_type TEXT,
-          lineage TEXT,
-          thc_range TEXT,
-          cbd_level TEXT,
-          dominant_terpenes TEXT,
-          qualitative_insights TEXT,
-          effects TEXT,
-          negatives TEXT,
-          uses TEXT,
-          thc_rating REAL,
-          user_rating REAL,
-          combined_rating REAL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_strain_name 
-        ON ${STRAINS_DATABASE_NAME}(name);
-        
-        CREATE INDEX IF NOT EXISTS idx_strain_genetic_type 
-        ON ${STRAINS_DATABASE_NAME}(genetic_type);
-        
-        CREATE INDEX IF NOT EXISTS idx_strain_effects 
-        ON ${STRAINS_DATABASE_NAME}(effects);
-        
-        CREATE INDEX IF NOT EXISTS idx_strain_rating 
-        ON ${STRAINS_DATABASE_NAME}(combined_rating DESC);
-      `);
-
-      // Insert all sample strains
-      console.log('[StrainService] Inserting', SAMPLE_STRAINS.length, 'sample strains...');
-      
-      for (const strain of SAMPLE_STRAINS) {
-        try {
-          await this.db.runAsync(
-            `INSERT INTO ${STRAINS_DATABASE_NAME} (
-              name, overview, genetic_type, lineage, thc_range,
-              cbd_level, dominant_terpenes, qualitative_insights,
-              effects, negatives, uses, thc_rating,
-              user_rating, combined_rating
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-            [
-              strain.name,
-              strain.overview,
-              strain.genetic_type,
-              strain.lineage,
-              strain.thc_range,
-              strain.cbd_level,
-              strain.dominant_terpenes,
-              strain.qualitative_insights,
-              strain.effects,
-              strain.negatives,
-              strain.uses,
-              strain.thc_rating,
-              strain.user_rating,
-              strain.combined_rating
-            ]
-          );
-        } catch (insertError) {
-          console.error(`[StrainService] Failed to insert strain ${strain.name}:`, insertError);
-          // Continue with next strain instead of failing completely
-        }
-      }
-
-      // Verify the data
-      const [finalCount] = await this.db.getAllAsync<{ count: number }>(
-        `SELECT COUNT(*) as count FROM ${STRAINS_DATABASE_NAME}`
-      );
-      console.log('[StrainService] Database initialized with', finalCount?.count || 0, 'strains');
-
-    } catch (error) {
-      console.error('[StrainService] Failed to initialize database:', error);
-      this.db = null;
-      throw error;
-    }
-  }
-
   private async getDatabase(): Promise<SQLiteDatabase> {
-    if (!this.db) {
-      if (!this.initializationPromise) {
-        this.initializationPromise = this.initialize();
-      }
-      await this.initializationPromise;
-      this.initializationPromise = null;
-    }
-
-    if (!this.db) {
-      throw new Error('Database initialization failed');
-    }
-
-    return this.db;
+    // Use centralized database manager
+    await databaseManager.ensureInitialized();
+    return databaseManager.getDatabase(STRAINS_DATABASE_NAME);
   }
 
   private parseTHCRange(thcRange: string): { min: number; max: number } {
@@ -209,21 +106,22 @@ export class StrainService {
         : '';
 
       // Get total count
-      const [countResult] = await db.getAllAsync<{ total: number }>(
-        `SELECT COUNT(*) as total FROM ${STRAINS_DATABASE_NAME} ${whereClause}`,
-        params
-      );
+      const countQuery = `SELECT COUNT(*) as total FROM ${STRAINS_DATABASE_NAME} ${whereClause}`;
+      const countResults = await db.getAllAsync<{ total: number }>(countQuery, params);
+      const total = countResults[0]?.total || 0;
 
       // Get filtered results
+      const searchQuery = `
+        SELECT * FROM ${STRAINS_DATABASE_NAME} 
+        ${whereClause} 
+        ORDER BY ${this.getSortOrder(filters.sort)}
+        LIMIT ? OFFSET ?`;
+      
       const results = await db.getAllAsync<Strain>(
-        `SELECT * FROM ${STRAINS_DATABASE_NAME} 
-         ${whereClause} 
-         ORDER BY ${this.getSortOrder(filters.sort)}
-         LIMIT ? OFFSET ?`,
+        searchQuery,
         [...params, limit, offset]
       );
 
-      const total = countResult?.total || 0;
       const totalPages = Math.ceil(total / limit);
 
       return {
@@ -264,11 +162,11 @@ export class StrainService {
   async getStrainById(id: number): Promise<Strain | null> {
     try {
       const db = await this.getDatabase();
-      const [strain] = await db.getAllAsync<Strain>(
+      const results = await db.getAllAsync<Strain>(
         `SELECT * FROM ${STRAINS_DATABASE_NAME} WHERE id = ? LIMIT 1`,
         [id]
       );
-      return strain || null;
+      return results[0] || null;
     } catch (error) {
       console.error('[StrainService] Error getting strain by id:', error);
       return null;
@@ -333,16 +231,8 @@ export class StrainService {
   }
 
   async cleanup(): Promise<void> {
-    if (this.db) {
-      try {
-        await this.db.closeAsync();
-        this.db = null;
-        this.initializationPromise = null;
-      } catch (error) {
-        console.error('[StrainService] Error during cleanup:', error);
-        throw error;
-      }
-    }
+    // Nothing to clean up - database connection is managed by DatabaseManager
+    console.log('[StrainService] Cleanup completed');
   }
 }
 

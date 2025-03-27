@@ -49,6 +49,9 @@ export function useDataService() {
         if (!isMounted) return;
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
+        // Run timestamp diagnostic to check data range
+        await service.checkTimestampRange();
+
         // Fetch data sequentially to avoid race conditions
         console.log('[useDataService] Fetching weekly stats...');
         const weeklyStats = await service.getWeeklyStats();
