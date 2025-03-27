@@ -133,7 +133,12 @@ export class DatabaseManager {
   /**
    * Initializes all databases and tables with initial data.
    */
-  public async initialize(): Promise<void> {
+  public async initialize(options: { forceCleanup?: boolean } = {}): Promise<void> {
+    // If forced cleanup is requested, close existing connections first
+    if (options.forceCleanup) {
+      await this.cleanup();
+    }
+
     // If already initialized, return immediately
     if (this.initialized) {
       return;
@@ -206,9 +211,125 @@ export class DatabaseManager {
         await this.applyMigration(version);
       }
       
+      // Validate schema after migrations
+      const schemaValid = await this.validateSchema();
+      if (!schemaValid) {
+        throw new Error('Database schema validation failed after migration');
+      }
+      
       console.log('[DatabaseManager] All migrations completed successfully');
     } finally {
       this.migrationLock = false;
+    }
+  }
+
+  /**
+   * Validate database schemas to ensure they match expected structures
+   */
+  private async validateSchema(): Promise<boolean> {
+    try {
+      console.log('[DatabaseManager] Validating database schemas...');
+      // Validate bong hits schema
+      const bongHitsDb = await this.getDatabase(BONG_HITS_DATABASE_NAME);
+      const bongHitsTableInfo = await bongHitsDb.getAllAsync<{name: string, type: string}>(
+        `PRAGMA table_info(${BONG_HITS_DATABASE_NAME})`
+      );
+      
+      const requiredBongHitsColumns = [
+        { name: 'timestamp', type: 'TIMESTAMP' },
+        { name: 'duration_ms', type: 'INTEGER' }
+      ];
+      
+      // Check if all required columns exist
+      const bongHitsValid = requiredBongHitsColumns.every(col => 
+        bongHitsTableInfo.some(info => 
+          info.name === col.name && info.type.toUpperCase().includes(col.type)
+        )
+      );
+      
+      if (!bongHitsValid) {
+        console.error('[DatabaseManager] Bong hits schema validation failed');
+        return false;
+      }
+      
+      // Validate strains schema
+      const strainsDb = await this.getDatabase(STRAINS_DATABASE_NAME);
+      const strainsTableInfo = await strainsDb.getAllAsync<{name: string, type: string}>(
+        `PRAGMA table_info(${STRAINS_DATABASE_NAME})`
+      );
+      
+      const requiredStrainsColumns = [
+        { name: 'id', type: 'INTEGER' },
+        { name: 'name', type: 'TEXT' },
+        { name: 'genetic_type', type: 'TEXT' },
+        { name: 'effects', type: 'TEXT' },
+        { name: 'combined_rating', type: 'REAL' }
+      ];
+      
+      const strainsValid = requiredStrainsColumns.every(col => 
+        strainsTableInfo.some(info => 
+          info.name === col.name && info.type.toUpperCase().includes(col.type)
+        )
+      );
+      
+      if (!strainsValid) {
+        console.error('[DatabaseManager] Strains schema validation failed');
+        return false;
+      }
+      
+      // Validate achievements schema
+      const achievementsDb = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
+      const achievementsTableInfo = await achievementsDb.getAllAsync<{name: string, type: string}>(
+        `PRAGMA table_info(achievements)`
+      );
+      
+      const requiredAchievementsColumns = [
+        { name: 'id', type: 'INTEGER' },
+        { name: 'category', type: 'TEXT' },
+        { name: 'name', type: 'TEXT' },
+        { name: 'unlock_condition', type: 'TEXT' }
+      ];
+      
+      const achievementsValid = requiredAchievementsColumns.every(col => 
+        achievementsTableInfo.some(info => 
+          info.name === col.name && info.type.toUpperCase().includes(col.type)
+        )
+      );
+      
+      if (!achievementsValid) {
+        console.error('[DatabaseManager] Achievements schema validation failed');
+        return false;
+      }
+      
+      // Validate safety schema
+      const safetyDb = await this.getDatabase(SAFETY_DB_NAME);
+      const safetyTableInfo = await safetyDb.getAllAsync<{name: string, type: string}>(
+        `PRAGMA table_info(${SAFETY_DB_NAME})`
+      );
+      
+      const requiredSafetyColumns = [
+        { name: 'id', type: 'TEXT' },
+        { name: 'user_id', type: 'TEXT' },
+        { name: 'concern_type', type: 'TEXT' },
+        { name: 'created_at', type: 'INTEGER' }
+      ];
+      
+      const safetyValid = requiredSafetyColumns.every(col => 
+        safetyTableInfo.some(info => 
+          info.name === col.name && info.type.toUpperCase().includes(col.type)
+        )
+      );
+      
+      if (!safetyValid) {
+        console.error('[DatabaseManager] Safety schema validation failed');
+        return false;
+      }
+      
+      console.log('[DatabaseManager] All database schemas validated successfully');
+      return true;
+    } catch (error) {
+      console.error('[DatabaseManager] Schema validation failed:', error);
+      return false;
     }
   }
 
@@ -272,7 +393,7 @@ export class DatabaseManager {
         'PRAGMA journal_mode = WAL;' +
         `CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
+          name TEXT NOT NULL UNIQUE,
           overview TEXT,
           genetic_type TEXT,
           lineage TEXT,
@@ -295,29 +416,24 @@ export class DatabaseManager {
         `CREATE INDEX IF NOT EXISTS idx_strain_effects 
         ON ${STRAINS_DATABASE_NAME}(effects);` +
         `CREATE INDEX IF NOT EXISTS idx_strain_rating 
-        ON ${STRAINS_DATABASE_NAME}(combined_rating DESC);`
+        ON ${STRAINS_DATABASE_NAME}(combined_rating DESC);` +
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_strain_name 
+        ON ${STRAINS_DATABASE_NAME}(name);`
       );
 
-      // Check if strains already exist to avoid duplicate insertion
-      const results = await db.getAllAsync<{count: number}>(`SELECT COUNT(*) as count FROM ${STRAINS_DATABASE_NAME}`);
-      if (!results.length) {
-        // Insert sample strain data if no results or count is 0
+      // Simple count check to avoid duplicate data
+      const [result] = await db.getAllAsync<{count: number}>(`SELECT COUNT(*) as count FROM ${STRAINS_DATABASE_NAME}`);
+      
+      if (result && result.count === 0) {
         await this.insertStrainData(db);
         console.log('[DatabaseManager] Sample strain data inserted');
       } else {
-        const count = results[0];
-        if (count.count === 0) {
-          await this.insertStrainData(db);
-          console.log('[DatabaseManager] Sample strain data inserted after count check');
-        } else {
-          console.log(`[DatabaseManager] Strains database already contains ${count.count} records`);
-        }
+        console.log(`[DatabaseManager] Strains database already contains ${result ? result.count : 0} records`);
       }
       
       console.log('[DatabaseManager] Strains database initialized');
     } catch (error) {
-      console.error('[DatabaseManager] Error initializing Strains database:', error);
-      throw error;
+      throw this.handleDatabaseError(error, 'initializeStrainsDb');
     }
   }
 
@@ -341,13 +457,16 @@ export class DatabaseManager {
         `CREATE INDEX IF NOT EXISTS idx_user_id 
         ON ${SAFETY_DB_NAME}(user_id);` +
         `CREATE INDEX IF NOT EXISTS idx_created_at 
-        ON ${SAFETY_DB_NAME}(created_at);`
+        ON ${SAFETY_DB_NAME}(created_at);` +
+        `CREATE INDEX IF NOT EXISTS idx_concern_type 
+        ON ${SAFETY_DB_NAME}(concern_type);` +
+        `CREATE INDEX IF NOT EXISTS idx_cooling_off_until 
+        ON ${SAFETY_DB_NAME}(cooling_off_until);`
       );
       
       console.log('[DatabaseManager] Safety database initialized');
     } catch (error) {
-      console.error('[DatabaseManager] Error initializing Safety database:', error);
-      throw error;
+      throw this.handleDatabaseError(error, 'initializeSafetyDb');
     }
   }
 
@@ -655,13 +774,13 @@ export class DatabaseManager {
       console.log('[DatabaseManager] Getting user achievements for', userId);
       await this.ensureInitialized();
       
-      // Make sure achievements database is initialized
-      try {
-        await this.initializeAchievementsDb();
-      } catch (error) {
-        console.error('[DatabaseManager] Error ensuring achievements database is initialized:', error);
-        return [];
-      }
+      // Remove redundant initialization - rely on ensureInitialized() instead
+      // try {
+      //   await this.initializeAchievementsDb();
+      // } catch (error) {
+      //   console.error('[DatabaseManager] Error ensuring achievements database is initialized:', error);
+      //   return [];
+      // }
       
       const db = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
       
@@ -692,9 +811,70 @@ export class DatabaseManager {
         isNew: Boolean(achievement.isNew)
       }));
     } catch (error) {
-      console.error('[DatabaseManager] Failed to get user achievements:', error);
-      // Return empty array instead of throwing
-      return [];
+      return this.handleDatabaseError(error, 'getUserAchievements', []);
+    }
+  }
+
+  /**
+   * Standardized error handling method
+   */
+  private handleDatabaseError<T>(error: unknown, operation: string, fallback?: T): T | never {
+    console.error(`[DatabaseManager] Error during ${operation}:`, error);
+    
+    if (fallback !== undefined) {
+      // Return fallback value if provided
+      return fallback;
+    }
+    
+    // Otherwise throw with a standard format
+    throw new Error(`Database operation failed: ${operation}`);
+  }
+
+  /**
+   * Ensure all achievements are in the user's record
+   */
+  private async ensureUserAchievements(userId: string): Promise<void> {
+    try {
+      console.log('[DatabaseManager] Ensuring achievements for user:', userId);
+      await this.ensureInitialized();
+      const db = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
+      
+      // Get all achievement IDs
+      const achievements = await db.getAllAsync<{id: number}>('SELECT id FROM achievements');
+      console.log(`[DatabaseManager] Found ${achievements.length} achievements in database`);
+      
+      // If no achievements found in DB, this indicates initialization issue
+      if (achievements.length === 0) {
+        console.error('[DatabaseManager] No achievements found in database. Database may not be properly initialized.');
+        throw new Error('Achievement database not properly initialized');
+      }
+      
+      // Get user's existing achievement entries
+      const userAchievements = await db.getAllAsync<{achievement_id: number}>(
+        'SELECT achievement_id FROM user_achievements WHERE user_id = ?',
+        [userId]
+      );
+      
+      const existingIds = new Set(userAchievements.map(ua => ua.achievement_id));
+      console.log(`[DatabaseManager] User ${userId} has ${existingIds.size}/${achievements.length} achievement entries`);
+      
+      // Create missing entries
+      let newEntriesCount = 0;
+      await this.executeTransaction(db, async () => {
+        for (const achievement of achievements) {
+          if (!existingIds.has(achievement.id)) {
+            await db.runAsync(
+              `INSERT INTO user_achievements (user_id, achievement_id, progress) VALUES (?, ?, 0)`,
+              [userId, achievement.id]
+            );
+            newEntriesCount++;
+          }
+        }
+      });
+      
+      console.log(`[DatabaseManager] Created ${newEntriesCount} new achievement entries for user ${userId}`);
+    } catch (error) {
+      throw this.handleDatabaseError(error, 'ensureUserAchievements');
     }
   }
   
@@ -786,90 +966,6 @@ export class DatabaseManager {
       );
     } catch (error) {
       console.error('[DatabaseManager] Failed to clear achievement new flags:', error);
-    }
-  }
-  
-  /**
-   * Ensure all achievements are in the user's record
-   */
-  private async ensureUserAchievements(userId: string): Promise<void> {
-    try {
-      console.log('[DatabaseManager] Ensuring achievements for user:', userId);
-      await this.ensureInitialized();
-      const db = await this.getDatabase(ACHIEVEMENTS_DB_NAME);
-      
-      // Get all achievement IDs
-      const achievements = await db.getAllAsync<{id: number}>('SELECT id FROM achievements');
-      console.log(`[DatabaseManager] Found ${achievements.length} achievements in database`);
-      
-      // If no achievements found in DB, try to initialize
-      if (achievements.length === 0) {
-        console.log('[DatabaseManager] No achievements found in database, attempting to initialize...');
-        const initialAchievements = this.getInitialAchievements();
-        
-        if (!initialAchievements || initialAchievements.length === 0) {
-          console.error('[DatabaseManager] ACHIEVEMENTS array is empty or not properly imported');
-          return;
-        }
-        
-        console.log(`[DatabaseManager] Importing ${initialAchievements.length} achievements...`);
-        
-        // Insert achievements
-        await this.executeTransaction(db, async () => {
-          for (const achievement of initialAchievements) {
-            await db.runAsync(
-              `INSERT INTO achievements 
-                (id, category, name, unlock_condition, notes, icon, complexity)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [
-                achievement.id,
-                achievement.category,
-                achievement.name,
-                achievement.unlockCondition,
-                achievement.notes || "",
-                achievement.icon || this.getCategoryIcon(achievement.category),
-                achievement.complexity || 1
-              ]
-            );
-          }
-        });
-        
-        // Re-query for achievement IDs
-        const refreshedAchievements = await db.getAllAsync<{id: number}>('SELECT id FROM achievements');
-        console.log(`[DatabaseManager] Successfully imported ${refreshedAchievements.length} achievements`);
-        
-        if (refreshedAchievements.length === 0) {
-          console.error('[DatabaseManager] Failed to import achievements');
-          return;
-        }
-      }
-      
-      // Get user's existing achievement entries
-      const userAchievements = await db.getAllAsync<{achievement_id: number}>(
-        'SELECT achievement_id FROM user_achievements WHERE user_id = ?',
-        [userId]
-      );
-      
-      const existingIds = new Set(userAchievements.map(ua => ua.achievement_id));
-      console.log(`[DatabaseManager] User ${userId} has ${existingIds.size}/${achievements.length} achievement entries`);
-      
-      // Create missing entries
-      let newEntriesCount = 0;
-      await this.executeTransaction(db, async () => {
-        for (const achievement of achievements) {
-          if (!existingIds.has(achievement.id)) {
-            await db.runAsync(
-              `INSERT INTO user_achievements (user_id, achievement_id, progress) VALUES (?, ?, 0)`,
-              [userId, achievement.id]
-            );
-            newEntriesCount++;
-          }
-        }
-      });
-      
-      console.log(`[DatabaseManager] Created ${newEntriesCount} new achievement entries for user ${userId}`);
-    } catch (error) {
-      console.error('[DatabaseManager] Failed to ensure user achievements:', error);
     }
   }
   
@@ -982,19 +1078,9 @@ export class DatabaseManager {
   private getInitialAchievements(): Achievement[] {
     // Make sure ACHIEVEMENTS is defined and has values
     if (!ACHIEVEMENTS || !Array.isArray(ACHIEVEMENTS) || ACHIEVEMENTS.length === 0) {
-      console.error('[DatabaseManager] ACHIEVEMENTS array is not properly defined in constants.ts');
-      // Return a minimal set of achievements to prevent the app from crashing
-      return [
-        {
-          id: 1,
-          category: "Getting Started",
-          name: "First Steps",
-          unlockCondition: "Open the app for the first time",
-          notes: "Welcome to Canova!",
-          icon: "trophy",
-          complexity: 1
-        }
-      ];
+      const error = new Error('[DatabaseManager] ACHIEVEMENTS array is not properly defined in constants.ts');
+      console.error(error);
+      throw error; // Throw instead of creating a fallback
     }
     
     // Return achievements from constants
@@ -1995,9 +2081,70 @@ export class DatabaseManager {
    * Get recent journal entries for a user
    */
   private async getRecentJournalEntries(userId: string, days: number): Promise<JournalEntry[]> {
-    // Mock implementation - in a real app, you would query your journal database
-    // This would be implemented based on your journal database schema
-    return [];
+    try {
+      await this.ensureInitialized();
+      
+      // Make sure journal database is initialized
+      try {
+        await this.initializeJournalDb();
+      } catch (error) {
+        console.error('[DatabaseManager] Error ensuring journal database is initialized:', error);
+        return [];
+      }
+      
+      const db = await this.getDatabase('journal.db');
+      
+      const entries = await db.getAllAsync<{
+        id: string;
+        user_id: string;
+        entry_date: number;
+        strain_id: number;
+        strain_name: string;
+        consumption_method: string;
+        dosage: number;
+        dosage_unit: string;
+        effects_felt: string;
+        rating: number;
+        effectiveness: number;
+        notes: string | null;
+        mood_before: string | null;
+        mood_after: string | null;
+        medical_symptoms_relieved: string | null;
+        negative_effects: string | null;
+        duration_minutes: number | null;
+        created_at: number;
+      }>(
+        `SELECT * FROM journal_entries 
+         WHERE user_id = ? AND entry_date >= ?
+         ORDER BY entry_date DESC`,
+        [userId, Date.now() - (days * 24 * 60 * 60 * 1000)]
+      );
+      
+      // Convert DB rows to JournalEntry format
+      return entries.map(entry => ({
+        id: entry.id,
+        user_id: entry.user_id,
+        strain_id: entry.strain_id,
+        strain_name: entry.strain_name,
+        consumption_method: entry.consumption_method,
+        dosage: entry.dosage,
+        dosage_unit: entry.dosage_unit,
+        effects_felt: entry.effects_felt ? JSON.parse(entry.effects_felt) : [],
+        rating: entry.rating,
+        effectiveness: entry.effectiveness,
+        notes: entry.notes || undefined,
+        mood_before: entry.mood_before || undefined,
+        mood_after: entry.mood_after || undefined,
+        medical_symptoms_relieved: entry.medical_symptoms_relieved ? JSON.parse(entry.medical_symptoms_relieved) : undefined,
+        negative_effects: entry.negative_effects ? JSON.parse(entry.negative_effects) : undefined,
+        duration_minutes: entry.duration_minutes || undefined,
+        created_at: new Date(entry.created_at).toISOString()
+      }));
+      
+    } catch (error) {
+      console.error('[DatabaseManager] Error getting recent journal entries:', error);
+      return []; 
+    }
   }
 
   /**
@@ -2203,9 +2350,64 @@ export class DatabaseManager {
   }
 
   /**
+   * Build parameterized query for usage statistics
+   */
+  private buildUsageStatsQuery(daysBack: number = 30): string {
+    return `
+      WITH DailyStats AS (
+        SELECT 
+          strftime('%Y-%m-%d', timestamp) as day,
+          strftime('%w', timestamp) as weekday,
+          COUNT(*) as daily_hits,
+          AVG(duration_ms) as avg_duration_per_day,
+          MIN(duration_ms) as min_duration,
+          MAX(duration_ms) as max_duration,
+          SUM(duration_ms) as total_duration_per_day
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24'
+        GROUP BY day
+      ),
+      WeekdayStats AS (
+        SELECT
+          CASE WHEN weekday IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
+          AVG(daily_hits) as avg_hits,
+          SUM(daily_hits) as total_hits
+        FROM DailyStats
+        GROUP BY day_type
+      ),
+      HourlyStats AS (
+        SELECT 
+          strftime('%H', timestamp) as hour,
+          COUNT(*) as hits
+        FROM ${BONG_HITS_DATABASE_NAME}
+        WHERE timestamp >= '2024-12-24'
+        GROUP BY hour
+        ORDER BY hits DESC
+      )
+      SELECT 
+        ROUND(AVG(d.daily_hits), 2) as average_hits_per_day,
+        MAX(d.daily_hits) as peak_day_hits,
+        MIN(d.daily_hits) as lowest_day_hits,
+        SUM(d.daily_hits) as total_hits,
+        ROUND(AVG(d.avg_duration_per_day), 2) as avg_duration,
+        MIN(d.min_duration) as shortest_hit,
+        MAX(d.max_duration) as longest_hit,
+        SUM(d.total_duration_per_day) as total_duration,
+        (SELECT hour FROM HourlyStats LIMIT 1) as most_active_hour,
+        (SELECT hour FROM HourlyStats ORDER BY hits ASC LIMIT 1) as least_active_hour,
+        ROUND((SELECT AVG(hits) FROM HourlyStats), 2) as avg_hits_per_hour,
+        (SELECT avg_hits FROM WeekdayStats WHERE day_type = 'weekday') as weekday_avg,
+        (SELECT total_hits FROM WeekdayStats WHERE day_type = 'weekday') as weekday_total,
+        (SELECT avg_hits FROM WeekdayStats WHERE day_type = 'weekend') as weekend_avg,
+        (SELECT total_hits FROM WeekdayStats WHERE day_type = 'weekend') as weekend_total
+      FROM DailyStats d
+    `;
+  }
+
+  /**
    * Get overall usage statistics
    */
-  public async getUsageStats(): Promise<DatabaseResponse<UsageStats>> {
+  public async getUsageStats(daysBack: number = 30): Promise<DatabaseResponse<UsageStats>> {
     try {
       console.log('[DatabaseManager] Fetching usage stats...');
       await this.ensureInitialized();
@@ -2215,7 +2417,7 @@ export class DatabaseManager {
       const dailyHitsQuery = `
         SELECT COUNT(*) as daily_hits
         FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= date('2024-12-24', '-30 days')
+        WHERE timestamp >= '2024-12-24'
         GROUP BY strftime('%Y-%m-%d', timestamp)
       `;
 
@@ -2239,8 +2441,14 @@ export class DatabaseManager {
             averageHitsPerHour: 0,
             consistency: 0,
             weekdayStats: {
-              weekday: { avg: 0, total: 0 },
-              weekend: { avg: 0, total: 0 }
+              weekday: { 
+                avg: 0, 
+                total: 0 
+              },
+              weekend: { 
+                avg: 0, 
+                total: 0 
+              }
             }
           }
         };
@@ -2251,55 +2459,8 @@ export class DatabaseManager {
       const variance = dailyHitsArray.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dailyHitsArray.length;
       const consistency = Math.sqrt(variance);
       
-      const query = `
-        WITH DailyStats AS (
-          SELECT 
-            strftime('%Y-%m-%d', timestamp) as day,
-            strftime('%w', timestamp) as weekday,
-            COUNT(*) as daily_hits,
-            AVG(duration_ms) as avg_duration_per_day,
-            MIN(duration_ms) as min_duration,
-            MAX(duration_ms) as max_duration,
-            SUM(duration_ms) as total_duration_per_day
-          FROM ${BONG_HITS_DATABASE_NAME}
-          WHERE timestamp >= date('2024-12-24', '-30 days')
-          GROUP BY day
-        ),
-        WeekdayStats AS (
-          SELECT
-            CASE WHEN weekday IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
-            AVG(daily_hits) as avg_hits,
-            SUM(daily_hits) as total_hits
-          FROM DailyStats
-          GROUP BY day_type
-        ),
-        HourlyStats AS (
-          SELECT 
-            strftime('%H', timestamp) as hour,
-            COUNT(*) as hits
-          FROM ${BONG_HITS_DATABASE_NAME}
-          WHERE timestamp >= date('2024-12-24', '-30 days')
-          GROUP BY hour
-          ORDER BY hits DESC
-        )
-        SELECT 
-          ROUND(AVG(d.daily_hits), 2) as average_hits_per_day,
-          MAX(d.daily_hits) as peak_day_hits,
-          MIN(d.daily_hits) as lowest_day_hits,
-          SUM(d.daily_hits) as total_hits,
-          ROUND(AVG(d.avg_duration_per_day), 2) as avg_duration,
-          MIN(d.min_duration) as shortest_hit,
-          MAX(d.max_duration) as longest_hit,
-          SUM(d.total_duration_per_day) as total_duration,
-          (SELECT hour FROM HourlyStats LIMIT 1) as most_active_hour,
-          (SELECT hour FROM HourlyStats ORDER BY hits ASC LIMIT 1) as least_active_hour,
-          ROUND((SELECT AVG(hits) FROM HourlyStats), 2) as avg_hits_per_hour,
-          (SELECT avg_hits FROM WeekdayStats WHERE day_type = 'weekday') as weekday_avg,
-          (SELECT total_hits FROM WeekdayStats WHERE day_type = 'weekday') as weekday_total,
-          (SELECT avg_hits FROM WeekdayStats WHERE day_type = 'weekend') as weekend_avg,
-          (SELECT total_hits FROM WeekdayStats WHERE day_type = 'weekend') as weekend_total
-        FROM DailyStats d
-      `;
+      // Use the parameterized query builder
+      const query = this.buildUsageStatsQuery(daysBack);
 
       const [result] = await db.getAllAsync<DatabaseRow>(query);
       console.log('[DatabaseManager] Raw usage stats:', result);
@@ -2321,8 +2482,14 @@ export class DatabaseManager {
             averageHitsPerHour: 0,
             consistency: 0,
             weekdayStats: {
-              weekday: { avg: 0, total: 0 },
-              weekend: { avg: 0, total: 0 }
+              weekday: {
+                avg: 0,
+                total: 0
+              },
+              weekend: {
+                avg: 0,
+                total: 0
+              }
             }
           }
         };
@@ -2375,7 +2542,53 @@ export class DatabaseManager {
       console.log('[DatabaseManager] Processed usage stats:', stats);
       return { success: true, data: stats };
     } catch (error) {
-      return this.handleError(error, 'getUsageStats');
+      return this.handleDatabaseError(error, 'getUsageStats', {
+        success: false,
+        error: 'Failed to get usage statistics'
+      });
+    }
+  }
+
+  /**
+   * Initialize a journal database
+   */
+  private async initializeJournalDb(): Promise<void> {
+    try {
+      const db = await this.getDatabase('journal.db');
+      await db.execAsync(
+        'PRAGMA journal_mode = WAL;' +
+        `CREATE TABLE IF NOT EXISTS journal_entries (
+          id TEXT PRIMARY KEY NOT NULL,
+          user_id TEXT NOT NULL,
+          entry_date INTEGER NOT NULL,
+          strain_id INTEGER NOT NULL,
+          strain_name TEXT NOT NULL,
+          consumption_method TEXT NOT NULL,
+          dosage REAL NOT NULL,
+          dosage_unit TEXT NOT NULL,
+          effects_felt TEXT NOT NULL,
+          rating INTEGER NOT NULL,
+          effectiveness INTEGER NOT NULL,
+          notes TEXT,
+          mood_before TEXT,
+          mood_after TEXT,
+          medical_symptoms_relieved TEXT,
+          negative_effects TEXT,
+          duration_minutes INTEGER,
+          created_at INTEGER NOT NULL
+        );` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_user_id ON journal_entries(user_id);` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_entry_date ON journal_entries(entry_date);` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_strain_id ON journal_entries(strain_id);` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_strain_name ON journal_entries(strain_name);` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_consumption_method ON journal_entries(consumption_method);` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_rating ON journal_entries(rating);` +
+        `CREATE INDEX IF NOT EXISTS idx_journal_effectiveness ON journal_entries(effectiveness);`
+      );
+      
+      console.log('[DatabaseManager] Journal database initialized');
+    } catch (error) {
+      throw this.handleDatabaseError(error, 'initializeJournalDb');
     }
   }
 
