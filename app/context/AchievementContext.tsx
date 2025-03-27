@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { DatabaseService } from '../../src/services/DatabaseService';
+import { databaseManager } from '../../src/DatabaseManager';
 import { UserAchievementWithDetails } from '../../src/types/achievements';
+import { DatabaseResponse } from '../../src/types';
 
 interface AchievementContextType {
   achievements: UserAchievementWithDetails[];
@@ -54,24 +55,30 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   const loadAchievements = async () => {
     try {
       setLoading(true);
-      const dbService = DatabaseService.getInstance();
       
       // Fetch achievements
-      const userAchievements = await dbService.getUserAchievements(userId);
-      setAchievements(userAchievements);
+      const achievementsResponse: DatabaseResponse<UserAchievementWithDetails[]> = 
+        await databaseManager.getUserAchievements(userId);
       
-      // Calculate stats
-      const totalCount = userAchievements.length;
-      const unlockedCount = userAchievements.filter(a => a.isUnlocked).length;
-      
-      setStats({
-        total: totalCount,
-        unlocked: unlockedCount,
-        percentComplete: totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0
-      });
-      
-      // Clear new flags
-      await dbService.clearAchievementNewFlags(userId);
+      if (achievementsResponse.success && achievementsResponse.data) {
+        const userAchievements = achievementsResponse.data;
+        setAchievements(userAchievements);
+        
+        // Calculate stats
+        const totalCount = userAchievements.length;
+        const unlockedCount = userAchievements.filter((a: UserAchievementWithDetails) => a.isUnlocked).length;
+        
+        setStats({
+          total: totalCount,
+          unlocked: unlockedCount,
+          percentComplete: totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0
+        });
+        
+        // Clear new flags
+        await databaseManager.clearAchievementNewFlags(userId);
+      } else {
+        console.error('Failed to load achievements:', achievementsResponse.error);
+      }
     } catch (error) {
       console.error('Failed to load achievements:', error);
     } finally {
@@ -81,14 +88,13 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   
   const checkAchievements = async (actionType: string, data: any) => {
     try {
-      const dbService = DatabaseService.getInstance();
-      
       // Check for newly unlocked achievements based on the action
-      const unlocked = await dbService.checkAchievements(userId, actionType, data);
+      const unlockedResponse: DatabaseResponse<UserAchievementWithDetails[]> = 
+        await databaseManager.checkAchievements(userId, actionType, data);
       
-      if (unlocked.length > 0) {
+      if (unlockedResponse.success && unlockedResponse.data && unlockedResponse.data.length > 0) {
         // Set the most recent achievement as newly unlocked for notification
-        setNewlyUnlocked(unlocked[0]);
+        setNewlyUnlocked(unlockedResponse.data[0]);
         
         // Refresh the achievements list to reflect changes
         loadAchievements();

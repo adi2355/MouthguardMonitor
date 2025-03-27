@@ -3,7 +3,7 @@ import { Alert, PermissionsAndroid, Platform } from "react-native";
 import * as ExpoDevice from "expo-device";
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 import base64 from "react-native-base64";
-import { insertBongHitIntoDatabase } from "../database/expoSqliteManager";
+import { databaseManager } from "../DatabaseManager";
 import { parseRawTimestamp } from "../utils/functions";
 
 type ConnectedDevice = {
@@ -108,7 +108,7 @@ export class BluetoothHandler {
         const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
         const duration: number = parseFloat(rawData[1])*100000; // 0.17
         const timestamp: string  = parseRawTimestamp(rawTimestamp);
-        insertBongHitIntoDatabase(timestamp, duration);
+        databaseManager.recordBongHit(timestamp, duration);
         Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
     }
 

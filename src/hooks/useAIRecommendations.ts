@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AIService } from '../services/ai';
 import { ChatRequest } from '../services/ai/types/requests';
-import SafetyService from '../services/SafetyService';
+import { databaseManager } from '../DatabaseManager';
 import { 
   RecommendationRequest, 
   RecommendationResponse, 
   ChatMessage, 
   UserProfile,
   JournalEntry,
-  SafetyValidationResult
+  SafetyValidationResult,
+  SafetyRecord
 } from '../types/ai';
+import { DatabaseResponse } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Cache keys
@@ -37,10 +39,10 @@ export const useAIRecommendations = () => {
       
       try {
         await aiService.initialize();
-        await SafetyService.initialize();
+        await databaseManager.initialize();
         isInitialized.current = true;
       } catch (err) {
-        console.error('Error initializing AI or Safety services:', err);
+        console.error('Error initializing AI or Database services:', err);
         setError('Failed to initialize recommendation services');
       }
     };
@@ -54,9 +56,6 @@ export const useAIRecommendations = () => {
       // Cleanup only if not already called
       if (!cleanupCalled.current) {
         cleanupCalled.current = true;
-        SafetyService.cleanup().catch(err => {
-          console.error('Error during SafetyService cleanup:', err);
-        });
       }
     };
   }, []);
@@ -106,7 +105,7 @@ export const useAIRecommendations = () => {
     
     try {
       // Validate request for safety concerns
-      const validationResult = await SafetyService.validateRecommendationRequest(request);
+      const validationResult = await databaseManager.validateRecommendationRequest(request);
       setSafetyValidation(validationResult);
       
       // If request is invalid due to safety concerns, return early
@@ -125,7 +124,7 @@ export const useAIRecommendations = () => {
       const rawRecommendations = await aiService.getRecommendations(safeRequest);
       
       // Process recommendations through safety service
-      const safeRecommendations = await SafetyService.processRecommendationResponse(
+      const safeRecommendations = await databaseManager.processRecommendationResponse(
         rawRecommendations,
         request.userProfile,
         recentEntries
@@ -232,7 +231,7 @@ export const useAIRecommendations = () => {
   // Get safety history
   const getSafetyHistory = useCallback(async (userId: string) => {
     try {
-      return await SafetyService.getSafetyHistory(userId);
+      return await databaseManager.getSafetyHistory(userId);
     } catch (err) {
       console.error('Error getting safety history:', err);
       return [];

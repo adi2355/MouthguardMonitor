@@ -4,12 +4,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AchievementCard } from '../components/achievements/AchievementCard';
 import { AchievementDetailModal } from '../components/achievements/AchievementDetailModal';
-import { AchievementService } from '../../src/services/AchievementService';
+import { databaseManager } from '../../src/DatabaseManager';
 import { UserAchievementWithDetails } from '../../src/types/achievements';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { COLORS } from '../../src/constants';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { DatabaseResponse } from '../../src/types';
 
 // Shared categories for filtering
 const ACHIEVEMENT_CATEGORIES = [
@@ -47,26 +48,47 @@ export default function AchievementsScreen() {
       setLoading(true);
       // In a real app, you'd get the actual user ID
       const userId = 'current-user';
-      const achievementService = AchievementService.getInstance();
       
+      console.log('[AchievementsScreen] Fetching user achievements...');
       // Fetch achievements
-      const userAchievements = await achievementService.getUserAchievements(userId);
-      setAchievements(userAchievements);
+      const userAchievements = await databaseManager.getUserAchievements(userId);
+      console.log('[AchievementsScreen] Received achievements:', userAchievements?.length || 0);
       
-      // Calculate stats
-      const totalCount = userAchievements.length;
-      const unlockedCount = userAchievements.filter(a => a.isUnlocked).length;
-      
-      setStats({
-        total: totalCount,
-        unlocked: unlockedCount,
-        percentComplete: totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0
-      });
-      
-      // Clear new flags
-      await achievementService.clearNewFlags(userId);
+      if (userAchievements && Array.isArray(userAchievements)) {
+        setAchievements(userAchievements);
+        
+        // Calculate stats
+        const totalCount = userAchievements.length;
+        const unlockedCount = userAchievements.filter((a: UserAchievementWithDetails) => a.isUnlocked).length;
+        
+        setStats({
+          total: totalCount,
+          unlocked: unlockedCount,
+          percentComplete: totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0
+        });
+        
+        // Clear new flags
+        console.log('[AchievementsScreen] Clearing achievement new flags...');
+        await databaseManager.clearAchievementNewFlags(userId);
+      } else {
+        // Handle case where achievements are not returned as expected
+        console.error('[AchievementsScreen] Failed to load achievements: Invalid response format');
+        setAchievements([]);
+        setStats({
+          total: 0,
+          unlocked: 0,
+          percentComplete: 0
+        });
+      }
     } catch (error) {
-      console.error('Failed to load achievements:', error);
+      console.error('[AchievementsScreen] Failed to load achievements:', error instanceof Error ? error.message : 'Unknown error');
+      // Set empty state when there's an error
+      setAchievements([]);
+      setStats({
+        total: 0,
+        unlocked: 0,
+        percentComplete: 0
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -185,6 +207,17 @@ export default function AchievementsScreen() {
     </Animated.View>
   );
   
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <MaterialCommunityIcons name="trophy-outline" size={60} color={COLORS.text.secondary} />
+      <Text style={styles.emptyText}>No achievements available</Text>
+      <Text style={styles.emptyDescription}>Achievements may still be loading or there was an error fetching your data.</Text>
+      <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+        <Text style={styles.retryText}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+  
   if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
@@ -241,12 +274,7 @@ export default function AchievementsScreen() {
             }
           }}
           ListHeaderComponent={renderHeader}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="trophy-outline" size={60} color={COLORS.text.secondary} />
-              <Text style={styles.emptyText}>No achievements found</Text>
-            </View>
-          }
+          ListEmptyComponent={renderEmptyState}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
@@ -375,5 +403,23 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     fontSize: 16,
     marginTop: 16,
+  },
+  emptyDescription: {
+    color: COLORS.text.secondary,
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 230, 118, 0.2)',
+    borderRadius: 20,
+  },
+  retryText: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
 });
