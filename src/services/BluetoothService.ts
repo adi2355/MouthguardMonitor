@@ -48,10 +48,26 @@ export class BluetoothService {
     try {
       console.log(`[BluetoothService] Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
       
-      // Add the Alert call here, using rawTimestamp and duration
-      Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+      // Validate that the timestamp is in ISO format before proceeding
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(timestamp)) {
+        const errorMsg = `Invalid timestamp format: ${timestamp}`;
+        console.error(`[BluetoothService] ${errorMsg}`);
+        Alert.alert('Error', errorMsg);
+        return;
+      }
       
-      // Record the bong hit using the parsed timestamp
+      // Validate duration is positive
+      if (duration <= 0) {
+        const errorMsg = `Invalid duration: ${duration}`;
+        console.error(`[BluetoothService] ${errorMsg}`);
+        Alert.alert('Error', errorMsg);
+        return;
+      }
+      
+      // Add the Alert call here, using parsed timestamp and duration
+      Alert.alert(`Timestamp: ${timestamp}\n Duration: ${duration}ms`);
+      
+      // Record the bong hit using the validated timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
       console.log(`[BluetoothService] Bong hit recorded successfully.`);
     } catch (error) {

@@ -1,16 +1,16 @@
-const monthStringToInt: { [key: string]: number } = {
-    "January": 1,
-    "February": 2,
-    "March": 3,
-    "April": 4,
-    "May": 5,
-    "June": 6,
-    "July": 7,
-    "August": 8,
-    "September": 9,
-    "October": 10,
-    "November": 11,
-    "December": 12,
+const monthStringToInt: { [key: string]: string } = {
+    "January": "01",
+    "February": "02",
+    "March": "03",
+    "April": "04",
+    "May": "05",
+    "June": "06",
+    "July": "07",
+    "August": "08",
+    "September": "09",
+    "October": "10",
+    "November": "11",
+    "December": "12",
 };
 
 /**
@@ -39,7 +39,7 @@ export function parseRawTimestamp(rawTimestamp: string): string {
             console.error(`Unknown month: ${monthStr}`);
             throw new Error('Unknown month');
         }
-        const month: string = String(monthNum).padStart(2, '0');
+        const month: string = monthNum;
         
         // Create a proper Date object
         const dateStr = `${year}-${month}-${day}T${time}.000Z`;

@@ -71,9 +71,37 @@ export function validateJournalEntry(entry: JournalEntry): string | null {
  * @returns Whether the string is a valid ISO timestamp
  */
 export function isValidISOTimestamp(timestamp: string): boolean {
-  if (typeof timestamp !== 'string') return false;
-  const date = new Date(timestamp);
-  return !isNaN(date.getTime()) && date.toISOString() === timestamp;
+  try {
+    if (typeof timestamp !== 'string') {
+      console.error(`[Validators] Invalid timestamp type: ${typeof timestamp}`);
+      return false;
+    }
+    
+    // Check for ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
+    // This regex checks for the basic pattern but isn't exhaustive
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(timestamp)) {
+      console.error(`[Validators] Timestamp doesn't match ISO format: ${timestamp}`);
+      return false;
+    }
+    
+    const date = new Date(timestamp);
+    const isValid = !isNaN(date.getTime());
+    
+    // Extra validation: Check that the timestamp is truly ISO format by ensuring
+    // toISOString() produces the exact same string
+    const roundTrip = isValid && date.toISOString() === timestamp;
+    
+    if (!isValid) {
+      console.error(`[Validators] Invalid date from timestamp: ${timestamp}`);
+    } else if (!roundTrip) {
+      console.error(`[Validators] Timestamp not in canonical ISO format. Original: ${timestamp}, Parsed: ${date.toISOString()}`);
+    }
+    
+    return isValid && roundTrip;
+  } catch (error) {
+    console.error(`[Validators] Error validating timestamp: ${error}`);
+    return false;
+  }
 }
 
 /**

@@ -23,10 +23,11 @@ export class BongHitsRepository extends BaseRepository {
    * @param durationMs Duration of the hit in milliseconds
    */
   public async recordBongHit(timestamp: string, durationMs: number): Promise<void> {
-    const hit: BongHit = { timestamp, duration_ms: durationMs };
+    const hit: BongHit = { timestamp: timestamp, duration_ms: durationMs };
     const validationError = validateBongHit(hit);
     
     if (validationError) {
+      console.error(`[BongHitsRepository] Validation error: ${validationError}`);
       throw new Error(validationError);
     }
     

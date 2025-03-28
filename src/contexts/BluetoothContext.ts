@@ -108,24 +108,37 @@ export class BluetoothHandler {
           return; // Return void instead of -1
         }
 
-        const rawData: string[] = base64.decode(characteristic.value).split(';');
-        // Ensure we handle cases where split might not produce enough parts
-        if (rawData.length < 2) {
-            console.error("Received malformed data:", rawData);
-            return;
-        }
-        const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
-        const duration: number = parseFloat(rawData[1])*100000; // 0.17
-        const timestamp: string = parseRawTimestamp(rawTimestamp);
-        
-        // Instead of directly calling databaseManager, use the callback
-        if (this.onDataCallback) {
-            // Pass rawTimestamp along with parsed timestamp and duration
-            this.onDataCallback(rawTimestamp, timestamp, duration);
-        } else {
-            console.error("No data callback set to handle bong hit data");
-            // Fallback alert if no callback is set
-            Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+        try {
+            const rawData: string[] = base64.decode(characteristic.value).split(';');
+            // Ensure we handle cases where split might not produce enough parts
+            if (rawData.length < 2) {
+                console.error("Received malformed data:", rawData);
+                return;
+            }
+            const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
+            const duration: number = parseFloat(rawData[1])*1000; // 0.17
+            
+            if (isNaN(duration) || duration <= 0) {
+                console.error(`[BluetoothContext] Invalid duration value: ${rawData[1]}`);
+                return;
+            }
+            
+            console.log(`[BluetoothContext] Raw timestamp received: ${rawTimestamp}`);
+            const timestamp: string = parseRawTimestamp(rawTimestamp);
+            console.log(`[BluetoothContext] Parsed ISO timestamp: ${timestamp}`);
+            
+            // Instead of directly calling databaseManager, use the callback
+            if (this.onDataCallback) {
+                // Pass rawTimestamp along with parsed timestamp and duration
+                this.onDataCallback(rawTimestamp, timestamp, duration);
+            } else {
+                console.error("No data callback set to handle bong hit data");
+                // Fallback alert if no callback is set
+                Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+            }
+        } catch (error) {
+            console.error('[BluetoothContext] Error processing Bluetooth data:', error);
+            Alert.alert('Error', 'Failed to process data from device');
         }
     }
 
