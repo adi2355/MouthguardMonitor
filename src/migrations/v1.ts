@@ -2,7 +2,8 @@ import { SQLiteDatabase } from 'expo-sqlite';
 import { 
   BONG_HITS_DATABASE_NAME, 
   STRAINS_DATABASE_NAME,
-  SAMPLE_STRAINS
+  SAMPLE_STRAINS,
+  ACHIEVEMENTS
 } from '../constants';
 
 // Helper to execute schema - breaking statements by semicolons
@@ -21,7 +22,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
 
   // BongHits DB Schema
   const bongHitsSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
       timestamp TIMESTAMP PRIMARY KEY NOT NULL,
       duration_ms INTEGER NOT NULL
@@ -34,7 +34,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
   // Strains DB Schema - we'll apply it to the same database for simplicity
   // In a real app, this might be better separated
   const strainsSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -63,7 +62,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
 
   // Safety DB Schema
   const safetySchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS safety_records (
       id TEXT PRIMARY KEY NOT NULL,
       user_id TEXT NOT NULL,
@@ -83,7 +81,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
 
   // Achievements DB Schema
   const achievementsSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS achievements (
       id INTEGER PRIMARY KEY,
       category TEXT NOT NULL,
@@ -108,9 +105,35 @@ export async function up(db: SQLiteDatabase): Promise<void> {
   await executeSchema(db, achievementsSchema);
   console.log('[Migration V1] Achievements schema applied.');
 
+  // --- START SEEDING ACHIEVEMENTS ---
+  console.log('[Migration V1] Seeding achievements definitions...');
+  try {
+    for (const achievement of ACHIEVEMENTS) {
+      await db.runAsync(
+        `INSERT INTO achievements (id, category, name, unlock_condition, notes, icon, complexity)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING;`, // ON CONFLICT avoids errors if run again
+        [
+          achievement.id,
+          achievement.category,
+          achievement.name,
+          achievement.unlockCondition,
+          achievement.notes || null,
+          achievement.icon || null,
+          achievement.complexity || 1
+        ]
+      );
+    }
+    console.log(`[Migration V1] Seeded ${ACHIEVEMENTS.length} achievements definitions.`);
+  } catch(seedError) {
+    console.error('[Migration V1] Error seeding achievements:', seedError);
+    // Propagate the error to ensure the migration fails if seeding fails
+    throw seedError;
+  }
+  // --- END SEEDING ACHIEVEMENTS ---
+
   // Journal DB Schema
   const journalSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS journal_entries (
       id TEXT PRIMARY KEY NOT NULL,
       user_id TEXT NOT NULL,

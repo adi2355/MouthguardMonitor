@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -6,7 +6,8 @@ import {
   TouchableOpacity, 
   ActivityIndicator,
   ScrollView,
-  Alert
+  Alert,
+  RefreshControl
 } from 'react-native';
 import { useBongHitsRepository } from '@/src/providers/AppProvider';
 import { BongHitStats, Datapoint } from '@/src/types';
@@ -29,8 +30,10 @@ export default function HomeScreen() {
   const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<BongHitStats | null>(null);
   const [weeklyData, setWeeklyData] = useState<Datapoint[] | null>(null);
+  const [currentWeekAverage, setCurrentWeekAverage] = useState<number>(0);
   
   // Timer interval for recording
   useEffect(() => {
@@ -51,13 +54,10 @@ export default function HomeScreen() {
     };
   }, [isRecording, recordingStartTime]);
   
-  // Load initial data
-  useEffect(() => {
-    loadData();
-  }, []);
-  
-  const loadData = async () => {
+  // Load data function
+  const loadData = useCallback(async () => {
     try {
+      console.log("[HomeScreen] Loading data...");
       setLoading(true);
       
       // Get stats from the past 7 days
@@ -67,17 +67,36 @@ export default function HomeScreen() {
       // Get hits per day for the past week
       const hitsPerDayResponse = await bongHitsRepository.getHitsPerDay(7);
       if (hitsPerDayResponse.success) {
-        // Fix: Add null coalescing operator for undefined data
         setWeeklyData(hitsPerDayResponse.data ?? null);
       }
       
+      // Fetch average hits for the current calendar week
+      const currentWeekAvgResponse = await bongHitsRepository.getAverageHitsForCurrentWeek();
+      if (currentWeekAvgResponse.success) {
+        setCurrentWeekAverage(currentWeekAvgResponse.data ?? 0);
+      }
+      
+      console.log("[HomeScreen] Data loaded successfully");
     } catch (error) {
       console.error('Error loading data:', error);
       Alert.alert('Error', 'Failed to load bong hit data');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [bongHitsRepository]);
+  
+  // Load initial data
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+  
+  // Handle refresh
+  const onRefresh = useCallback(() => {
+    console.log("[HomeScreen] Refresh triggered");
+    setRefreshing(true);
+    loadData();
+  }, [loadData]);
   
   const handleStartRecording = () => {
     setIsRecording(true);
@@ -100,7 +119,7 @@ export default function HomeScreen() {
       );
       
       // Refresh data
-      loadData();
+      await loadData();
       
       Alert.alert(
         'Bong Hit Recorded',
@@ -114,22 +133,24 @@ export default function HomeScreen() {
   };
   
   const formatDuration = (ms: number): string => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const milliseconds = ms % 1000;
     
-    return `${minutes > 0 ? `${minutes}m ` : ''}${remainingSeconds}s`;
+    // Format: mm:ss.ms (e.g., 01:23.4)
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${Math.floor(milliseconds / 100)}`;
   };
   
   const renderWeeklyData = () => {
     if (!weeklyData) return null;
     
-    const maxValue = Math.max(...weeklyData.map(item => item.y));
+    const maxValue = Math.max(...weeklyData.map(item => item.y), 1); // Ensure non-zero denominator
     const barHeight = 100; // Max height for bars in pixels
     
     return (
       <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Weekly Overview</Text>
+        <Text style={styles.chartTitle}>Hits - Last 7 Days</Text>
         <View style={styles.chartContent}>
           {weeklyData.map((item, index) => (
             <View key={index} style={styles.barContainer}>
@@ -138,7 +159,7 @@ export default function HomeScreen() {
                 style={[
                   styles.bar, 
                   { 
-                    height: maxValue > 0 ? (item.y / maxValue) * barHeight : 0,
+                    height: (item.y / maxValue) * barHeight,
                     backgroundColor: item.y > 0 ? EXTENDED_COLORS.primary : EXTENDED_COLORS.inactive
                   }
                 ]} 
@@ -163,6 +184,14 @@ export default function HomeScreen() {
       <ScrollView 
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[EXTENDED_COLORS.primary]}
+            tintColor={EXTENDED_COLORS.primary}
+          />
+        }
       >
         <View style={styles.header}>
           <Text style={styles.title}>Canova</Text>
@@ -196,23 +225,29 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
         
-        {loading ? (
+        {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={EXTENDED_COLORS.primary} />
             <Text style={styles.loadingText}>Loading data...</Text>
           </View>
         ) : (
           <>
+            {/* Current Week Average Card */}
+            <View style={styles.statCardLarge}>
+              <Text style={styles.statLabelLarge}>Avg Hits/Day (This Week)</Text>
+              <Text style={styles.statValueLarge}>{currentWeekAverage.toFixed(1)}</Text>
+            </View>
+            
             {stats && (
               <View style={styles.statsContainer}>
                 <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Average Duration</Text>
+                  <Text style={styles.statLabel}>Avg Duration (Last 7d)</Text>
                   <Text style={styles.statValue}>
                     {formatDuration(stats.averageDuration)}
                   </Text>
                 </View>
                 <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Longest Hit</Text>
+                  <Text style={styles.statLabel}>Longest Hit (Last 7d)</Text>
                   <Text style={styles.statValue}>
                     {formatDuration(stats.longestHit)}
                   </Text>
@@ -238,6 +273,14 @@ export default function HomeScreen() {
                 <Ionicons name="stats-chart" size={24} color={EXTENDED_COLORS.text.primary} />
                 <Text style={styles.actionButtonText}>Analytics</Text>
               </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
+                onPress={() => router.push('/screens/TestDataScreen')}
+              >
+                <Ionicons name="bug" size={24} color={EXTENDED_COLORS.text.primary} />
+                <Text style={styles.actionButtonText}>Test Data</Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -256,7 +299,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 40, // Ensure space at the bottom
   },
   header: {
     marginBottom: 24,
@@ -274,6 +317,8 @@ const styles = StyleSheet.create({
   timerContainer: {
     alignItems: 'center',
     marginBottom: 20,
+    minHeight: 60, // Ensure space for text
+    justifyContent: 'center',
   },
   timerText: {
     fontSize: 48,
@@ -292,9 +337,15 @@ const styles = StyleSheet.create({
     backgroundColor: EXTENDED_COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: EXTENDED_COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   recordingButton: {
     backgroundColor: EXTENDED_COLORS.error,
+    shadowColor: EXTENDED_COLORS.error,
   },
   loadingContainer: {
     padding: 20,
@@ -304,23 +355,55 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: EXTENDED_COLORS.text.secondary,
   },
+  statCardLarge: {
+    backgroundColor: EXTENDED_COLORS.cardBackground,
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  statLabelLarge: {
+    fontSize: 16,
+    color: EXTENDED_COLORS.text.secondary,
+    marginBottom: 8,
+  },
+  statValueLarge: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: EXTENDED_COLORS.primary,
+  },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 24,
+    gap: 12,
   },
   statCard: {
     flex: 1,
     backgroundColor: EXTENDED_COLORS.cardBackground,
     borderRadius: 8,
     padding: 16,
-    marginHorizontal: 6,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   statLabel: {
     fontSize: 14,
     color: EXTENDED_COLORS.text.secondary,
     marginBottom: 8,
+    textAlign: 'center',
   },
   statValue: {
     fontSize: 20,
@@ -329,9 +412,16 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     backgroundColor: EXTENDED_COLORS.cardBackground,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   chartTitle: {
     fontSize: 18,
@@ -352,9 +442,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bar: {
-    width: 20,
+    width: '60%',
     borderRadius: 4,
     marginBottom: 8,
+    minHeight: 2, // Ensure even 0-value bars are visible
   },
   barLabel: {
     fontSize: 12,
@@ -370,15 +461,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    padding: 8,
   },
   viewMoreText: {
     fontSize: 14,
     color: EXTENDED_COLORS.primary,
     marginRight: 4,
+    fontWeight: '600',
   },
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   actionButton: {
     flex: 1,
@@ -386,11 +480,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
-    marginHorizontal: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   actionButtonText: {
     marginTop: 8,
     fontSize: 14,
     color: EXTENDED_COLORS.text.primary,
-  },
+    textAlign: 'center',
+  }
 });

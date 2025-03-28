@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -16,11 +16,16 @@ export default function WeeklyAverage() {
     setTimeRange, 
     data, 
     isLoading, 
-    error 
+    isRefreshing,
+    error,
+    refreshTimeRangeData
   } = useTimeRangeData('W'); // Default to weekly view
 
-  if (isLoading) return <LoadingView />;
+  if (isLoading && !isRefreshing) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
+
+  // Check if there's actually any data to display
+  const hasRealData = data.chartData.some(value => value > 0);
 
   return (
     <SafeAreaProvider>
@@ -28,6 +33,15 @@ export default function WeeklyAverage() {
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshTimeRangeData}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+            progressBackgroundColor={COLORS.cardBackground}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.headerContainer}>
@@ -78,21 +92,21 @@ export default function WeeklyAverage() {
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {data.weekdayAvg?.toFixed(1) || '0.0'}
+                {hasRealData ? (data.weekdayAvg?.toFixed(1) || '0.0') : '0.0'}
               </Text>
               <Text style={styles.statLabel}>Weekday Avg</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {data.weekendAvg?.toFixed(1) || '0.0'}
+                {hasRealData ? (data.weekendAvg?.toFixed(1) || '0.0') : '0.0'}
               </Text>
               <Text style={styles.statLabel}>Weekend Avg</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {data.averageValue.toFixed(1)}
+                {hasRealData ? data.averageValue.toFixed(1) : '0.0'}
               </Text>
               <Text style={styles.statLabel}>Total Avg</Text>
             </View>
@@ -111,6 +125,7 @@ export default function WeeklyAverage() {
               data={data.chartData}
               labels={data.chartLabels}
               color={COLORS.primary}
+              alwaysShowZero={true}
             />
           </View>
         </View>
@@ -122,10 +137,13 @@ export default function WeeklyAverage() {
           <View style={styles.analysisCard}>
             <Text style={styles.analysisTitle}>Weekday vs Weekend</Text>
             <Text style={styles.analysisText}>
-              {(data.weekendAvg || 0) > (data.weekdayAvg || 0) 
-                ? `Your weekend usage is ${(((data.weekendAvg || 0) / (data.weekdayAvg || 1)) * 100 - 100).toFixed(1)}% higher than weekdays.`
-                : `Your weekday usage is ${(((data.weekdayAvg || 0) / (data.weekendAvg || 1)) * 100 - 100).toFixed(1)}% higher than weekends.`
-              }
+              {hasRealData ? (
+                (data.weekendAvg || 0) > (data.weekdayAvg || 0) 
+                  ? `Your weekend usage is ${(((data.weekendAvg || 0) / Math.max(data.weekdayAvg || 0.001, 0.001)) * 100 - 100).toFixed(1)}% higher than weekdays.`
+                  : `Your weekday usage is ${(((data.weekdayAvg || 0) / Math.max(data.weekendAvg || 0.001, 0.001)) * 100 - 100).toFixed(1)}% higher than weekends.`
+              ) : (
+                'No usage data available to compare weekday and weekend patterns.'
+              )}
             </Text>
           </View>
           
@@ -136,11 +154,13 @@ export default function WeeklyAverage() {
                timeRange === 'M' ? 'Monthly' : 'Yearly'} Pattern
             </Text>
             <Text style={styles.analysisText}>
-              Your usage tends to {
+              {hasRealData ? (
                 Math.max(...data.chartData) > data.averageValue * 1.5 
-                  ? "spike significantly on certain days" 
-                  : "be relatively consistent throughout the period"
-              }.
+                  ? "Your usage tends to spike significantly on certain days." 
+                  : "Your usage tends to be relatively consistent throughout the period."
+              ) : (
+                'No usage data available to analyze patterns.'
+              )}
             </Text>
           </View>
         </View>
@@ -298,5 +318,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text.secondary,
     lineHeight: 22,
+  },
+  emptyChartContainer: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  emptyChartText: {
+    color: COLORS.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
+    padding: 20,
   },
 }); 

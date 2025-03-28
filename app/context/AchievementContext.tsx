@@ -1,10 +1,9 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { DatabaseManager, ACHIEVEMENTS_DB_NAME } from '../../src/DatabaseManager';
+import { databaseManager } from '../../src/DatabaseManager';
+import { BONG_HITS_DATABASE_NAME } from '../../src/constants';
 import { UserAchievementWithDetails } from '../../src/types';
 import { AchievementsRepository } from '../../src/repositories/AchievementsRepository';
 
-// Create an instance of DatabaseManager and AchievementsRepository
-const databaseManager = new DatabaseManager();
 // We'll initialize the repository with null for now and set it properly in useEffect
 let achievementsRepository: AchievementsRepository | null = null;
 
@@ -56,16 +55,18 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   });
   
   // In a real app, you'd get this from authentication context or similar
-  const userId = 'current-user';
+  const userId = 'default-user';
 
   // Initialize the repository
   useEffect(() => {
     const initRepository = async () => {
       try {
-        // Initialize the database
-        await databaseManager.initialize();
-        // Get the database connection
-        const db = await databaseManager.getDatabase(ACHIEVEMENTS_DB_NAME);
+        // Ensure database manager is initialized
+        await databaseManager.ensureInitialized();
+        
+        // Get the shared database connection from the main database
+        const db = await databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
+        
         // Create the repository
         achievementsRepository = new AchievementsRepository(db);
         setRepositoryReady(true);
@@ -75,14 +76,8 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
     };
 
     initRepository();
-
-    // Cleanup function
-    return () => {
-      // Close database connections when unmounted
-      databaseManager.cleanup().catch(err => {
-        console.error('Error cleaning up database connections:', err);
-      });
-    };
+    
+    // No cleanup needed as databaseManager is singleton and will be cleaned up elsewhere
   }, []);
   
   const loadAchievements = async () => {

@@ -908,6 +908,14 @@ export default function HomeScreen() {
                 <Ionicons name="stats-chart" size={24} color={EXTENDED_COLORS.text.primary} />
                 <Text style={styles.actionButtonText}>Analytics</Text>
               </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
+                onPress={() => router.push('/screens/TestDataScreen')}
+              >
+                <Ionicons name="bug" size={24} color={EXTENDED_COLORS.text.primary} />
+                <Text style={styles.actionButtonText}>Fix Database</Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
@@ -1213,14 +1221,13 @@ File: app/(tabs)/mydata.tsx
 ================================================================================
 
 import React, { memo, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
 import { useDataService } from '../../src/hooks/useDataService';
 import { databaseManager } from "../../src/DatabaseManager";
 import { BongHit } from '../../src/types';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -1279,17 +1286,18 @@ export default memo(function MyData() {
     usageStats, 
     timeDistribution,
     isLoading, 
-    error 
+    error,
+    isRefreshing,
+    refreshData
   } = useDataService();
 
   useEffect(() => {
     const fetchBongHitData = async () => {
       try {
-        const dataService = databaseManager;
         const bongHitLogsResponse = await databaseManager.getAllBongHitLogs();
         
         if (bongHitLogsResponse.success && bongHitLogsResponse.data && bongHitLogsResponse.data.length > 0) {
-          const logs = bongHitLogsResponse.data;
+          const logs = bongHitLogsResponse.data as BongHit[];
           const totalDuration = logs.reduce((sum: number, log: BongHit) => sum + log.duration_ms, 0);
           
           setBongHitSummary({
@@ -1304,7 +1312,7 @@ export default memo(function MyData() {
     };
     
     fetchBongHitData();
-  }, []);
+  }, [isRefreshing]); // Add isRefreshing as a dependency to refresh bong hit data too
 
   const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
@@ -1354,7 +1362,8 @@ export default memo(function MyData() {
     }
   ];
 
-  if (isLoading) return <LoadingView />;
+  // Only show loading view on initial load, not during refresh
+  if (isLoading && !isRefreshing) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
 
   const weekdayAvg = usageStats.weekdayStats?.weekday.avg || 0;
@@ -1363,13 +1372,21 @@ export default memo(function MyData() {
 
   return (
     <SafeAreaProvider>
-      <Animated.ScrollView 
+      <ScrollView 
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
-        entering={FadeIn.duration(200)}
         scrollEventThrottle={16}
         removeClippedSubviews={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshData}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+            progressBackgroundColor={COLORS.cardBackground}
+          />
+        }
       >
         <Header />
 
@@ -1424,7 +1441,7 @@ export default memo(function MyData() {
             total={stats.total}
           />
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
 
       {/* Goal Setting Modal */}
       <SetGoalModal
@@ -4746,7 +4763,7 @@ File: app/components/charts/LineChart.tsx
 ================================================================================
 
 import React from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart as RNLineChart } from 'react-native-chart-kit';
 import { COLORS } from '../../../src/constants';
 
@@ -4756,6 +4773,7 @@ interface LineChartProps {
   color?: string;
   width?: number;
   height?: number;
+  alwaysShowZero?: boolean;
 }
 
 const screenWidth = Dimensions.get('window').width;
@@ -4765,8 +4783,33 @@ const LineChart: React.FC<LineChartProps> = ({
   labels,
   color = COLORS.primary,
   width = screenWidth - 64,
-  height = 220
+  height = 220,
+  alwaysShowZero = true
 }) => {
+  // Check if we have data to display (any data points)
+  const hasAnyData = data && data.length > 0;
+  
+  // Check if we have any non-zero values
+  const hasNonZeroData = hasAnyData && data.some(val => val > 0);
+  
+  // If no data at all, display "No data available" message
+  if (!hasAnyData) {
+    return (
+      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No data available</Text>
+      </View>
+    );
+  }
+  
+  // If all values are zero and we don't want to show zero charts
+  if (!hasNonZeroData && !alwaysShowZero) {
+    return (
+      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No data available for this time period</Text>
+      </View>
+    );
+  }
+  
   // Validate data to prevent NaN values
   const validatedData = data.map(val => (isNaN(val) ? 0 : val));
   
@@ -4821,18 +4864,50 @@ const LineChart: React.FC<LineChartProps> = ({
         segments={5}
         fromZero={true}
       />
+      
+      {/* Show an overlay message when all values are zero but we're still showing the chart */}
+      {!hasNonZeroData && alwaysShowZero && (
+        <View style={styles.zeroDataOverlay}>
+          <Text style={styles.zeroDataText}>No activity recorded</Text>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
   },
   chart: {
     borderRadius: 16,
-    paddingRight: 16,
+  },
+  noDataText: {
+    color: COLORS.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  zeroDataOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 16,
+  },
+  zeroDataText: {
+    color: COLORS.text.secondary,
+    fontSize: 14,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
   }
 });
 
@@ -7541,12 +7616,11 @@ File: app/context/AchievementContext.tsx
 ================================================================================
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { DatabaseManager, ACHIEVEMENTS_DB_NAME } from '../../src/DatabaseManager';
+import { databaseManager } from '../../src/DatabaseManager';
+import { BONG_HITS_DATABASE_NAME } from '../../src/constants';
 import { UserAchievementWithDetails } from '../../src/types';
 import { AchievementsRepository } from '../../src/repositories/AchievementsRepository';
 
-// Create an instance of DatabaseManager and AchievementsRepository
-const databaseManager = new DatabaseManager();
 // We'll initialize the repository with null for now and set it properly in useEffect
 let achievementsRepository: AchievementsRepository | null = null;
 
@@ -7598,16 +7672,18 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
   });
   
   // In a real app, you'd get this from authentication context or similar
-  const userId = 'current-user';
+  const userId = 'default-user';
 
   // Initialize the repository
   useEffect(() => {
     const initRepository = async () => {
       try {
-        // Initialize the database
-        await databaseManager.initialize();
-        // Get the database connection
-        const db = await databaseManager.getDatabase(ACHIEVEMENTS_DB_NAME);
+        // Ensure database manager is initialized
+        await databaseManager.ensureInitialized();
+        
+        // Get the shared database connection from the main database
+        const db = await databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
+        
         // Create the repository
         achievementsRepository = new AchievementsRepository(db);
         setRepositoryReady(true);
@@ -7617,14 +7693,8 @@ export const AchievementProvider: React.FC<AchievementProviderProps> = ({ childr
     };
 
     initRepository();
-
-    // Cleanup function
-    return () => {
-      // Close database connections when unmounted
-      databaseManager.cleanup().catch(err => {
-        console.error('Error cleaning up database connections:', err);
-      });
-    };
+    
+    // No cleanup needed as databaseManager is singleton and will be cleaned up elsewhere
   }, []);
   
   const loadAchievements = async () => {
@@ -8377,6 +8447,188 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+================================================================================
+File: app/screens/TestDataScreen.tsx
+================================================================================
+
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { getInsertStatements, COLORS, BONG_HITS_DATABASE_NAME } from '../../src/constants';
+import { DatabaseManager } from '../../src/DatabaseManager';
+
+export default function TestDataScreen() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const insertTestTimestamps = async () => {
+    setLoading(true);
+    setResult(null);
+    
+    try {
+      const dbManager = DatabaseManager.getInstance();
+      await dbManager.ensureInitialized();
+      const db = await dbManager.getDatabase(BONG_HITS_DATABASE_NAME);
+      
+      // Clear existing data if needed
+      await db.execAsync('DELETE FROM BongHits');
+      
+      // Get SQL insert statements from constants.ts
+      const insertStatements = getInsertStatements();
+      
+      // Execute each statement
+      const statements = insertStatements.split(';').filter(stmt => stmt.trim().length > 0);
+      
+      for (const statement of statements) {
+        await db.execAsync(`${statement.trim()};`);
+      }
+      
+      // Get count to verify
+      const result = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM BongHits');
+      
+      setResult(`Successfully inserted ${result?.count || 0} test timestamps.`);
+      Alert.alert('Success', `Inserted ${result?.count || 0} test timestamps into the database.`);
+    } catch (error) {
+      console.error('Error inserting test data:', error);
+      setResult(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      Alert.alert('Error', `Failed to insert test data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Test Data Generator</Text>
+      </View>
+
+      <ScrollView style={styles.content}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Bong Hit Timestamps</Text>
+          <Text style={styles.sectionDescription}>
+            Insert test timestamp data into the BongHits database. This will help test data visualization
+            and ensure the database is working correctly.
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={insertTestTimestamps}
+            disabled={loading}
+          >
+            <Ionicons name="time-outline" size={20} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.buttonText}>
+              {loading ? 'Inserting Data...' : 'Insert Test Timestamps'}
+            </Text>
+            {loading && <ActivityIndicator color="#fff" style={{ marginLeft: 10 }} />}
+          </TouchableOpacity>
+          
+          {result && (
+            <View style={styles.resultContainer}>
+              <Text style={styles.resultText}>{result}</Text>
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>View Data</Text>
+          <Text style={styles.sectionDescription}>
+            After inserting test data, you can view it on the MyData page.
+          </Text>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
+            onPress={() => router.push('/(tabs)/mydata')}
+          >
+            <Ionicons name="analytics-outline" size={20} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.buttonText}>Go to MyData</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 16,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+  },
+  content: {
+    flex: 1,
+  },
+  section: {
+    padding: 16,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  sectionDescription: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  actionButton: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  resultContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+  },
+  resultText: {
+    color: COLORS.text.primary,
+    fontSize: 14,
+  }
+}); 
 
 ================================================================================
 File: app/strains/_layout.tsx
@@ -11919,16 +12171,16 @@ type ConnectedDevice = {
 export class BluetoothHandler {
     private manager: BleManager;
     private connectedDevice: ConnectedDevice | null;
-    // Callback for when data is received
-    private onDataCallback: ((timestamp: string, duration: number) => void) | null = null;
+    // Update callback signature to include rawTimestamp
+    private onDataCallback: ((rawTimestamp: string, timestamp: string, duration: number) => void) | null = null;
 
     constructor() {
         this.manager = new BleManager();
         this.connectedDevice = null;
     }
 
-    // Set a callback function to handle received data
-    public setOnDataCallback(callback: (timestamp: string, duration: number) => void): void {
+    // Update the expected callback signature
+    public setOnDataCallback(callback: (rawTimestamp: string, timestamp: string, duration: number) => void): void {
         this.onDataCallback = callback;
     }
 
@@ -12007,25 +12259,31 @@ export class BluetoothHandler {
     private handleBluetoothConnection(error: BleError | null, characteristic: Characteristic | null) {
         if (error) {
           console.log("Stream error:", error);
-          return -1;
+          return; // Return void instead of -1
         } else if (!characteristic?.value) {
           console.log("No data was received");
-          return -1;
+          return; // Return void instead of -1
         }
 
         const rawData: string[] = base64.decode(characteristic.value).split(';');
+        // Ensure we handle cases where split might not produce enough parts
+        if (rawData.length < 2) {
+            console.error("Received malformed data:", rawData);
+            return;
+        }
         const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
         const duration: number = parseFloat(rawData[1])*100000; // 0.17
         const timestamp: string = parseRawTimestamp(rawTimestamp);
         
         // Instead of directly calling databaseManager, use the callback
         if (this.onDataCallback) {
-            this.onDataCallback(timestamp, duration);
+            // Pass rawTimestamp along with parsed timestamp and duration
+            this.onDataCallback(rawTimestamp, timestamp, duration);
         } else {
             console.error("No data callback set to handle bong hit data");
+            // Fallback alert if no callback is set
+            Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
         }
-        
-        Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
     }
 
     /*
@@ -12144,10 +12402,11 @@ import {
   SAMPLE_STRAINS
 } from "./constants";
 import { migrations } from "./migrations";
+import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery, getDateRangeWhereClause } from "./utils/SqlTemplates";
 
 // Export constants for use by other modules
 export const DB_VERSION_KEY = "dbVersion";
-export const CURRENT_DB_VERSION = 1; // Increment this when schema changes
+export const CURRENT_DB_VERSION = 1; // Keeping at version 1 since there's no v2 migration
 export const SAFETY_DB_NAME = "SafetyRecords";
 export const ACHIEVEMENTS_DB_NAME = "achievements.db";
 
@@ -12162,6 +12421,78 @@ export interface StrainSearchFilters {
   geneticType?: string;
   effects?: string[];
   sort?: 'rating' | 'name' | 'thc';
+}
+
+/**
+ * Helper function to format weekly stats results
+ */
+function formatWeeklyResults(results: any[]): any[] {
+  // Format results for day names
+  const dayMapping: { [key: string]: string } = {
+    '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', 
+    '4': 'Thu', '5': 'Fri', '6': 'Sat'
+  };
+  
+  // If no results, return zero values for each day
+  if (!results || results.length === 0) {
+    return [
+      { label: 'Sun', value: 0 },
+      { label: 'Mon', value: 0 },
+      { label: 'Tue', value: 0 },
+      { label: 'Wed', value: 0 },
+      { label: 'Thu', value: 0 },
+      { label: 'Fri', value: 0 },
+      { label: 'Sat', value: 0 }
+    ];
+  }
+  
+  // Convert the results to the expected format
+  const formattedResults = results.map((row: any) => ({
+    label: dayMapping[row.day_of_week] || 'Unknown',
+    value: row.count || 0
+  }));
+  
+  // Make sure all days are represented
+  const dayValues = Object.values(dayMapping);
+  const dataByDay = new Map(formattedResults.map(item => [item.label, item]));
+  
+  return dayValues.map(day => 
+    dataByDay.get(day) || { label: day, value: 0 }
+  );
+}
+
+/**
+ * Helper function to format monthly stats results
+ */
+function formatMonthlyResults(results: any[]): any[] {
+  // Month name mapping
+  const monthMapping: { [key: string]: string } = {
+    '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', 
+    '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Aug',
+    '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
+  };
+  
+  // If no results, return zero values for each month
+  if (!results || results.length === 0) {
+    return Object.values(monthMapping).map(month => ({
+      label: month,
+      value: 0
+    }));
+  }
+  
+  // Convert the results to the expected format
+  const formattedResults = results.map((row: any) => ({
+    label: monthMapping[row.month] || 'Unknown',
+    value: row.count || 0
+  }));
+  
+  // Make sure all months are represented
+  const monthNames = Object.values(monthMapping);
+  const dataByMonth = new Map(formattedResults.map(item => [item.label, item]));
+  
+  return monthNames.map(month => 
+    dataByMonth.get(month) || { label: month, value: 0 }
+  );
 }
 
 /**
@@ -12334,6 +12665,17 @@ export class DatabaseManager {
     try {
       console.log(`[DatabaseManager] Opening database: ${dbName}`);
       const db = await openDatabaseAsync(dbName);
+      
+      // Set WAL mode immediately after opening, BEFORE any transactions start
+      try {
+        await db.execAsync('PRAGMA journal_mode = WAL;');
+        console.log(`[DatabaseManager] Set journal mode to WAL for ${dbName}`);
+      } catch (walError) {
+        // WAL mode might fail in some specific scenarios (e.g., certain file systems)
+        // Log the error but don't necessarily fail the connection
+        console.warn(`[DatabaseManager] Failed to set WAL mode for ${dbName}:`, walError);
+      }
+      
       this.databaseConnections.set(dbName, db);
       return db;
     } catch (error) {
@@ -12365,121 +12707,259 @@ export class DatabaseManager {
 
   /**
    * Gets weekly stats for data visualization
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
    */
-  public async getWeeklyStats() {
+  public async getWeeklyStats(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your weekly stats logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching weekly stats from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Use the SQL template with date filtering
+      const query = getWeeklyStatsQuery(BONG_HITS_DATABASE_NAME, startDate, endDate);
+      
+      const results = await db.getAllAsync(query);
+      
+      // Process the results to get the proper format for charts
+      const formattedResults = formatWeeklyResults(results);
+      
       return {
         success: true,
-        data: [
-          { x: 'Sun', y: 0 },
-          { x: 'Mon', y: 0 },
-          { x: 'Tue', y: 0 },
-          { x: 'Wed', y: 0 },
-          { x: 'Thu', y: 0 },
-          { x: 'Fri', y: 0 },
-          { x: 'Sat', y: 0 }
-        ]
+        data: formattedResults
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting weekly stats:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
 
   /**
    * Gets monthly stats for data visualization
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
    */
-  public async getMonthlyStats() {
+  public async getMonthlyStats(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your monthly stats logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching monthly stats from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Use the SQL template with date filtering
+      const query = getMonthlyStatsQuery(BONG_HITS_DATABASE_NAME, startDate, endDate);
+      
+      const results = await db.getAllAsync(query);
+      
+      // Format the results for the UI
+      const formattedResults = formatMonthlyResults(results);
+      
       return {
         success: true,
-        data: Array.from({ length: 30 }, (_, i) => ({ 
-          x: (i + 1).toString(), 
-          y: 0 
-        }))
+        data: formattedResults
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting monthly stats:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
 
   /**
-   * Gets usage statistics
+   * Gets usage statistics with date range filtering
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
    */
-  public async getUsageStats() {
+  public async getUsageStats(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your usage stats logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching usage stats from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Get usage statistics with date range
+      const query = getUsageStatsQuery(BONG_HITS_DATABASE_NAME, 365, startDate, endDate); // Pass startDate and endDate
+      
+      // Define the expected type for better TypeScript support
+      interface UsageStatsResult {
+        total_hits: number;
+        active_days: number;
+        avg_hits_per_day: number;
+        avg_duration_ms: number;
+        total_duration_ms: number;
+        max_hits_in_day: number;
+        most_active_day: number;
+        least_active_day: number;
+      }
+      
+      // Use type assertion to handle the database result
+      const usageStats = await db.getFirstAsync(query) as UsageStatsResult | null;
+      
+      // No need to check for results - if the query returns no rows, we'll get empty data
+      if (!usageStats) {
+        return {
+          success: true,
+          data: {
+            totalHits: 0,
+            averageHitsPerDay: 0,
+            peakDayHits: 0,
+            lowestDayHits: 0,
+            averageDuration: 0,
+            totalDuration: 0,
+            longestHit: 0,
+            shortestHit: 0,
+            mostActiveHour: 0,
+            leastActiveHour: 0,
+            averageHitsPerHour: 0,
+            weekdayStats: null,
+            consistency: 0
+          }
+        };
+      }
+      
+      // Get weekday vs weekend stats with the same date range
+      const weekdayStats = await this.getWeekdayStats(db, startDate, endDate);
+      
+      // Format the results
+      const formattedResults = {
+        totalHits: usageStats.total_hits || 0,
+        averageHitsPerDay: usageStats.avg_hits_per_day || 0,
+        peakDayHits: usageStats.max_hits_in_day || 0,
+        lowestDayHits: 0, // This needs to be calculated from active days
+        averageDuration: usageStats.avg_duration_ms || 0,
+        totalDuration: usageStats.total_duration_ms || 0,
+        longestHit: 0, // Not calculated in the query
+        shortestHit: 0, // Not calculated in the query
+        mostActiveHour: usageStats.most_active_day || 0,
+        leastActiveHour: usageStats.least_active_day || 0,
+        averageHitsPerHour: 0, // Not calculated in the query
+        weekdayStats: weekdayStats,
+        consistency: 0 // This needs to be calculated
+      };
+      
       return {
         success: true,
-        data: {
-          averageHitsPerDay: 0,
-          totalHits: 0,
-          peakDayHits: 0,
-          lowestDayHits: 0,
-          averageDuration: 0,
-          longestHit: 0,
-          shortestHit: 0,
-          mostActiveHour: 0,
-          leastActiveHour: 0,
-          totalDuration: 0,
-          averageHitsPerHour: 0,
-          consistency: 0,
-          weekdayStats: {
-            weekday: { avg: 0, total: 0 },
-            weekend: { avg: 0, total: 0 }
-          }
-        }
+        data: formattedResults
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting usage stats:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
 
   /**
-   * Gets time distribution data
+   * Gets weekday vs weekend statistics
    */
-  public async getTimeDistribution() {
+  private async getWeekdayStats(db: SQLiteDatabase, startDate?: string, endDate?: string) {
+    // Create SQL with date filtering
+    const dateFilter = startDate || endDate ? 
+      getDateRangeWhereClause(startDate, endDate) : 
+      '';
+    
+    const query = `
+      SELECT
+        SUM(CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('1','2','3','4','5') THEN 1 ELSE 0 END) as weekday_hits,
+        SUM(CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('0','6') THEN 1 ELSE 0 END) as weekend_hits,
+        COUNT(DISTINCT CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('1','2','3','4','5') 
+          THEN strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') END) as weekday_days,
+        COUNT(DISTINCT CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('0','6') 
+          THEN strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') END) as weekend_days
+      FROM ${BONG_HITS_DATABASE_NAME}
+      ${dateFilter}
+    `;
+    
+    try {
+      // Define type for better TypeScript support
+      interface WeekdayStatsResult {
+        weekday_hits: number;
+        weekend_hits: number;
+        weekday_days: number;
+        weekend_days: number;
+      }
+      
+      // Use type assertion to handle the database result
+      const result = await db.getFirstAsync(query) as WeekdayStatsResult | null;
+      
+      if (!result) {
+        return {
+          weekday: { total: 0, avg: 0 },
+          weekend: { total: 0, avg: 0 }
+        };
+      }
+      
+      const weekdayAvg = result.weekday_days > 0 ? result.weekday_hits / result.weekday_days : 0;
+      const weekendAvg = result.weekend_days > 0 ? result.weekend_hits / result.weekend_days : 0;
+      
+      return {
+        weekday: { total: result.weekday_hits || 0, avg: weekdayAvg },
+        weekend: { total: result.weekend_hits || 0, avg: weekendAvg }
+      };
+    } catch (error) {
+      console.error('[DatabaseManager] Error getting weekday stats:', error);
+      return {
+        weekday: { total: 0, avg: 0 },
+        weekend: { total: 0, avg: 0 }
+      };
+    }
+  }
+
+  /**
+   * Gets time distribution statistics based on date range
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
+   */
+  public async getTimeDistribution(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your time distribution logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching time distribution from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Use the SQL template with date filtering
+      const query = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME, 365, startDate, endDate); // Pass startDate and endDate
+      
+      const result = await db.getFirstAsync(query);
+      
+      // If no data, return zeros
+      if (!result) {
+        return {
+          success: true,
+          data: {
+            morning: 0,
+            afternoon: 0,
+            evening: 0,
+            night: 0
+          }
+        };
+      }
+      
       return {
         success: true,
         data: {
-          morning: 0,
-          afternoon: 0,
-          evening: 0,
-          night: 0
+          morning: result.morning || 0,
+          afternoon: result.afternoon || 0,
+          evening: result.evening || 0,
+          night: result.night || 0
         }
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting time distribution:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
@@ -12491,11 +12971,18 @@ export class DatabaseManager {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your bong hit logs retrieval logic here
-      // For now, returning empty data
+      
+      const results = await db.getAllAsync(`
+        SELECT 
+          timestamp,
+          duration_ms
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ORDER BY timestamp DESC
+      `);
+      
       return {
         success: true,
-        data: []
+        data: results
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting bong hit logs:', error);
@@ -12577,33 +13064,33 @@ export class DatabaseManager {
       // Apply genetic type filter if specified
       if (filters.geneticType) {
         filteredStrains = filteredStrains.filter(strain => 
-          strain.genetic_type === filters.geneticType
+          strain.genetic_type.includes(filters.geneticType!)
         );
       }
       
-      // Apply effects filter if provided
+      // Apply effects filter if provided - using AND logic
       if (filters.effects && filters.effects.length > 0) {
         filteredStrains = filteredStrains.filter(strain => {
           if (!strain.effects) return false;
-          // Check if any of the filter effects are included in the strain effects
-          return filters.effects!.some((effect: string) => 
+          // Check if ALL of the filter effects are included in the strain effects
+          return filters.effects!.every((effect: string) => 
             strain.effects.toLowerCase().includes(effect.toLowerCase())
           );
         });
       }
       
-      // Apply sort
+      // Apply sort - default is rating in descending order
+      filteredStrains.sort((a, b) => b.combined_rating - a.combined_rating); // Default sort
+      
       if (filters.sort) {
         switch(filters.sort) {
-          case 'rating':
-            filteredStrains.sort((a, b) => b.combined_rating - a.combined_rating);
-            break;
           case 'name':
             filteredStrains.sort((a, b) => a.name.localeCompare(b.name));
             break;
           case 'thc':
             filteredStrains.sort((a, b) => b.thc_rating - a.thc_rating);
             break;
+          // 'rating' is already handled by default above
         }
       }
       
@@ -12641,12 +13128,23 @@ export class DatabaseManager {
     try {
       await this.ensureInitialized();
       
+      // Count strains by genetic type
+      const indicaCount = SAMPLE_STRAINS.filter(strain => 
+        strain.genetic_type.includes('Indica')).length;
+      
+      const sativaCount = SAMPLE_STRAINS.filter(strain => 
+        strain.genetic_type.includes('Sativa')).length;
+      
+      const hybridCount = SAMPLE_STRAINS.filter(strain => 
+        strain.genetic_type.includes('Hybrid')).length;
+      
+      const total = SAMPLE_STRAINS.length;
+      
       return {
-        'Sativa': 15,
-        'Indica': 12,
-        'Hybrid': 25,
-        'Sativa-dominant Hybrid': 18,
-        'Indica-dominant Hybrid': 14
+        'Sativa': sativaCount,
+        'Indica': indicaCount,
+        'Hybrid': hybridCount,
+        'Total': total
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting strain categories:', error);
@@ -13206,7 +13704,7 @@ export default useAIRecommendations;
 File: src/hooks/useDataService.ts
 ================================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { databaseManager } from '@/src/DatabaseManager';
 import { DataState, ChartDataPoint, UsageStats, WeekdayStats } from '@/src/types';
 
@@ -13243,97 +13741,128 @@ const DEFAULT_STATE: DataState = {
 
 export function useDataService() {
   const [state, setState] = useState<DataState>(DEFAULT_STATE);
+  const [isRefreshing, setIsRefreshing] = useState(false); // New state for manual refresh
 
-  useEffect(() => {
-    let isMounted = true;
+  // Memoize default date range to prevent recreating on each render
+  const defaultDateRange = useMemo(() => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - 1); // Default to last year
+    return { startDate, endDate };
+  }, []);
 
-    const loadData = async () => {
-      try {
-        // Log for debugging
-        console.log('[useDataService] Starting data fetch...');
-
-        // Set initial loading state
-        if (!isMounted) return;
-        setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-        // Fetch data sequentially to avoid race conditions
-        console.log('[useDataService] Fetching weekly stats...');
-        const weeklyStats = await databaseManager.getWeeklyStats();
-        if (!isMounted) return;
-        console.log('[useDataService] Weekly stats:', weeklyStats);
-
-        console.log('[useDataService] Fetching monthly stats...');
-        const monthlyStats = await databaseManager.getMonthlyStats();
-        if (!isMounted) return;
-        console.log('[useDataService] Monthly stats:', monthlyStats);
-
-        console.log('[useDataService] Fetching usage stats...');
-        const usageStats = await databaseManager.getUsageStats();
-        if (!isMounted) return;
-        console.log('[useDataService] Usage stats:', usageStats);
-
-        console.log('[useDataService] Fetching time distribution...');
-        const timeDistribution = await databaseManager.getTimeDistribution();
-        if (!isMounted) return;
-        console.log('[useDataService] Time distribution:', timeDistribution);
-
-        // Collect any errors from the responses
-        const errors: string[] = [];
-        if (!weeklyStats.success) errors.push(`Weekly stats: ${weeklyStats.error}`);
-        if (!monthlyStats.success) errors.push(`Monthly stats: ${monthlyStats.error}`);
-        if (!usageStats.success) errors.push(`Usage stats: ${usageStats.error}`);
-        if (!timeDistribution.success) errors.push(`Time distribution: ${timeDistribution.error}`);
-
-        if (errors.length > 0) {
-          const errorMessage = errors.join('; ');
-          console.error('[useDataService] Data fetch errors:', errorMessage);
-          if (isMounted) {
-            setState(prev => ({
-              ...prev,
-              isLoading: false,
-              error: errorMessage
-            }));
-          }
-          return;
-        }
-
-        // Update state only if all requests succeeded and component is mounted
-        console.log('[useDataService] All data fetched successfully, updating state...');
-        if (isMounted) {
-          setState({
-            ...DEFAULT_STATE,
-            weeklyData: weeklyStats.data!,
-            monthlyData: monthlyStats.data!,
-            usageStats: {
-              ...DEFAULT_STATE.usageStats,
-              ...usageStats.data!
-            },
-            timeDistribution: timeDistribution.data!,
-            isLoading: false,
-            error: null
-          });
-        }
-      } catch (error) {
-        console.error('[useDataService] Unexpected error in loadData:', error);
-        if (isMounted) {
-          setState(prev => ({
-            ...prev,
-            isLoading: false,
-            error: error instanceof Error ? error.message : 'An unexpected error occurred while fetching data'
-          }));
-        }
+  // Helper function to ensure data is in the correct format
+  const ensureChartDataFormat = (data: any[] | null | undefined): ChartDataPoint[] => {
+    if (!data || data.length === 0) return [];
+    
+    // Check if data already has the right format (label and value properties)
+    if (data[0].label !== undefined && data[0].value !== undefined) {
+      return data as ChartDataPoint[];
+    }
+    
+    // Otherwise, map to the right format
+    return [];
+  };
+  
+  // Function to load data with specific date range
+  const loadDataWithDateRange = useCallback(async (startDate?: Date, endDate?: Date, isManualRefresh = false) => {
+    const currentStartDate = startDate || defaultDateRange.startDate;
+    const currentEndDate = endDate || defaultDateRange.endDate;
+    
+    // Format dates for database queries
+    const startDateStr = currentStartDate.toISOString();
+    const endDateStr = currentEndDate.toISOString();
+    
+    console.log(`[useDataService] ${isManualRefresh ? 'Refreshing' : 'Loading'} data with date range: ${startDateStr} to ${endDateStr}`);
+    
+    // Set appropriate loading state
+    if (isManualRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+    }
+    
+    try {
+      // Fetch data with date range
+      console.log('[useDataService] Fetching weekly stats...');
+      const weeklyStats = await databaseManager.getWeeklyStats(startDateStr, endDateStr);
+      
+      console.log('[useDataService] Fetching monthly stats...');
+      const monthlyStats = await databaseManager.getMonthlyStats(startDateStr, endDateStr);
+      
+      console.log('[useDataService] Fetching usage stats...');
+      const usageStats = await databaseManager.getUsageStats(startDateStr, endDateStr);
+      
+      console.log('[useDataService] Fetching time distribution...');
+      const timeDistribution = await databaseManager.getTimeDistribution(startDateStr, endDateStr);
+      
+      // Collect any errors from the responses
+      const errors: string[] = [];
+      if (!weeklyStats.success) errors.push(`Weekly stats: ${weeklyStats.error}`);
+      if (!monthlyStats.success) errors.push(`Monthly stats: ${monthlyStats.error}`);
+      if (!usageStats.success) errors.push(`Usage stats: ${usageStats.error}`);
+      if (!timeDistribution.success) errors.push(`Time distribution: ${timeDistribution.error}`);
+      
+      if (errors.length > 0) {
+        const errorMessage = errors.join('; ');
+        console.error('[useDataService] Data fetch errors:', errorMessage);
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: errorMessage
+        }));
+        setIsRefreshing(false);
+        return;
       }
-    };
+      
+      // Check if we actually have data
+      const hasData = usageStats.data && usageStats.data.totalHits > 0;
+      
+      console.log(`[useDataService] Data fetch complete. Has data: ${hasData}`);
+      
+      // Update state based on whether we have actual data or not
+      setState({
+        weeklyData: ensureChartDataFormat(weeklyStats.data),
+        monthlyData: ensureChartDataFormat(monthlyStats.data),
+        usageStats: {
+          ...DEFAULT_STATE.usageStats,
+          ...(hasData ? usageStats.data as Partial<UsageStats> : {})
+        },
+        timeDistribution: hasData 
+          ? (timeDistribution.data || DEFAULT_STATE.timeDistribution) 
+          : DEFAULT_STATE.timeDistribution,
+        isLoading: false,
+        error: null
+      });
+    } catch (error) {
+      console.error('[useDataService] Unexpected error in loadData:', error);
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'An unexpected error occurred while fetching data'
+      }));
+    } finally {
+      setIsRefreshing(false); // Always reset refreshing state
+    }
+  }, [defaultDateRange]);
 
-    loadData();
+  // Function for manual refresh
+  const refreshData = useCallback(() => {
+    return loadDataWithDateRange(defaultDateRange.startDate, defaultDateRange.endDate, true);
+  }, [loadDataWithDateRange, defaultDateRange]);
 
-    return () => {
-      console.log('[useDataService] Cleaning up...');
-      isMounted = false;
-    };
-  }, []); // Empty dependency array as we only want to run this once
+  // Initial data load - only run once on mount
+  useEffect(() => {
+    console.log('[useDataService] Initial data load...');
+    loadDataWithDateRange(defaultDateRange.startDate, defaultDateRange.endDate);
+  }, [loadDataWithDateRange, defaultDateRange]); // Dependencies for ensuring it only runs when needed
 
-  return state;
+  return {
+    ...state,
+    isRefreshing,
+    refreshData,
+    loadDataWithDateRange // Keep this for compatibility with existing code
+  };
 } 
 
 ================================================================================
@@ -13515,8 +14044,9 @@ export function useStrains(): UseStrainState & UseStrainActions {
 File: src/hooks/useTimeRangeData.ts
 ================================================================================
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useDataService } from './useDataService';
+import { UsageStats, ChartDataPoint, TimeDistribution } from '@/src/types';
 
 export type TimeRange = 'D' | 'W' | 'M' | 'Y';
 
@@ -13530,97 +14060,248 @@ interface TimeRangeData {
   weekendAvg?: number;
 }
 
+// Helper function to get date range based on time range selection
+// This MUST be a pure function or memoized correctly.
+function calculateDateRangeForTimeRange(range: TimeRange): { startDate: Date, endDate: Date } {
+  const endDate = new Date(); // Base end date on current time
+  let startDate = new Date();
+
+  switch(range) {
+    case 'D': // Last 24 hours
+      startDate.setHours(endDate.getHours() - 24);
+      break;
+    case 'W': // Last 7 days
+      startDate.setDate(endDate.getDate() - 6); // Go back 6 days to include today (7 days total)
+      startDate.setHours(0, 0, 0, 0); // Start of the first day
+      endDate.setHours(23, 59, 59, 999); // End of today
+      break;
+    case 'M': // Last 30 days
+      startDate.setDate(endDate.getDate() - 29); // Go back 29 days to include today (30 days total)
+      startDate.setHours(0, 0, 0, 0); // Start of the first day
+      endDate.setHours(23, 59, 59, 999); // End of today
+      break;
+    case 'Y': // Last 365 days (1 year)
+      startDate.setFullYear(endDate.getFullYear() - 1);
+      startDate.setDate(startDate.getDate() + 1); // Start exactly one year ago
+      startDate.setHours(0, 0, 0, 0); // Start of the first day
+      endDate.setHours(23, 59, 59, 999); // End of today
+      break;
+  }
+
+  // Format dates to ISO strings for consistent logging
+  const startIso = startDate.toISOString();
+  const endIso = endDate.toISOString();
+  console.log(`[calculateDateRange] Range: ${range}, Start: ${startIso}, End: ${endIso}`);
+  
+  return { startDate, endDate };
+}
+
+const DEFAULT_TIMERANGE_DATA: TimeRangeData = {
+  chartData: [],
+  chartLabels: [],
+  averageValue: 0,
+  maxValue: 0,
+  minValue: 0,
+  weekdayAvg: 0,
+  weekendAvg: 0
+};
+
 export function useTimeRangeData(initialRange: TimeRange = 'W') {
-  const { weeklyData, monthlyData, usageStats, isLoading: isDataLoading, error: dataError } = useDataService();
+  // Use ref to prevent unnecessary re-renders when checking busy state
+  const isFetchingRef = useRef(false);
+  
+  // Use the useDataService hook - get the whole object to avoid dependency issues
+  const dataService = useDataService();
+
   const [timeRange, setTimeRange] = useState<TimeRange>(initialRange);
-  const [data, setData] = useState<TimeRangeData>({
-    chartData: [],
-    chartLabels: [],
-    averageValue: 0,
-    maxValue: 0,
-    minValue: 0,
-    weekdayAvg: 0,
-    weekendAvg: 0
-  });
+
+  // --- Memoize the date range calculation ---
+  // This is crucial. Calculate start/end dates based *only* on the timeRange state.
+  const { startDate, endDate } = useMemo(() => {
+    console.log(`[useTimeRangeData] Recalculating date range for ${timeRange}`);
+    return calculateDateRangeForTimeRange(timeRange);
+    // Recalculate ONLY when timeRange changes
+  }, [timeRange]);
+
+  const [data, setData] = useState<TimeRangeData>(DEFAULT_TIMERANGE_DATA);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Function to fetch data based on time range
-  const fetchDataByTimeRange = useCallback(async (range: TimeRange) => {
-    if (isDataLoading || dataError) return;
-    const averageValue = usageStats.averageHitsPerDay;
-    const maxValue = usageStats.peakDayHits; // Use the peak day value
-    const minValue = usageStats.lowestDayHits > 0 ? usageStats.lowestDayHits : 0;
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // In a real implementation, this would call your data service
-      // For now, we'll use the existing data and simulate different time ranges
-      let chartData: number[] = [];
-      let chartLabels: string[] = [];
-      
-      switch(range) {
-        case 'D': // Daily (hours)
-          // Simulate hourly data for today
-          chartData = Array.from({ length: 24 }, () => Math.floor(Math.random() * 10));
-          chartLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
-          break;
-        case 'W': // Weekly (days)
-          // Use the existing weekly data
-          chartData = weeklyData.map(d => d.value);
-          chartLabels = weeklyData.map(d => d.label);
-          break;
-        case 'M': // Monthly (days)
-          // Simulate daily data for a month
-          chartData = Array.from({ length: 30 }, () => Math.floor(Math.random() * 20));
-          chartLabels = Array.from({ length: 30 }, (_, i) => `${i+1}`);
-          break;
-        case 'Y': // Yearly (months)
-          // Use the existing monthly data
-          chartData = monthlyData.map(d => d.value);
-          chartLabels = monthlyData.map(d => d.label);
-          break;
-      }
+  // Function to process and format the data after it's been loaded
+  // Now takes explicit arguments rather than implicitly using closure state
+  const processData = useCallback((
+    stats: UsageStats,
+    weekly: ChartDataPoint[],
+    monthly: ChartDataPoint[],
+    range: TimeRange
+  ): TimeRangeData => {
+    console.log(`[useTimeRangeData] Processing data for range ${range}`);
+    const averageValue = stats?.averageHitsPerDay || 0;
+    const maxValue = stats?.peakDayHits || 0;
+    const minValue = (stats?.lowestDayHits > 0 ? stats.lowestDayHits : 0) || 0;
+    const hasData = stats?.totalHits > 0;
 
-      let weekdayAvg = usageStats.weekdayStats?.weekday.avg || 0;
-      let weekendAvg = usageStats.weekdayStats?.weekend.avg || 0;
-      
-      if (range !== 'W') {
-        // Simulate different stats for other time ranges
-        weekdayAvg = averageValue * 0.9; // Slightly lower for weekdays
-        weekendAvg = averageValue * 1.2; // Slightly higher for weekends
-      }
-      
-      setData({
-        chartData,
-        chartLabels,
-        averageValue,
-        maxValue,
-        minValue,
-        weekdayAvg,
-        weekendAvg
-      });
-    } catch (err) {
-      console.error("Error fetching time range data:", err);
-      setError(err instanceof Error ? err.message : "An unknown error occurred");
-    } finally {
-      setIsLoading(false);
+    let chartData: number[] = [];
+    let chartLabels: string[] = [];
+    let weekdayAvg = 0;
+    let weekendAvg = 0;
+
+    // Generate chart data based on time range
+    switch(range) {
+      case 'D':
+        // Placeholder - Requires actual hourly data aggregation
+        const hourLabels = Array.from({ length: 24 }, (_, i) => `${(new Date().getHours() - 23 + i + 24) % 24}:00`);
+        chartData = Array(24).fill(0);
+        chartLabels = hourLabels;
+        break;
+
+      case 'W':
+        if (weekly && weekly.length > 0) {
+          chartData = weekly.map(d => d.value);
+          chartLabels = weekly.map(d => d.label);
+        } else {
+          const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((_, i, arr) => arr[(new Date().getDay() - 6 + i + 7) % 7]);
+          chartData = Array(7).fill(0);
+          chartLabels = dayLabels;
+        }
+        break;
+
+      case 'M':
+        // Placeholder - Requires actual daily data aggregation for the month
+        const monthLabels = Array.from({ length: 30 }, (_, i) => `${new Date(Date.now() - (29 - i) * 86400000).getDate()}`);
+        chartData = Array(30).fill(0);
+        chartLabels = monthLabels;
+        break;
+
+      case 'Y':
+        if (monthly && monthly.length > 0) {
+          chartData = monthly.map(d => d.value);
+          chartLabels = monthly.map(d => d.label);
+        } else {
+          const yearLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((_, i, arr) => arr[(new Date().getMonth() - 11 + i + 12) % 12]);
+          chartData = Array(12).fill(0);
+          chartLabels = yearLabels;
+        }
+        break;
     }
-  }, [weeklyData, monthlyData, usageStats, isDataLoading, dataError]);
 
-  // Update data when time range changes
+    if (hasData && stats?.weekdayStats) {
+      weekdayAvg = stats.weekdayStats.weekday?.avg || 0;
+      weekendAvg = stats.weekdayStats.weekend?.avg || 0;
+    }
+
+    return {
+      chartData,
+      chartLabels,
+      averageValue: hasData ? averageValue : 0,
+      maxValue: hasData ? maxValue : 0,
+      minValue: hasData ? minValue : 0,
+      weekdayAvg,
+      weekendAvg
+    };
+  // No dependencies since all data is passed as args
+  }, []);
+
+  // Function to fetch data based on the memoized date range
+  // Now depends only on stable dates and the loadDataWithDateRange function
+  const fetchDataForCurrentRange = useCallback(async (manualRefresh = false) => {
+    if (isFetchingRef.current && !manualRefresh) {
+      console.log('[useTimeRangeData] Already fetching data, skipping fetch.');
+      return;
+    }
+
+    // Use local copies of dates to ensure stability if called rapidly
+    const currentStartDate = startDate;
+    const currentEndDate = endDate;
+    
+    // Format the date range for logging/debugging
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
+    console.log(`[useTimeRangeData] ${manualRefresh ? 'Refreshing' : 'Fetching'} data for range ${timeRange} (${formatDate(currentStartDate)} to ${formatDate(currentEndDate)})`);
+
+    if (manualRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    
+    setError(null);
+    isFetchingRef.current = true;
+
+    try {
+      // ONLY trigger database load - don't process data here
+      await dataService.loadDataWithDateRange(currentStartDate, currentEndDate, manualRefresh);
+      
+      // Only handle errors from the fetch call
+      if (dataService.error) {
+        setError(dataService.error);
+      }
+    } catch (err) {
+      console.error("[useTimeRangeData] Error triggering data fetch:", err);
+      setError(err instanceof Error ? err.message : "An unknown error occurred during fetch trigger");
+    } finally {
+      isFetchingRef.current = false;
+      // Don't reset loading/refreshing here, let the processing effect do it
+    }
+  // Stable dependencies: only the date range and timeRange for logging
+  }, [dataService.loadDataWithDateRange, timeRange, startDate, endDate, dataService.error]);
+
+  // Effect to TRIGGER fetch when date range changes (i.e., timeRange changes)
   useEffect(() => {
-    fetchDataByTimeRange(timeRange);
-  }, [timeRange, fetchDataByTimeRange]);
+    console.log(`[useTimeRangeData] Fetch Effect: Triggering fetch for ${timeRange}`);
+    fetchDataForCurrentRange(false); // Initial fetch for this time range
+
+    // Cleanup function remains simple
+    return () => {
+      console.log('[useTimeRangeData] Cleaning up Fetch Effect');
+    };
+  // Depend ONLY on the dates and the stable fetch function
+  }, [startDate, endDate, fetchDataForCurrentRange]);
+
+  // SEPARATE Effect to PROCESS data when it changes in useDataService
+  useEffect(() => {
+    // Only process if the underlying service is NOT loading and we are not actively fetching
+    if (!dataService.isLoading && !isFetchingRef.current) {
+      console.log('[useTimeRangeData] Processing Effect: Data updated from useDataService.');
+      const processed = processData(
+        dataService.usageStats,
+        dataService.weeklyData,
+        dataService.monthlyData,
+        timeRange
+      );
+      setData(processed);
+      setError(dataService.error); // Update error state from service
+      setIsLoading(false);       // Mark this hook as not loading
+      setIsRefreshing(false);    // Mark this hook as not refreshing
+    } else {
+      console.log('[useTimeRangeData] Processing Effect: Skipped processing (service loading or fetch in progress)');
+    }
+  // Depend on the data coming FROM useDataService and the stable process function
+  }, [
+    dataService.usageStats,
+    dataService.weeklyData,
+    dataService.monthlyData,
+    dataService.isLoading,
+    dataService.error,
+    timeRange,
+    processData
+  ]);
+
+  // Function for manual refresh - stable
+  const refreshTimeRangeData = useCallback(() => {
+    console.log(`[useTimeRangeData] Manual refresh called for range ${timeRange}`);
+    return fetchDataForCurrentRange(true);
+  }, [fetchDataForCurrentRange, timeRange]);
 
   return {
     timeRange,
     setTimeRange,
     data,
-    isLoading: isLoading || isDataLoading,
-    error: error || dataError,
-    fetchDataByTimeRange
+    // isLoading should reflect if *either* hook is loading initially
+    isLoading: isLoading || (dataService.isLoading && !isRefreshing),
+    isRefreshing,
+    error,
+    refreshTimeRangeData
   };
 } 
 
@@ -13663,7 +14344,8 @@ import { SQLiteDatabase } from 'expo-sqlite';
 import { 
   BONG_HITS_DATABASE_NAME, 
   STRAINS_DATABASE_NAME,
-  SAMPLE_STRAINS
+  SAMPLE_STRAINS,
+  ACHIEVEMENTS
 } from '../constants';
 
 // Helper to execute schema - breaking statements by semicolons
@@ -13682,7 +14364,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
 
   // BongHits DB Schema
   const bongHitsSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS ${BONG_HITS_DATABASE_NAME} (
       timestamp TIMESTAMP PRIMARY KEY NOT NULL,
       duration_ms INTEGER NOT NULL
@@ -13695,7 +14376,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
   // Strains DB Schema - we'll apply it to the same database for simplicity
   // In a real app, this might be better separated
   const strainsSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS ${STRAINS_DATABASE_NAME} (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -13724,7 +14404,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
 
   // Safety DB Schema
   const safetySchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS safety_records (
       id TEXT PRIMARY KEY NOT NULL,
       user_id TEXT NOT NULL,
@@ -13744,7 +14423,6 @@ export async function up(db: SQLiteDatabase): Promise<void> {
 
   // Achievements DB Schema
   const achievementsSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS achievements (
       id INTEGER PRIMARY KEY,
       category TEXT NOT NULL,
@@ -13769,9 +14447,35 @@ export async function up(db: SQLiteDatabase): Promise<void> {
   await executeSchema(db, achievementsSchema);
   console.log('[Migration V1] Achievements schema applied.');
 
+  // --- START SEEDING ACHIEVEMENTS ---
+  console.log('[Migration V1] Seeding achievements definitions...');
+  try {
+    for (const achievement of ACHIEVEMENTS) {
+      await db.runAsync(
+        `INSERT INTO achievements (id, category, name, unlock_condition, notes, icon, complexity)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING;`, // ON CONFLICT avoids errors if run again
+        [
+          achievement.id,
+          achievement.category,
+          achievement.name,
+          achievement.unlockCondition,
+          achievement.notes || null,
+          achievement.icon || null,
+          achievement.complexity || 1
+        ]
+      );
+    }
+    console.log(`[Migration V1] Seeded ${ACHIEVEMENTS.length} achievements definitions.`);
+  } catch(seedError) {
+    console.error('[Migration V1] Error seeding achievements:', seedError);
+    // Propagate the error to ensure the migration fails if seeding fails
+    throw seedError;
+  }
+  // --- END SEEDING ACHIEVEMENTS ---
+
   // Journal DB Schema
   const journalSchema = `
-    PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS journal_entries (
       id TEXT PRIMARY KEY NOT NULL,
       user_id TEXT NOT NULL,
@@ -13836,7 +14540,7 @@ import { StorageService } from '../services/StorageService';
 import { DeviceService } from '../services/DeviceService';
 import { BluetoothService } from '../services/BluetoothService';
 import { AppSetupService } from '../services/AppSetupService';
-import { BONG_HITS_DATABASE_NAME, STRAINS_DATABASE_NAME } from '../constants';
+import { BONG_HITS_DATABASE_NAME } from '../constants';
 import { BluetoothHandler } from '../contexts/BluetoothContext';
 
 // Define the AppContext type
@@ -13879,12 +14583,13 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         
         // Initialize database connections
         await databaseManager.initialize();
-        const bongHitsDb = await databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
-        const strainsDb = await databaseManager.getDatabase(STRAINS_DATABASE_NAME);
         
-        // Initialize repositories
-        const bongHitsRepository = new BongHitsRepository(bongHitsDb);
-        const strainsRepository = new StrainsRepository(strainsDb);
+        // Use a single database connection for all repositories
+        const db = await databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
+        
+        // Initialize repositories with the same database connection
+        const bongHitsRepository = new BongHitsRepository(db);
+        const strainsRepository = new StrainsRepository(db);
         
         // Initialize services that depend on repositories
         const deviceService = new DeviceService(storageService);
@@ -14040,8 +14745,9 @@ File: src/repositories/AchievementsRepository.ts
 
 import { SQLiteDatabase } from 'expo-sqlite';
 import { BaseRepository } from './BaseRepository';
-import { UserAchievementWithDetails, ValidationResult } from '../types';
+import { UserAchievementWithDetails } from '../types';
 import { validateNotEmpty } from '../utils/validators';
+import { ACHIEVEMENTS } from '../constants';
 
 /**
  * Repository for managing achievement data
@@ -14053,6 +14759,53 @@ export class AchievementsRepository extends BaseRepository {
    */
   constructor(db: SQLiteDatabase) {
     super(db);
+  }
+
+  /**
+   * Initializes the achievements table with data from ACHIEVEMENTS constant if it's empty
+   */
+  public async initializeData(): Promise<void> {
+    try {
+      console.log('[AchievementsRepository] Checking if achievements need to be seeded...');
+      
+      // Check if achievements table is already populated
+      const result = await this.db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM achievements`
+      );
+      
+      const count = result?.count ?? 0;
+      
+      if (count === 0) {
+        console.log('[AchievementsRepository] Seeding achievements data...');
+        
+        // Use a transaction for better performance and atomicity
+        await this.executeTransaction(async () => {
+          for (const achievement of ACHIEVEMENTS) {
+            await this.db.runAsync(
+              `INSERT INTO achievements (
+                id, category, name, unlock_condition, notes, icon, complexity
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                achievement.id,
+                achievement.category,
+                achievement.name,
+                achievement.unlockCondition,
+                achievement.notes || null,
+                achievement.icon || null,
+                achievement.complexity || 1
+              ]
+            );
+          }
+        });
+        
+        console.log(`[AchievementsRepository] Seeded ${ACHIEVEMENTS.length} achievements.`);
+      } else {
+        console.log(`[AchievementsRepository] Achievements table already contains ${count} records.`);
+      }
+    } catch (error) {
+      console.error('[AchievementsRepository] Failed to initialize achievements data:', error);
+      throw error;
+    }
   }
 
   /**
@@ -14239,6 +14992,8 @@ export class AchievementsRepository extends BaseRepository {
         if (shouldUnlock) {
           newlyUnlocked.push({
             ...achievement,
+            userId,
+            achievementId: achievement.id,
             progress: 100,
             isUnlocked: true,
             dateUnlocked: new Date().toISOString(),
@@ -15004,20 +15759,20 @@ export class StrainsRepository extends BaseRepository {
 
       // Search by name if query is provided
       if (query && query.trim()) {
-        whereClauses.push('name LIKE ?');
-        params.push(`%${query.trim()}%`);
+        whereClauses.push('(name LIKE ? OR overview LIKE ?)');
+        params.push(`%${query.trim()}%`, `%${query.trim()}%`);
       }
 
       // Filter by genetic type
       if (filters.geneticType) {
-        whereClauses.push('genetic_type = ?');
-        params.push(filters.geneticType);
+        whereClauses.push('genetic_type LIKE ?');
+        params.push(`%${filters.geneticType}%`);
       }
 
-      // Filter by effects
+      // Filter by effects - using AND logic
       if (filters.effects && filters.effects.length > 0) {
         const effectClauses = filters.effects.map(() => 'effects LIKE ?');
-        whereClauses.push(`(${effectClauses.join(' OR ')})`);
+        whereClauses.push(`(${effectClauses.join(' AND ')})`);
         filters.effects.forEach(effect => params.push(`%${effect}%`));
       }
 
@@ -15041,11 +15796,14 @@ export class StrainsRepository extends BaseRepository {
         params
       );
 
+      // Default sort order is by rating if not specified
+      const sortOrder = this.getSortOrder(filters.sort || 'rating');
+
       // Get filtered results
       const results = await this.db.getAllAsync<Strain>(
         `SELECT * FROM ${STRAINS_DATABASE_NAME} 
          ${whereClause} 
-         ORDER BY ${this.getSortOrder(filters.sort)}
+         ORDER BY ${sortOrder}
          LIMIT ? OFFSET ?`,
         [...params, limit, offset]
       );
@@ -15172,12 +15930,32 @@ export class StrainsRepository extends BaseRepository {
          GROUP BY genetic_type`
       );
       
-      const categories = results.reduce((acc, { genetic_type, count }) => {
-        if (genetic_type) {
-          acc[genetic_type] = count;
+      // Create a more accurate categorization
+      const categories: { [key: string]: number } = {
+        'Indica': 0,
+        'Sativa': 0,
+        'Hybrid': 0
+      };
+      
+      // Count each strain in its primary category
+      for (const { genetic_type, count } of results) {
+        if (genetic_type.includes('Indica')) {
+          categories['Indica'] += count;
+        } else if (genetic_type.includes('Sativa')) {
+          categories['Sativa'] += count;
+        } else if (genetic_type.includes('Hybrid')) {
+          categories['Hybrid'] += count;
         }
-        return acc;
-      }, {} as { [key: string]: number });
+      }
+      
+      // Add total count
+      const [totalResult] = await this.db.getAllAsync<{ total: number }>(
+        `SELECT COUNT(*) as total FROM ${STRAINS_DATABASE_NAME}`
+      );
+      
+      if (totalResult) {
+        categories['Total'] = totalResult.total;
+      }
       
       return {
         success: true,
@@ -18109,6 +18887,8 @@ File: src/services/AppSetupService.ts
 import { DatabaseManager } from '../DatabaseManager';
 import { StorageService } from './StorageService';
 import { StrainsRepository } from '../repositories/StrainsRepository';
+import { AchievementsRepository } from '../repositories/AchievementsRepository';
+import { BONG_HITS_DATABASE_NAME } from '../constants';
 
 const FIRST_LAUNCH_KEY = 'hasLaunched';
 
@@ -18119,6 +18899,7 @@ export class AppSetupService {
   private storageService: StorageService;
   private databaseManager: DatabaseManager;
   private strainsRepository: StrainsRepository;
+  private achievementsRepository: AchievementsRepository | null = null;
 
   /**
    * Constructor
@@ -18158,8 +18939,13 @@ export class AppSetupService {
       // Initialize database (runs migrations)
       await this.databaseManager.initialize();
       
-      // Seed initial data
+      // Seed initial strain data
       await this.strainsRepository.initializeData();
+      
+      // Create achievements repository and seed achievement data
+      const db = await this.databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
+      this.achievementsRepository = new AchievementsRepository(db);
+      await this.achievementsRepository.initializeData();
       
       // Mark first launch as completed
       await this.storageService.setValue(FIRST_LAUNCH_KEY, true);
@@ -18167,6 +18953,23 @@ export class AppSetupService {
       console.log('[AppSetupService] First launch initialization completed.');
     } catch (error) {
       console.error('[AppSetupService] Error initializing app on first launch:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure achievements data is initialized regardless of first launch status
+   */
+  public async ensureAchievementsInitialized(): Promise<void> {
+    try {
+      if (!this.achievementsRepository) {
+        const db = await this.databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
+        this.achievementsRepository = new AchievementsRepository(db);
+      }
+      
+      await this.achievementsRepository.initializeData();
+    } catch (error) {
+      console.error('[AppSetupService] Error ensuring achievements initialized:', error);
       throw error;
     }
   }
@@ -18185,6 +18988,9 @@ export class AppSetupService {
       } else {
         // Otherwise just ensure database is initialized
         await this.databaseManager.ensureInitialized();
+        
+        // Also ensure achievements are initialized
+        await this.ensureAchievementsInitialized();
       }
     } catch (error) {
       console.error('[AppSetupService] Error ensuring app is initialized:', error);
@@ -18257,16 +19063,23 @@ export class BluetoothService {
 
   /**
    * Handle data received from the Bluetooth device
-   * @param timestamp ISO string timestamp
+   * @param rawTimestamp The original timestamp string from the device
+   * @param timestamp ISO string timestamp (parsed)
    * @param duration Duration in milliseconds
    */
-  private async handleReceivedData(timestamp: string, duration: number): Promise<void> {
+  private async handleReceivedData(rawTimestamp: string, timestamp: string, duration: number): Promise<void> {
     try {
-      console.log(`[BluetoothService] Recording bong hit - Timestamp: ${timestamp}, Duration: ${duration}ms`);
+      console.log(`[BluetoothService] Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
+      
+      // Add the Alert call here, using rawTimestamp and duration
+      Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+      
+      // Record the bong hit using the parsed timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
+      console.log(`[BluetoothService] Bong hit recorded successfully.`);
     } catch (error) {
-      console.error('[BluetoothService] Error recording bong hit:', error);
-      Alert.alert('Error', 'Failed to record bong hit data');
+      console.error('[BluetoothService] Error handling received data:', error);
+      Alert.alert('Error', 'Failed to process or record received data');
     }
   }
 
@@ -19237,18 +20050,50 @@ const monthStringToInt: { [key: string]: number } = {
     "December": 12,
 };
 
-/*
- * Parses data into a format that we can use for SQL
+/**
+ * Parses raw timestamp from device into a standard ISO format
+ * @param rawTimestamp Raw timestamp string from device (e.g., "Thursday, March 27 2025 23:19:34")
+ * @returns ISO 8601 formatted timestamp string (e.g., "2025-03-27T23:19:34.000Z")
  */
 export function parseRawTimestamp(rawTimestamp: string): string {
-    // Remove day, then separate by spaces
-    const parts: string[] = rawTimestamp.split(',')[1].split(' ');
-    console.log(parts)
-    const month: string = `${monthStringToInt[parts[1]]}`;
-    const day: string = parts[2];
-    const year: string = parts[3];
-    const time: string = parts[4];
-    return `${year}-${month}-${day} ${time}`;
+    try {
+        // Remove day, then separate by spaces
+        const parts: string[] = rawTimestamp.split(',')[1].trim().split(' ');
+        
+        if (parts.length < 4) {
+            console.error('Invalid timestamp format received:', rawTimestamp);
+            throw new Error('Invalid timestamp parts');
+        }
+        
+        const monthStr: string = parts[0];
+        const day: string = parts[1].padStart(2, '0');
+        const year: string = parts[2];
+        const time: string = parts[3];
+        
+        // Get month number and pad with zero if needed
+        const monthNum = monthStringToInt[monthStr];
+        if (!monthNum) {
+            console.error(`Unknown month: ${monthStr}`);
+            throw new Error('Unknown month');
+        }
+        const month: string = String(monthNum).padStart(2, '0');
+        
+        // Create a proper Date object
+        const dateStr = `${year}-${month}-${day}T${time}.000Z`;
+        
+        // Validate the date
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+            console.error('Created invalid date:', dateStr);
+            throw new Error('Invalid resulting date');
+        }
+        
+        return date.toISOString();
+    } catch (error) {
+        console.error('Error parsing timestamp:', error);
+        // Fallback - create a current timestamp in ISO format
+        return new Date().toISOString();
+    }
 }
 
 ================================================================================
@@ -19413,9 +20258,16 @@ File: src/utils/SqlTemplates.ts
  * Get the query for usage statistics
  * @param tableName The table name to query from
  * @param daysBack Number of days to look back
+ * @param startDate Optional ISO date string for the start date
+ * @param endDate Optional ISO date string for the end date
  * @returns SQL query string
  */
-export function getUsageStatsQuery(tableName: string, daysBack: number): string {
+export function getUsageStatsQuery(tableName: string, daysBack: number, startDate?: string, endDate?: string): string {
+  // Use date range filtering if provided, otherwise use daysBack
+  const dateFilter = startDate || endDate 
+    ? getDateRangeWhereClause(startDate, endDate) 
+    : `WHERE timestamp >= date('now', '-${daysBack} days')`;
+  
   return `
     WITH DailyStats AS (
       SELECT 
@@ -19427,7 +20279,7 @@ export function getUsageStatsQuery(tableName: string, daysBack: number): string 
         MAX(duration_ms) as max_duration,
         SUM(duration_ms) as total_duration_per_day
       FROM ${tableName}
-      WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
+      ${dateFilter}
       GROUP BY day
     ),
     TotalStats AS (
@@ -19437,7 +20289,7 @@ export function getUsageStatsQuery(tableName: string, daysBack: number): string 
         AVG(duration_ms) as overall_avg_duration,
         SUM(duration_ms) as total_duration
       FROM ${tableName}
-      WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
+      ${dateFilter}
     ),
     DayOfWeekStats AS (
       SELECT 
@@ -19466,16 +20318,23 @@ export function getUsageStatsQuery(tableName: string, daysBack: number): string 
  * Get the query for time distribution of usage
  * @param tableName The table name to query from
  * @param daysBack Number of days to look back
+ * @param startDate Optional ISO date string for the start date
+ * @param endDate Optional ISO date string for the end date
  * @returns SQL query string
  */
-export function getTimeDistributionQuery(tableName: string, daysBack: number): string {
+export function getTimeDistributionQuery(tableName: string, daysBack: number, startDate?: string, endDate?: string): string {
+  // Use date range filtering if provided, otherwise use daysBack
+  const dateFilter = startDate || endDate 
+    ? getDateRangeWhereClause(startDate, endDate) 
+    : `WHERE timestamp >= date('now', '-${daysBack} days')`;
+  
   return `
     WITH HourlyHits AS (
       SELECT 
         CAST(strftime('%H', timestamp) AS INTEGER) as hour,
         COUNT(*) as hits
       FROM ${tableName}
-      WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
+      ${dateFilter}
       GROUP BY hour
     ),
     TotalHits AS (
@@ -19498,25 +20357,19 @@ export function getTimeDistributionQuery(tableName: string, daysBack: number): s
  * @param tableName The table name to query from
  * @returns SQL query string
  */
-export function getWeeklyStatsQuery(tableName: string): string {
+export function getWeeklyStatsQuery(tableName: string, startDate?: string, endDate?: string): string {
+  // Add date range filtering if dates are provided
+  const dateFilter = getDateRangeWhereClause(startDate, endDate);
+  
   return `
-    WITH WeekData AS (
-      SELECT 
-        strftime('%W', timestamp) as week,
-        COUNT(*) as count,
-        AVG(duration_ms) as avg_duration
-      FROM ${tableName}
-      WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
-      GROUP BY week
-      ORDER BY week DESC
-      LIMIT 7
-    )
     SELECT 
-      week as label,
-      count as value,
-      avg_duration
-    FROM WeekData
-    ORDER BY week ASC
+      strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') as day_of_week,
+      COUNT(*) as count,
+      AVG(duration_ms) as avg_duration
+    FROM ${tableName}
+    ${dateFilter}
+    GROUP BY day_of_week
+    ORDER BY day_of_week ASC
   `;
 }
 
@@ -19525,24 +20378,17 @@ export function getWeeklyStatsQuery(tableName: string): string {
  * @param tableName The table name to query from
  * @returns SQL query string
  */
-export function getMonthlyStatsQuery(tableName: string): string {
+export function getMonthlyStatsQuery(tableName: string, startDate?: string, endDate?: string): string {
+  // Add date range filtering if dates are provided
+  const dateFilter = getDateRangeWhereClause(startDate, endDate);
+  
   return `
-    WITH MonthData AS (
-      SELECT 
-        strftime('%m', timestamp) as month,
-        COUNT(*) as count,
-        AVG(duration_ms) as avg_duration
-      FROM ${tableName}
-      WHERE timestamp >= '2024-12-24' -- Hardcoded date for testing
-      GROUP BY month
-      ORDER BY month DESC
-      LIMIT 12
-    )
     SELECT 
-      month as label,
-      count as value,
-      avg_duration
-    FROM MonthData
+      strftime('%m', timestamp / 1000, 'unixepoch', 'localtime') as month,
+      COUNT(*) as count
+    FROM ${tableName}
+    ${dateFilter}
+    GROUP BY month
     ORDER BY month ASC
   `;
 }
@@ -19599,6 +20445,29 @@ export function buildStrainFilterQuery(
     whereClause: whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '',
     params
   };
+}
+
+// Helper function to create WHERE clause for date filtering
+export function getDateRangeWhereClause(startDate?: string, endDate?: string): string {
+  if (!startDate && !endDate) {
+    return '';
+  }
+  
+  const conditions = [];
+  
+  if (startDate) {
+    // Convert ISO string to timestamp in milliseconds
+    const startTimestamp = new Date(startDate).getTime();
+    conditions.push(`timestamp >= ${startTimestamp}`);
+  }
+  
+  if (endDate) {
+    // Convert ISO string to timestamp in milliseconds
+    const endTimestamp = new Date(endDate).getTime();
+    conditions.push(`timestamp <= ${endTimestamp}`);
+  }
+  
+  return `WHERE ${conditions.join(' AND ')}`;
 } 
 
 ================================================================================

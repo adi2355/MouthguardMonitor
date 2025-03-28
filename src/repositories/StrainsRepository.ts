@@ -92,20 +92,20 @@ export class StrainsRepository extends BaseRepository {
 
       // Search by name if query is provided
       if (query && query.trim()) {
-        whereClauses.push('name LIKE ?');
-        params.push(`%${query.trim()}%`);
+        whereClauses.push('(name LIKE ? OR overview LIKE ?)');
+        params.push(`%${query.trim()}%`, `%${query.trim()}%`);
       }
 
       // Filter by genetic type
       if (filters.geneticType) {
-        whereClauses.push('genetic_type = ?');
-        params.push(filters.geneticType);
+        whereClauses.push('genetic_type LIKE ?');
+        params.push(`%${filters.geneticType}%`);
       }
 
-      // Filter by effects
+      // Filter by effects - using AND logic
       if (filters.effects && filters.effects.length > 0) {
         const effectClauses = filters.effects.map(() => 'effects LIKE ?');
-        whereClauses.push(`(${effectClauses.join(' OR ')})`);
+        whereClauses.push(`(${effectClauses.join(' AND ')})`);
         filters.effects.forEach(effect => params.push(`%${effect}%`));
       }
 
@@ -129,11 +129,14 @@ export class StrainsRepository extends BaseRepository {
         params
       );
 
+      // Default sort order is by rating if not specified
+      const sortOrder = this.getSortOrder(filters.sort || 'rating');
+
       // Get filtered results
       const results = await this.db.getAllAsync<Strain>(
         `SELECT * FROM ${STRAINS_DATABASE_NAME} 
          ${whereClause} 
-         ORDER BY ${this.getSortOrder(filters.sort)}
+         ORDER BY ${sortOrder}
          LIMIT ? OFFSET ?`,
         [...params, limit, offset]
       );
@@ -260,12 +263,32 @@ export class StrainsRepository extends BaseRepository {
          GROUP BY genetic_type`
       );
       
-      const categories = results.reduce((acc, { genetic_type, count }) => {
-        if (genetic_type) {
-          acc[genetic_type] = count;
+      // Create a more accurate categorization
+      const categories: { [key: string]: number } = {
+        'Indica': 0,
+        'Sativa': 0,
+        'Hybrid': 0
+      };
+      
+      // Count each strain in its primary category
+      for (const { genetic_type, count } of results) {
+        if (genetic_type.includes('Indica')) {
+          categories['Indica'] += count;
+        } else if (genetic_type.includes('Sativa')) {
+          categories['Sativa'] += count;
+        } else if (genetic_type.includes('Hybrid')) {
+          categories['Hybrid'] += count;
         }
-        return acc;
-      }, {} as { [key: string]: number });
+      }
+      
+      // Add total count
+      const [totalResult] = await this.db.getAllAsync<{ total: number }>(
+        `SELECT COUNT(*) as total FROM ${STRAINS_DATABASE_NAME}`
+      );
+      
+      if (totalResult) {
+        categories['Total'] = totalResult.total;
+      }
       
       return {
         success: true,

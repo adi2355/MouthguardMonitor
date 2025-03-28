@@ -12,18 +12,27 @@ import { ChartDataPoint } from '../../../src/types';
 interface WeeklyUsageBannerProps {
   weeklyData: ChartDataPoint[];
   average: number;
+  percentageChange?: number;
+  averageLabel?: string;
   onPress: () => void;
 }
 
 const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({ 
   weeklyData, 
-  average, 
+  average,
+  percentageChange: propPercentageChange,
+  averageLabel = "Daily Average",
   onPress 
 }) => {
-  // Calculate the percentage change from last week
+  // Calculate the percentage change from last week if not provided via props
   const currentWeekTotal = weeklyData.reduce((sum, day) => sum + day.value, 0);
   const weeklyAverage = currentWeekTotal / 7;
-  const percentageChange = ((weeklyAverage - average) / average) * 100;
+  
+  // Use provided percentageChange if available, otherwise calculate from weekly data
+  const percentageChange = propPercentageChange !== undefined 
+    ? propPercentageChange
+    : (average > 0 ? ((weeklyAverage - average) / average) * 100 : 0);
+  
   const isIncrease = percentageChange >= 0;
   const statusColor = isIncrease ? COLORS.primary : '#FF5252';
   
@@ -85,8 +94,8 @@ const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Daily Average</Text>
-              <Text style={styles.statValue}>{weeklyAverage.toFixed(1)}</Text>
+              <Text style={styles.statLabel}>{averageLabel}</Text>
+              <Text style={styles.statValue}>{average.toFixed(1)}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -96,28 +105,30 @@ const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({
           </LinearGradient>
         </View>
 
-        {/* Message Box */}
-        <View style={styles.messageContainer}>
-          <LinearGradient
-            colors={accentGradient}
-            style={styles.statusIcon}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <MaterialCommunityIcons
-              name={isIncrease ? "trending-up" : "trending-down"}
-              size={24}
-              color={statusColor}
-            />
-          </LinearGradient>
+        {/* Message Box - Only show if percentageChange is provided */}
+        {percentageChange !== undefined && (
+          <View style={styles.messageContainer}>
+            <LinearGradient
+              colors={accentGradient}
+              style={styles.statusIcon}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <MaterialCommunityIcons
+                name={isIncrease ? "trending-up" : "trending-down"}
+                size={24}
+                color={statusColor}
+              />
+            </LinearGradient>
 
-          <Text style={styles.messageText}>
-            {isIncrease 
-              ? `Your weekly average has increased by ${Math.abs(percentageChange).toFixed(1)}% compared to last week`
-              : `Your weekly average has decreased by ${Math.abs(percentageChange).toFixed(1)}% compared to last week`
-            }
-          </Text>
-        </View>
+            <Text style={styles.messageText}>
+              {isIncrease 
+                ? `Your weekly average has increased by ${Math.abs(percentageChange).toFixed(1)}% compared to last week`
+                : `Your weekly average has decreased by ${Math.abs(percentageChange).toFixed(1)}% compared to last week`
+              }
+            </Text>
+          </View>
+        )}
 
         {/* Action Button - Maintain original functionality */}
         <TouchableOpacity style={styles.actionButton} onPress={onPress}>

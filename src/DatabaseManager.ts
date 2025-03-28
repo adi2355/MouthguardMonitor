@@ -9,10 +9,11 @@ import {
   SAMPLE_STRAINS
 } from "./constants";
 import { migrations } from "./migrations";
+import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery, getDateRangeFilter } from "./utils/SqlTemplates";
 
 // Export constants for use by other modules
 export const DB_VERSION_KEY = "dbVersion";
-export const CURRENT_DB_VERSION = 1; // Increment this when schema changes
+export const CURRENT_DB_VERSION = 1; // Keeping at version 1 since there's no v2 migration
 export const SAFETY_DB_NAME = "SafetyRecords";
 export const ACHIEVEMENTS_DB_NAME = "achievements.db";
 
@@ -27,6 +28,105 @@ export interface StrainSearchFilters {
   geneticType?: string;
   effects?: string[];
   sort?: 'rating' | 'name' | 'thc';
+}
+
+/**
+ * Helper function to format weekly stats results
+ */
+function formatWeeklyResults(results: any[]): any[] {
+  // Format results for day names
+  const dayMapping: { [key: string]: string } = {
+    '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', 
+    '4': 'Thu', '5': 'Fri', '6': 'Sat'
+  };
+  
+  // If no results, return zero values for each day
+  if (!results || results.length === 0) {
+    console.log('[DatabaseManager] No weekly data found, returning zeros');
+    return [
+      { label: 'Sun', value: 0 },
+      { label: 'Mon', value: 0 },
+      { label: 'Tue', value: 0 },
+      { label: 'Wed', value: 0 },
+      { label: 'Thu', value: 0 },
+      { label: 'Fri', value: 0 },
+      { label: 'Sat', value: 0 }
+    ];
+  }
+  
+  console.log('[DatabaseManager] Formatting weekly data:', JSON.stringify(results));
+  
+  // Convert the results to the expected format
+  const formattedResults = results.map((row: any) => ({
+    label: dayMapping[row.day_of_week] || 'Unknown',
+    value: row.count || 0,
+    // Include the original day number for sorting
+    dayNumber: parseInt(row.day_of_week, 10)
+  }));
+  
+  // Make sure all days are represented
+  const dayValues = Object.keys(dayMapping).sort().map(day => dayMapping[day]);
+  const dataByDay = new Map(formattedResults.map(item => [item.label, item]));
+  
+  // Create array with all days in order, using values from results when available
+  const orderedData = dayValues.map(day => 
+    dataByDay.get(day) || { label: day, value: 0 }
+  );
+  
+  return orderedData;
+}
+
+/**
+ * Helper function to format monthly stats results
+ */
+function formatMonthlyResults(results: any[]): any[] {
+  // Month name mapping
+  const monthMapping: { [key: string]: string } = {
+    '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', 
+    '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Aug',
+    '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec',
+    // Add single-digit versions for robustness
+    '1': 'Jan', '2': 'Feb', '3': 'Mar', '4': 'Apr',
+    '5': 'May', '6': 'Jun', '7': 'Jul', '8': 'Aug',
+    '9': 'Sep'
+  };
+  
+  // If no results, return zero values for each month
+  if (!results || results.length === 0) {
+    console.log('[DatabaseManager] No monthly data found, returning zeros');
+    return Object.entries(monthMapping)
+      .filter(([key]) => key.length === 2) // Only use the two-digit keys 
+      .map(([_, month]) => ({
+        label: month,
+        value: 0
+      }));
+  }
+  
+  console.log('[DatabaseManager] Formatting monthly data:', JSON.stringify(results));
+  
+  // Convert the results to the expected format
+  const formattedResults = results.map((row: any) => {
+    // Ensure month is properly padded with leading zero if needed
+    const monthKey = row.month?.length === 1 ? `0${row.month}` : row.month;
+    return {
+      label: monthMapping[monthKey] || 'Unknown',
+      value: row.count || 0,
+      // Store numeric month for sorting
+      monthNum: parseInt(row.month, 10)
+    };
+  });
+  
+  // Make sure all months are represented (use two-digit keys)
+  const monthValues = Object.entries(monthMapping)
+    .filter(([key]) => key.length === 2)
+    .map(([_, label]) => label);
+  
+  const dataByMonth = new Map(formattedResults.map(item => [item.label, item]));
+  
+  // Create array with all months, using values from results when available
+  return monthValues.map(month => 
+    dataByMonth.get(month) || { label: month, value: 0 }
+  );
 }
 
 /**
@@ -199,6 +299,17 @@ export class DatabaseManager {
     try {
       console.log(`[DatabaseManager] Opening database: ${dbName}`);
       const db = await openDatabaseAsync(dbName);
+      
+      // Set WAL mode immediately after opening, BEFORE any transactions start
+      try {
+        await db.execAsync('PRAGMA journal_mode = WAL;');
+        console.log(`[DatabaseManager] Set journal mode to WAL for ${dbName}`);
+      } catch (walError) {
+        // WAL mode might fail in some specific scenarios (e.g., certain file systems)
+        // Log the error but don't necessarily fail the connection
+        console.warn(`[DatabaseManager] Failed to set WAL mode for ${dbName}:`, walError);
+      }
+      
       this.databaseConnections.set(dbName, db);
       return db;
     } catch (error) {
@@ -230,121 +341,298 @@ export class DatabaseManager {
 
   /**
    * Gets weekly stats for data visualization
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
    */
-  public async getWeeklyStats() {
+  public async getWeeklyStats(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your weekly stats logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching weekly stats from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Use the SQL template with date filtering
+      const templateQuery = getWeeklyStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
+      
+      console.log(`[DatabaseManager] Weekly Stats Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      const results = await db.getAllAsync(finalQuery, params);
+      
+      // Process the results to get the proper format for charts
+      const formattedResults = formatWeeklyResults(results);
+      
+      console.log(`[DatabaseManager] Formatting weekly data: ${JSON.stringify(results)} -> Formatted: ${JSON.stringify(formattedResults)}`);
+      
       return {
         success: true,
-        data: [
-          { x: 'Sun', y: 0 },
-          { x: 'Mon', y: 0 },
-          { x: 'Tue', y: 0 },
-          { x: 'Wed', y: 0 },
-          { x: 'Thu', y: 0 },
-          { x: 'Fri', y: 0 },
-          { x: 'Sat', y: 0 }
-        ]
+        data: formattedResults
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting weekly stats:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
 
   /**
    * Gets monthly stats for data visualization
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
    */
-  public async getMonthlyStats() {
+  public async getMonthlyStats(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your monthly stats logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching monthly stats from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Use the SQL template with date filtering
+      const templateQuery = getMonthlyStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
+      
+      console.log(`[DatabaseManager] Monthly Stats Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      const results = await db.getAllAsync(finalQuery, params);
+      
+      // Format the results for the UI
+      const formattedResults = formatMonthlyResults(results);
+      
+      console.log(`[DatabaseManager] Formatting monthly data: ${JSON.stringify(results)} -> Formatted: ${JSON.stringify(formattedResults)}`);
+      
       return {
         success: true,
-        data: Array.from({ length: 30 }, (_, i) => ({ 
-          x: (i + 1).toString(), 
-          y: 0 
-        }))
+        data: formattedResults
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting monthly stats:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
 
   /**
-   * Gets usage statistics
+   * Gets usage statistics with date range filtering
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
    */
-  public async getUsageStats() {
+  public async getUsageStats(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your usage stats logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching usage stats from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Get usage statistics with date range
+      const templateQuery = getUsageStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
+      
+      console.log(`[DatabaseManager] Usage Stats Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      
+      // Define the expected type for better TypeScript support
+      interface UsageStatsResult {
+        total_hits: number;
+        active_days: number;
+        avg_hits_per_active_day: number;
+        avg_duration_ms: number;
+        total_duration_ms: number;
+        max_hits_in_day: number;
+        min_hits_in_day: number;
+        longest_hit: number;
+        shortest_hit: number;
+        most_active_hour: number;
+        least_active_hour: number;
+      }
+      
+      // Use type assertion to handle the database result
+      const usageStats = await db.getFirstAsync(finalQuery, params) as UsageStatsResult | null;
+      
+      // No need to check for results - if the query returns no rows, we'll get empty data
+      if (!usageStats) {
+        return {
+          success: true,
+          data: {
+            totalHits: 0,
+            averageHitsPerDay: 0,
+            peakDayHits: 0,
+            lowestDayHits: 0,
+            averageDuration: 0,
+            totalDuration: 0,
+            longestHit: 0,
+            shortestHit: 0,
+            mostActiveHour: 0,
+            leastActiveHour: 0,
+            averageHitsPerHour: 0,
+            weekdayStats: null,
+            consistency: 0
+          }
+        };
+      }
+      
+      // Get weekday vs weekend stats with the same date range
+      const weekdayStats = await this.getWeekdayStats(db, startDate, endDate);
+      
+      // Format the results
+      const formattedResults = {
+        totalHits: usageStats.total_hits || 0,
+        averageHitsPerDay: usageStats.avg_hits_per_active_day || 0,
+        peakDayHits: usageStats.max_hits_in_day || 0,
+        lowestDayHits: usageStats.min_hits_in_day || 0, // Updated to use min_hits_in_day
+        averageDuration: usageStats.avg_duration_ms || 0,
+        totalDuration: usageStats.total_duration_ms || 0,
+        longestHit: usageStats.longest_hit || 0, // Updated to use longest_hit
+        shortestHit: usageStats.shortest_hit || 0, // Updated to use shortest_hit
+        mostActiveHour: usageStats.most_active_hour || 0, // Updated to use most_active_hour
+        leastActiveHour: usageStats.least_active_hour || 0, // Updated to use least_active_hour
+        averageHitsPerHour: 0, // Not calculated in the query
+        weekdayStats: weekdayStats,
+        consistency: 0 // This needs to be calculated
+      };
+      
+      console.log(`[DatabaseManager] Usage Stats Result: ${JSON.stringify(usageStats)} -> Formatted: ${JSON.stringify(formattedResults)}`);
+      
       return {
         success: true,
-        data: {
-          averageHitsPerDay: 0,
-          totalHits: 0,
-          peakDayHits: 0,
-          lowestDayHits: 0,
-          averageDuration: 0,
-          longestHit: 0,
-          shortestHit: 0,
-          mostActiveHour: 0,
-          leastActiveHour: 0,
-          totalDuration: 0,
-          averageHitsPerHour: 0,
-          consistency: 0,
-          weekdayStats: {
-            weekday: { avg: 0, total: 0 },
-            weekend: { avg: 0, total: 0 }
-          }
-        }
+        data: formattedResults
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting usage stats:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
 
   /**
-   * Gets time distribution data
+   * Gets weekday vs weekend statistics
    */
-  public async getTimeDistribution() {
+  private async getWeekdayStats(db: SQLiteDatabase, startDate?: string, endDate?: string) {
+    // Create SQL with date filtering
+    const { clause, params } = getDateRangeFilter(startDate, endDate);
+    
+    const query = `
+      WITH NormalizedData AS (
+        SELECT
+          strftime('%w', timestamp, 'utc') as weekday,
+          strftime('%Y-%m-%d', timestamp, 'utc') as date_str
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+      )
+      SELECT
+        SUM(CASE WHEN weekday IN ('1','2','3','4','5') THEN 1 ELSE 0 END) as weekday_hits,
+        SUM(CASE WHEN weekday IN ('0','6') THEN 1 ELSE 0 END) as weekend_hits,
+        COUNT(DISTINCT CASE WHEN weekday IN ('1','2','3','4','5') 
+          THEN date_str END) as weekday_days,
+        COUNT(DISTINCT CASE WHEN weekday IN ('0','6') 
+          THEN date_str END) as weekend_days
+      FROM NormalizedData
+    `;
+    
+    try {
+      console.log(`[DatabaseManager] Weekday Stats Query: ${query}, Params: ${JSON.stringify(params)}`);
+      
+      // Define type for better TypeScript support
+      interface WeekdayStatsResult {
+        weekday_hits: number;
+        weekend_hits: number;
+        weekday_days: number;
+        weekend_days: number;
+      }
+      
+      // Use type assertion to handle the database result
+      const result = await db.getFirstAsync(query, params) as WeekdayStatsResult | null;
+      
+      if (!result) {
+        return {
+          weekday: { total: 0, avg: 0 },
+          weekend: { total: 0, avg: 0 }
+        };
+      }
+      
+      const weekdayAvg = result.weekday_days > 0 ? result.weekday_hits / result.weekday_days : 0;
+      const weekendAvg = result.weekend_days > 0 ? result.weekend_hits / result.weekend_days : 0;
+      
+      return {
+        weekday: { total: result.weekday_hits || 0, avg: weekdayAvg },
+        weekend: { total: result.weekend_hits || 0, avg: weekendAvg }
+      };
+    } catch (error) {
+      console.error('[DatabaseManager] Error getting weekday stats:', error);
+      return {
+        weekday: { total: 0, avg: 0 },
+        weekend: { total: 0, avg: 0 }
+      };
+    }
+  }
+
+  /**
+   * Gets time distribution statistics based on date range
+   * @param startDate Optional ISO date string for the start of the date range 
+   * @param endDate Optional ISO date string for the end of the date range
+   */
+  public async getTimeDistribution(startDate?: string, endDate?: string) {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your time distribution logic here
-      // For now, returning mock data
+      
+      console.log(`[DatabaseManager] Fetching time distribution from ${startDate || 'all'} to ${endDate || 'now'}`);
+      
+      // Use the SQL template with date filtering
+      const templateQuery = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
+      
+      console.log(`[DatabaseManager] Time Distribution Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      
+      // Define the expected result type
+      interface TimeDistributionResult {
+        morning: number;
+        afternoon: number;
+        evening: number;
+        night: number;
+      }
+      
+      const result = await db.getFirstAsync(finalQuery, params) as TimeDistributionResult | null;
+      
+      console.log(`[DatabaseManager] Time Distribution Result: ${JSON.stringify(result)}`);
+      
+      // If no data, return zeros
+      if (!result) {
+        return {
+          success: true,
+          data: {
+            morning: 0,
+            afternoon: 0, 
+            evening: 0,
+            night: 0
+          }
+        };
+      }
+      
       return {
         success: true,
         data: {
-          morning: 0,
-          afternoon: 0,
-          evening: 0,
-          night: 0
+          morning: result.morning || 0,
+          afternoon: result.afternoon || 0,
+          evening: result.evening || 0,
+          night: result.night || 0
         }
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting time distribution:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
       };
     }
   }
@@ -356,11 +644,18 @@ export class DatabaseManager {
     try {
       await this.ensureInitialized();
       const db = await this.getDatabase(BONG_HITS_DATABASE_NAME);
-      // Implement your bong hit logs retrieval logic here
-      // For now, returning empty data
+      
+      const results = await db.getAllAsync(`
+        SELECT 
+          timestamp,
+          duration_ms
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ORDER BY timestamp DESC
+      `);
+      
       return {
         success: true,
-        data: []
+        data: results
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting bong hit logs:', error);
@@ -442,33 +737,33 @@ export class DatabaseManager {
       // Apply genetic type filter if specified
       if (filters.geneticType) {
         filteredStrains = filteredStrains.filter(strain => 
-          strain.genetic_type === filters.geneticType
+          strain.genetic_type.includes(filters.geneticType!)
         );
       }
       
-      // Apply effects filter if provided
+      // Apply effects filter if provided - using AND logic
       if (filters.effects && filters.effects.length > 0) {
         filteredStrains = filteredStrains.filter(strain => {
           if (!strain.effects) return false;
-          // Check if any of the filter effects are included in the strain effects
-          return filters.effects!.some((effect: string) => 
+          // Check if ALL of the filter effects are included in the strain effects
+          return filters.effects!.every((effect: string) => 
             strain.effects.toLowerCase().includes(effect.toLowerCase())
           );
         });
       }
       
-      // Apply sort
+      // Apply sort - default is rating in descending order
+      filteredStrains.sort((a, b) => b.combined_rating - a.combined_rating); // Default sort
+      
       if (filters.sort) {
         switch(filters.sort) {
-          case 'rating':
-            filteredStrains.sort((a, b) => b.combined_rating - a.combined_rating);
-            break;
           case 'name':
             filteredStrains.sort((a, b) => a.name.localeCompare(b.name));
             break;
           case 'thc':
             filteredStrains.sort((a, b) => b.thc_rating - a.thc_rating);
             break;
+          // 'rating' is already handled by default above
         }
       }
       
@@ -506,12 +801,23 @@ export class DatabaseManager {
     try {
       await this.ensureInitialized();
       
+      // Count strains by genetic type
+      const indicaCount = SAMPLE_STRAINS.filter(strain => 
+        strain.genetic_type.includes('Indica')).length;
+      
+      const sativaCount = SAMPLE_STRAINS.filter(strain => 
+        strain.genetic_type.includes('Sativa')).length;
+      
+      const hybridCount = SAMPLE_STRAINS.filter(strain => 
+        strain.genetic_type.includes('Hybrid')).length;
+      
+      const total = SAMPLE_STRAINS.length;
+      
       return {
-        'Sativa': 15,
-        'Indica': 12,
-        'Hybrid': 25,
-        'Sativa-dominant Hybrid': 18,
-        'Indica-dominant Hybrid': 14
+        'Sativa': sativaCount,
+        'Indica': indicaCount,
+        'Hybrid': hybridCount,
+        'Total': total
       };
     } catch (error) {
       console.error('[DatabaseManager] Error getting strain categories:', error);

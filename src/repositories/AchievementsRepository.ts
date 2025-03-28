@@ -1,7 +1,8 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { BaseRepository } from './BaseRepository';
-import { UserAchievementWithDetails, ValidationResult } from '../types';
+import { UserAchievementWithDetails } from '../types';
 import { validateNotEmpty } from '../utils/validators';
+import { ACHIEVEMENTS } from '../constants';
 
 /**
  * Repository for managing achievement data
@@ -13,6 +14,53 @@ export class AchievementsRepository extends BaseRepository {
    */
   constructor(db: SQLiteDatabase) {
     super(db);
+  }
+
+  /**
+   * Initializes the achievements table with data from ACHIEVEMENTS constant if it's empty
+   */
+  public async initializeData(): Promise<void> {
+    try {
+      console.log('[AchievementsRepository] Checking if achievements need to be seeded...');
+      
+      // Check if achievements table is already populated
+      const result = await this.db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM achievements`
+      );
+      
+      const count = result?.count ?? 0;
+      
+      if (count === 0) {
+        console.log('[AchievementsRepository] Seeding achievements data...');
+        
+        // Use a transaction for better performance and atomicity
+        await this.executeTransaction(async () => {
+          for (const achievement of ACHIEVEMENTS) {
+            await this.db.runAsync(
+              `INSERT INTO achievements (
+                id, category, name, unlock_condition, notes, icon, complexity
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                achievement.id,
+                achievement.category,
+                achievement.name,
+                achievement.unlockCondition,
+                achievement.notes || null,
+                achievement.icon || null,
+                achievement.complexity || 1
+              ]
+            );
+          }
+        });
+        
+        console.log(`[AchievementsRepository] Seeded ${ACHIEVEMENTS.length} achievements.`);
+      } else {
+        console.log(`[AchievementsRepository] Achievements table already contains ${count} records.`);
+      }
+    } catch (error) {
+      console.error('[AchievementsRepository] Failed to initialize achievements data:', error);
+      throw error;
+    }
   }
 
   /**
@@ -199,6 +247,8 @@ export class AchievementsRepository extends BaseRepository {
         if (shouldUnlock) {
           newlyUnlocked.push({
             ...achievement,
+            userId,
+            achievementId: achievement.id,
             progress: 100,
             isUnlocked: true,
             dateUnlocked: new Date().toISOString(),

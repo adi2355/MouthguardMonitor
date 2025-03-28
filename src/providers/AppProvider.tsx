@@ -7,7 +7,7 @@ import { StorageService } from '../services/StorageService';
 import { DeviceService } from '../services/DeviceService';
 import { BluetoothService } from '../services/BluetoothService';
 import { AppSetupService } from '../services/AppSetupService';
-import { BONG_HITS_DATABASE_NAME, STRAINS_DATABASE_NAME } from '../constants';
+import { BONG_HITS_DATABASE_NAME } from '../constants';
 import { BluetoothHandler } from '../contexts/BluetoothContext';
 
 // Define the AppContext type
@@ -50,12 +50,13 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         
         // Initialize database connections
         await databaseManager.initialize();
-        const bongHitsDb = await databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
-        const strainsDb = await databaseManager.getDatabase(STRAINS_DATABASE_NAME);
         
-        // Initialize repositories
-        const bongHitsRepository = new BongHitsRepository(bongHitsDb);
-        const strainsRepository = new StrainsRepository(strainsDb);
+        // Use a single database connection for all repositories
+        const db = await databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
+        
+        // Initialize repositories with the same database connection
+        const bongHitsRepository = new BongHitsRepository(db);
+        const strainsRepository = new StrainsRepository(db);
         
         // Initialize services that depend on repositories
         const deviceService = new DeviceService(storageService);

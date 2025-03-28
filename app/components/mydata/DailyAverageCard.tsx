@@ -13,12 +13,14 @@ import { ChartDataPoint } from '../../../src/types';
 interface DailyAverageCardProps {
   data: ChartDataPoint[];
   averageHits: number;
+  averageLabel?: string; // Optional label for the average value
   onPress: () => void;
 }
 
 const DailyAverageCard: React.FC<DailyAverageCardProps> = ({ 
   data, 
-  averageHits, 
+  averageHits,
+  averageLabel = "Daily Average", // Default label if not provided
   onPress 
 }) => {
   // Enhanced gradient combinations with type assertions
@@ -64,7 +66,7 @@ const DailyAverageCard: React.FC<DailyAverageCardProps> = ({
               />
             </LinearGradient>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>Daily Average</Text>
+              <Text style={styles.title}>{averageLabel}</Text>
               <Text style={styles.subtitle}>Usage patterns</Text>
             </View>
           </View>
@@ -79,7 +81,7 @@ const DailyAverageCard: React.FC<DailyAverageCardProps> = ({
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Daily Average</Text>
+              <Text style={styles.statLabel}>{averageLabel}</Text>
               <Text style={styles.statValue}>{averageHits.toFixed(1)}</Text>
             </View>
             <View style={styles.statDivider} />

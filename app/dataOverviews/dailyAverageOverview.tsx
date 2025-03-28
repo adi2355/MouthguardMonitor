@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,16 +14,20 @@ import LineChart from '../components/charts/LineChart';
 export default function DailyAverageOverview() {
   const router = useRouter();
   const {
-    
     timeRange, 
     setTimeRange, 
     data, 
     isLoading, 
-    error 
+    isRefreshing,
+    error,
+    refreshTimeRangeData
   } = useTimeRangeData('D'); // Default to daily view
 
-  if (isLoading) return <LoadingView />;
+  if (isLoading && !isRefreshing) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
+  
+  // Check if there's actually any data to display
+  const hasRealData = data.chartData.some(value => value > 0);
 
   return (
     <SafeAreaProvider>
@@ -31,6 +35,15 @@ export default function DailyAverageOverview() {
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshTimeRangeData}
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+            progressBackgroundColor={COLORS.cardBackground}
+          />
+        }
       >
         {/* Header with back button */}
         <View style={styles.header}>
@@ -51,18 +64,18 @@ export default function DailyAverageOverview() {
         <View style={styles.mainStatsCard}>
           <View style={styles.averageContainer}>
             <Text style={styles.averageLabel}>Daily Average</Text>
-            <Text style={styles.averageValue}>{data.averageValue.toFixed(1)}</Text>
+            <Text style={styles.averageValue}>{hasRealData ? data.averageValue.toFixed(1) : "0.0"}</Text>
             <Text style={styles.averageUnit}>hits per day</Text>
           </View>
           
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{data.maxValue}</Text>
+              <Text style={styles.statValue}>{hasRealData ? data.maxValue : 0}</Text>
               <Text style={styles.statLabel}>Max</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{data.minValue}</Text>
+              <Text style={styles.statValue}>{hasRealData ? data.minValue : 0}</Text>
               <Text style={styles.statLabel}>Min</Text>
             </View>
           </View>
@@ -96,16 +109,13 @@ export default function DailyAverageOverview() {
 
         {/* Chart Section */}
         <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>
-            {timeRange === 'D' ? 'Daily' : 
-             timeRange === 'W' ? 'Weekly' : 
-             timeRange === 'M' ? 'Monthly' : 'Yearly'} Trend
-          </Text>
+          <Text style={styles.sectionTitle}>Daily Trend</Text>
           <View style={styles.chartContainer}>
             <LineChart 
               data={data.chartData}
               labels={data.chartLabels}
               color={COLORS.primary}
+              alwaysShowZero={true}
             />
           </View>
         </View>
@@ -125,9 +135,13 @@ export default function DailyAverageOverview() {
             <View style={styles.insightContent}>
               <Text style={styles.insightTitle}>Usage Pattern</Text>
               <Text style={styles.insightText}>
-                {data.averageValue > 10 
-                  ? "Your daily usage is above average. Consider setting daily limits."
-                  : "Your daily usage is within a moderate range."}
+                {hasRealData ? (
+                  data.averageValue > 10 
+                    ? "Your daily usage is above average. Consider setting daily limits."
+                    : "Your daily usage is within a moderate range."
+                ) : (
+                  "No usage data available to analyze patterns."
+                )}
               </Text>
             </View>
           </View>
@@ -143,9 +157,13 @@ export default function DailyAverageOverview() {
             <View style={styles.insightContent}>
               <Text style={styles.insightTitle}>Consistency</Text>
               <Text style={styles.insightText}>
-                {data.maxValue / (data.minValue || 1) > 3
-                  ? "Your usage varies significantly day to day."
-                  : "Your usage is relatively consistent throughout the week."}
+                {hasRealData ? (
+                  data.maxValue / (data.minValue || 1) > 3
+                    ? "Your usage varies significantly day to day."
+                    : "Your usage is relatively consistent throughout the week."
+                ) : (
+                  "No usage data available to analyze consistency."
+                )}
               </Text>
             </View>
           </View>
@@ -331,5 +349,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text.secondary,
     lineHeight: 20,
+  },
+  emptyChartContainer: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  emptyChartText: {
+    color: COLORS.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
+    padding: 20,
   },
 });
