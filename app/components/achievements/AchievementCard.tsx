@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { UserAchievementWithDetails } from '../../../src/types';
@@ -18,6 +18,21 @@ export const AchievementCard: React.FC<AchievementCardProps> = ({ achievement, o
   const gradientColors = isUnlocked 
     ? ['#43A047', '#2E7D32'] as readonly [string, string]
     : ['#616161', '#424242'] as readonly [string, string];
+  
+  const renderProgressBar = () => {
+    // Limit progress to 100%
+    const limitedProgress = Math.min(100, progress);
+    
+    return (
+      <View style={styles.progressContainer}>
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { flex: limitedProgress }]} />
+          <View style={{ flex: 100 - limitedProgress }} />
+        </View>
+        <Text style={styles.progressText}>{Math.round(progress)}%</Text>
+      </View>
+    );
+  };
   
   return (
     <TouchableOpacity 
@@ -44,19 +59,7 @@ export const AchievementCard: React.FC<AchievementCardProps> = ({ achievement, o
             <Text style={styles.title}>{name}</Text>
             <Text style={styles.category}>{category}</Text>
             
-            {!isUnlocked && (
-              <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
-                  <View 
-                    style={[
-                      styles.progressFill, 
-                      { width: `${Math.min(100, progress)}%` }
-                    ]} 
-                  />
-                </View>
-                <Text style={styles.progressText}>{Math.round(progress)}%</Text>
-              </View>
-            )}
+            {!isUnlocked && renderProgressBar()}
           </View>
           
           {isUnlocked && (
@@ -127,6 +130,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   progressFill: {
     height: '100%',

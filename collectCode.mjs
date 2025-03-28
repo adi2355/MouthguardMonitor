@@ -66,7 +66,7 @@ const DEFAULT_CONFIG = {
     'CanovaReactNativeApp/context.py',
     'CanovaReactNativeApp/tsconfig.json',
     'CanovaReactNativeApp/app.json',
-    
+    'src/constants.ts'
   ],
   maxFileSize: 1024 * 1024, // 1MB
 };

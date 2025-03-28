@@ -82,10 +82,11 @@ const GoalTrackingCard = ({ currentUsage, goalUsage, onEditGoal }: GoalTrackingC
                     ['#FF5252', '#FF5252CC'] as const : 
                     [COLORS.primary, `${COLORS.primary}CC`] as const
                   }
-                  style={[styles.progressFill, { width: `${Math.min(goalPercentage, 100)}%` }]}
+                  style={[styles.progressFill, { flex: Math.min(goalPercentage, 100) }]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 />
+                <View style={{ flex: 100 - Math.min(goalPercentage, 100) }} />
               </View>
               
               <View style={styles.progressLabels}>
@@ -226,6 +227,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 5,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   progressFill: {
     height: '100%',

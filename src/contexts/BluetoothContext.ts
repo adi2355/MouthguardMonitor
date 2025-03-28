@@ -3,7 +3,6 @@ import { Alert, PermissionsAndroid, Platform } from "react-native";
 import * as ExpoDevice from "expo-device";
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 import base64 from "react-native-base64";
-import { databaseManager } from "../DatabaseManager";
 import { parseRawTimestamp } from "../utils/functions";
 
 type ConnectedDevice = {
@@ -15,10 +14,17 @@ type ConnectedDevice = {
 export class BluetoothHandler {
     private manager: BleManager;
     private connectedDevice: ConnectedDevice | null;
+    // Callback for when data is received
+    private onDataCallback: ((timestamp: string, duration: number) => void) | null = null;
 
     constructor() {
         this.manager = new BleManager();
         this.connectedDevice = null;
+    }
+
+    // Set a callback function to handle received data
+    public setOnDataCallback(callback: (timestamp: string, duration: number) => void): void {
+        this.onDataCallback = callback;
     }
 
     public async connectToDevice(deviceId: string) {
@@ -86,11 +92,9 @@ export class BluetoothHandler {
         this.connectedDevice.device.monitorCharacteristicForService(
             this.connectedDevice.serviceUUID,
             this.connectedDevice.characteristicUUID,
-            this.handleBluetoothConnection
+            this.handleBluetoothConnection.bind(this)
         );
     }
-
-
 
     /* 
      * This function encapsulates all logic relating to listening to on the bluetooth conneciton
@@ -107,8 +111,15 @@ export class BluetoothHandler {
         const rawData: string[] = base64.decode(characteristic.value).split(';');
         const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
         const duration: number = parseFloat(rawData[1])*100000; // 0.17
-        const timestamp: string  = parseRawTimestamp(rawTimestamp);
-        databaseManager.recordBongHit(timestamp, duration);
+        const timestamp: string = parseRawTimestamp(rawTimestamp);
+        
+        // Instead of directly calling databaseManager, use the callback
+        if (this.onDataCallback) {
+            this.onDataCallback(timestamp, duration);
+        } else {
+            console.error("No data callback set to handle bong hit data");
+        }
+        
         Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
     }
 
@@ -139,7 +150,6 @@ export class BluetoothHandler {
             return false;
           }
     }
-
 
     public getBLEManager(): BleManager {
         return this.manager;

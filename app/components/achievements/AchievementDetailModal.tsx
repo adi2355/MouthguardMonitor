@@ -42,6 +42,21 @@ export const AchievementDetailModal: React.FC<AchievementDetailModalProps> = ({
     ));
   };
   
+  const renderProgressBar = () => {
+    // Limit progress to 100%
+    const limitedProgress = Math.min(100, progress);
+    
+    return (
+      <View style={styles.progressContainer}>
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { flex: limitedProgress }]} />
+          <View style={{ flex: 100 - limitedProgress }} />
+        </View>
+        <Text style={styles.progressText}>{Math.round(progress)}%</Text>
+      </View>
+    );
+  };
+  
   return (
     <Modal
       visible={visible}
@@ -95,17 +110,7 @@ export const AchievementDetailModal: React.FC<AchievementDetailModalProps> = ({
             
             {!isUnlocked && (
               <View style={styles.progressSection}>
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressBar}>
-                    <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${Math.min(100, progress)}%` }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={styles.progressText}>{Math.round(progress)}%</Text>
-                </View>
+                {renderProgressBar()}
               </View>
             )}
             
@@ -251,6 +256,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   progressFill: {
     height: '100%',

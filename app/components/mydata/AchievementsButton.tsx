@@ -16,6 +16,20 @@ export const AchievementsButton: React.FC<AchievementsButtonProps> = ({
 }) => {
   const percentComplete = total > 0 ? Math.round((unlocked / total) * 100) : 0;
   
+  const renderProgressBar = () => {
+    // Limit progress to 100%
+    const limitedPercent = Math.min(100, percentComplete);
+    
+    return (
+      <View style={styles.progressBarContainer}>
+        <View style={styles.progressBar}>
+          <View style={[styles.progressFill, { flex: limitedPercent }]} />
+          <View style={{ flex: 100 - limitedPercent }} />
+        </View>
+      </View>
+    );
+  };
+  
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -39,16 +53,7 @@ export const AchievementsButton: React.FC<AchievementsButtonProps> = ({
               {unlocked} of {total} unlocked ({percentComplete}%)
             </Text>
             
-            <View style={styles.progressBarContainer}>
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${Math.min(percentComplete, 100)}%` }
-                  ]}
-                />
-              </View>
-            </View>
+            {renderProgressBar()}
           </View>
           
           <MaterialCommunityIcons 
@@ -113,6 +118,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 3,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   progressFill: {
     height: '100%',

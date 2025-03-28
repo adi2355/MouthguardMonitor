@@ -31,8 +31,26 @@ export class BluetoothService {
     this.deviceService = deviceService;
     this.bongHitsRepository = bongHitsRepository;
     
+    // Set up the callback to handle data from bluetooth
+    this.bluetoothHandler.setOnDataCallback(this.handleReceivedData.bind(this));
+    
     // Listen for app state changes to manage connections
     // platform-specific imports and setup would go here
+  }
+
+  /**
+   * Handle data received from the Bluetooth device
+   * @param timestamp ISO string timestamp
+   * @param duration Duration in milliseconds
+   */
+  private async handleReceivedData(timestamp: string, duration: number): Promise<void> {
+    try {
+      console.log(`[BluetoothService] Recording bong hit - Timestamp: ${timestamp}, Duration: ${duration}ms`);
+      await this.bongHitsRepository.recordBongHit(timestamp, duration);
+    } catch (error) {
+      console.error('[BluetoothService] Error recording bong hit:', error);
+      Alert.alert('Error', 'Failed to record bong hit data');
+    }
   }
 
   /**

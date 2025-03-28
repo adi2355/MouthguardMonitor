@@ -215,10 +215,11 @@ export default function StrainUsage() {
                       strain.strainType === 'Sativa' ? ['#FF9800', '#FFCC80'] : 
                       [COLORS.primary, COLORS.primaryLight]
                     }
-                    style={[styles.progressFill, { width: `${strain.percentageOfTotal}%` }]}
+                    style={[styles.progressFill, { flex: strain.percentageOfTotal }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   />
+                  <View style={{ flex: 100 - strain.percentageOfTotal }} />
                 </View>
               </View>
             ))
@@ -357,6 +358,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 4,
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   progressFill: {
     height: '100%',
