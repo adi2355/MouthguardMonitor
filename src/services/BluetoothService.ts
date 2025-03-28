@@ -49,8 +49,9 @@ export class BluetoothService {
       console.log(`[BluetoothService] Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
       
       // Add the Alert call here, using rawTimestamp and duration
-      Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+      Alert.alert(`Timestamp: ${timestamp}\n Duration: ${duration}ms`);
       
+      console.log(timestamp);
       // Record the bong hit using the parsed timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
       console.log(`[BluetoothService] Bong hit recorded successfully.`);

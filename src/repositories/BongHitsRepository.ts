@@ -23,12 +23,12 @@ export class BongHitsRepository extends BaseRepository {
    * @param durationMs Duration of the hit in milliseconds
    */
   public async recordBongHit(timestamp: string, durationMs: number): Promise<void> {
-    const hit: BongHit = { timestamp, duration_ms: durationMs };
-    const validationError = validateBongHit(hit);
+    // const hit: BongHit = { timestamp: timestamp, duration_ms: durationMs };
+    // const validationError = validateBongHit(hit);
     
-    if (validationError) {
-      throw new Error(validationError);
-    }
+    // if (validationError) {
+    //   throw new Error(validationError);
+    // }
     
     try {
       await this.executeTransaction(async () => {

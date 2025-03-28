@@ -115,7 +115,7 @@ export class BluetoothHandler {
             return;
         }
         const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
-        const duration: number = parseFloat(rawData[1])*100000; // 0.17
+        const duration: number = parseFloat(rawData[1])*1000; // 0.17
         const timestamp: string = parseRawTimestamp(rawTimestamp);
         
         // Instead of directly calling databaseManager, use the callback
