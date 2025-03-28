@@ -668,7 +668,7 @@ const styles = StyleSheet.create({
 File: app/(tabs)/index.tsx
 ================================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -676,7 +676,8 @@ import {
   TouchableOpacity, 
   ActivityIndicator,
   ScrollView,
-  Alert
+  Alert,
+  RefreshControl
 } from 'react-native';
 import { useBongHitsRepository } from '@/src/providers/AppProvider';
 import { BongHitStats, Datapoint } from '@/src/types';
@@ -699,8 +700,10 @@ export default function HomeScreen() {
   const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<BongHitStats | null>(null);
   const [weeklyData, setWeeklyData] = useState<Datapoint[] | null>(null);
+  const [currentWeekAverage, setCurrentWeekAverage] = useState<number>(0);
   
   // Timer interval for recording
   useEffect(() => {
@@ -721,13 +724,10 @@ export default function HomeScreen() {
     };
   }, [isRecording, recordingStartTime]);
   
-  // Load initial data
-  useEffect(() => {
-    loadData();
-  }, []);
-  
-  const loadData = async () => {
+  // Load data function
+  const loadData = useCallback(async () => {
     try {
+      console.log("[HomeScreen] Loading data...");
       setLoading(true);
       
       // Get stats from the past 7 days
@@ -737,17 +737,36 @@ export default function HomeScreen() {
       // Get hits per day for the past week
       const hitsPerDayResponse = await bongHitsRepository.getHitsPerDay(7);
       if (hitsPerDayResponse.success) {
-        // Fix: Add null coalescing operator for undefined data
         setWeeklyData(hitsPerDayResponse.data ?? null);
       }
       
+      // Fetch average hits for the current calendar week
+      const currentWeekAvgResponse = await bongHitsRepository.getAverageHitsForCurrentWeek();
+      if (currentWeekAvgResponse.success) {
+        setCurrentWeekAverage(currentWeekAvgResponse.data ?? 0);
+      }
+      
+      console.log("[HomeScreen] Data loaded successfully");
     } catch (error) {
       console.error('Error loading data:', error);
       Alert.alert('Error', 'Failed to load bong hit data');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [bongHitsRepository]);
+  
+  // Load initial data
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+  
+  // Handle refresh
+  const onRefresh = useCallback(() => {
+    console.log("[HomeScreen] Refresh triggered");
+    setRefreshing(true);
+    loadData();
+  }, [loadData]);
   
   const handleStartRecording = () => {
     setIsRecording(true);
@@ -770,7 +789,7 @@ export default function HomeScreen() {
       );
       
       // Refresh data
-      loadData();
+      await loadData();
       
       Alert.alert(
         'Bong Hit Recorded',
@@ -784,22 +803,24 @@ export default function HomeScreen() {
   };
   
   const formatDuration = (ms: number): string => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const milliseconds = ms % 1000;
     
-    return `${minutes > 0 ? `${minutes}m ` : ''}${remainingSeconds}s`;
+    // Format: mm:ss.ms (e.g., 01:23.4)
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${Math.floor(milliseconds / 100)}`;
   };
   
   const renderWeeklyData = () => {
     if (!weeklyData) return null;
     
-    const maxValue = Math.max(...weeklyData.map(item => item.y));
+    const maxValue = Math.max(...weeklyData.map(item => item.y), 1); // Ensure non-zero denominator
     const barHeight = 100; // Max height for bars in pixels
     
     return (
       <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Weekly Overview</Text>
+        <Text style={styles.chartTitle}>Hits - Last 7 Days</Text>
         <View style={styles.chartContent}>
           {weeklyData.map((item, index) => (
             <View key={index} style={styles.barContainer}>
@@ -808,7 +829,7 @@ export default function HomeScreen() {
                 style={[
                   styles.bar, 
                   { 
-                    height: maxValue > 0 ? (item.y / maxValue) * barHeight : 0,
+                    height: (item.y / maxValue) * barHeight,
                     backgroundColor: item.y > 0 ? EXTENDED_COLORS.primary : EXTENDED_COLORS.inactive
                   }
                 ]} 
@@ -833,6 +854,14 @@ export default function HomeScreen() {
       <ScrollView 
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[EXTENDED_COLORS.primary]}
+            tintColor={EXTENDED_COLORS.primary}
+          />
+        }
       >
         <View style={styles.header}>
           <Text style={styles.title}>Canova</Text>
@@ -866,23 +895,29 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
         
-        {loading ? (
+        {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={EXTENDED_COLORS.primary} />
             <Text style={styles.loadingText}>Loading data...</Text>
           </View>
         ) : (
           <>
+            {/* Current Week Average Card */}
+            <View style={styles.statCardLarge}>
+              <Text style={styles.statLabelLarge}>Avg Hits/Day (This Week)</Text>
+              <Text style={styles.statValueLarge}>{currentWeekAverage.toFixed(1)}</Text>
+            </View>
+            
             {stats && (
               <View style={styles.statsContainer}>
                 <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Average Duration</Text>
+                  <Text style={styles.statLabel}>Avg Duration (Last 7d)</Text>
                   <Text style={styles.statValue}>
                     {formatDuration(stats.averageDuration)}
                   </Text>
                 </View>
                 <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Longest Hit</Text>
+                  <Text style={styles.statLabel}>Longest Hit (Last 7d)</Text>
                   <Text style={styles.statValue}>
                     {formatDuration(stats.longestHit)}
                   </Text>
@@ -914,7 +949,7 @@ export default function HomeScreen() {
                 onPress={() => router.push('/screens/TestDataScreen')}
               >
                 <Ionicons name="bug" size={24} color={EXTENDED_COLORS.text.primary} />
-                <Text style={styles.actionButtonText}>Fix Database</Text>
+                <Text style={styles.actionButtonText}>Test Data</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -934,7 +969,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 40, // Ensure space at the bottom
   },
   header: {
     marginBottom: 24,
@@ -952,6 +987,8 @@ const styles = StyleSheet.create({
   timerContainer: {
     alignItems: 'center',
     marginBottom: 20,
+    minHeight: 60, // Ensure space for text
+    justifyContent: 'center',
   },
   timerText: {
     fontSize: 48,
@@ -970,9 +1007,15 @@ const styles = StyleSheet.create({
     backgroundColor: EXTENDED_COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: EXTENDED_COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   recordingButton: {
     backgroundColor: EXTENDED_COLORS.error,
+    shadowColor: EXTENDED_COLORS.error,
   },
   loadingContainer: {
     padding: 20,
@@ -982,23 +1025,55 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: EXTENDED_COLORS.text.secondary,
   },
+  statCardLarge: {
+    backgroundColor: EXTENDED_COLORS.cardBackground,
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  statLabelLarge: {
+    fontSize: 16,
+    color: EXTENDED_COLORS.text.secondary,
+    marginBottom: 8,
+  },
+  statValueLarge: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: EXTENDED_COLORS.primary,
+  },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 24,
+    gap: 12,
   },
   statCard: {
     flex: 1,
     backgroundColor: EXTENDED_COLORS.cardBackground,
     borderRadius: 8,
     padding: 16,
-    marginHorizontal: 6,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   statLabel: {
     fontSize: 14,
     color: EXTENDED_COLORS.text.secondary,
     marginBottom: 8,
+    textAlign: 'center',
   },
   statValue: {
     fontSize: 20,
@@ -1007,9 +1082,16 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     backgroundColor: EXTENDED_COLORS.cardBackground,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   chartTitle: {
     fontSize: 18,
@@ -1030,9 +1112,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   bar: {
-    width: 20,
+    width: '60%',
     borderRadius: 4,
     marginBottom: 8,
+    minHeight: 2, // Ensure even 0-value bars are visible
   },
   barLabel: {
     fontSize: 12,
@@ -1048,15 +1131,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    padding: 8,
   },
   viewMoreText: {
     fontSize: 14,
     color: EXTENDED_COLORS.primary,
     marginRight: 4,
+    fontWeight: '600',
   },
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   actionButton: {
     flex: 1,
@@ -1064,13 +1150,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
-    marginHorizontal: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   actionButtonText: {
     marginTop: 8,
     fontSize: 14,
     color: EXTENDED_COLORS.text.primary,
-  },
+    textAlign: 'center',
+  }
 });
 
 ================================================================================
@@ -1221,13 +1314,16 @@ File: app/(tabs)/mydata.tsx
 ================================================================================
 
 import React, { memo, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, RefreshControl } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Alert, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
 import { useDataService } from '../../src/hooks/useDataService';
+import { useDailyData } from '../../src/hooks/useDailyData';
+import { useCurrentWeekData } from '../../src/hooks/useCurrentWeekData';
+import { useBongHitsRepository } from '../../src/providers/AppProvider';
 import { databaseManager } from "../../src/DatabaseManager";
-import { BongHit } from '../../src/types';
+import { BongHit, ChartDataPoint } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -1267,8 +1363,16 @@ const ROUTES = {
   BONG_HIT_LOGS: "/dataOverviews/bongHitLogs",
 } as const;
 
+// Define a type for the average display logic
+interface AverageDisplayInfo {
+  value: number;
+  label: string;
+  chartData: ChartDataPoint[];
+}
+
 export default memo(function MyData() {
   const router = useRouter();
+  const bongHitsRepository = useBongHitsRepository();
   const [showNotification, setShowNotification] = useState(true);
   const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [dailyGoal, setDailyGoal] = useState(10); // Default goal
@@ -1278,18 +1382,30 @@ export default memo(function MyData() {
     recentTimestamp: new Date().toISOString()
   });
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
-  const { stats, newlyUnlocked, clearNewlyUnlocked } = useAchievements();
+  const { stats: achievementStats, newlyUnlocked, clearNewlyUnlocked } = useAchievements();
   
+  // Note: In a real implementation, this would be based on user selection
+  const [currentTimeRange, setCurrentTimeRange] = useState<'D' | 'W' | 'M' | 'Y'>('D'); // Default to daily view
+  
+  // Use our new hooks
+  const { hitsToday, isLoading: dailyLoading, error: dailyError, refresh: refreshDaily } = useDailyData();
+  const { currentWeekAverage, isLoading: weeklyLoading, error: weeklyError, refresh: refreshWeekly } = useCurrentWeekData();
+  
+  // Keep useDataService for holistic data
   const { 
     weeklyData, 
     monthlyData, 
     usageStats, 
     timeDistribution,
-    isLoading, 
-    error,
-    isRefreshing,
-    refreshData
+    isLoading: dataServiceLoading, 
+    error: dataServiceError,
+    isRefreshing: dataServiceRefreshing,
+    refreshData: refreshDataService
   } = useDataService();
+
+  // Combined loading & error states
+  const isLoading = dailyLoading || weeklyLoading || (dataServiceLoading && !dataServiceRefreshing);
+  const error = dailyError || weeklyError || dataServiceError;
 
   useEffect(() => {
     const fetchBongHitData = async () => {
@@ -1312,7 +1428,7 @@ export default memo(function MyData() {
     };
     
     fetchBongHitData();
-  }, [isRefreshing]); // Add isRefreshing as a dependency to refresh bong hit data too
+  }, [dataServiceRefreshing]); // Re-fetch when refreshing
 
   const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
@@ -1336,6 +1452,40 @@ export default memo(function MyData() {
     clearNewlyUnlocked();
     router.push('/screens/AchievementsScreen' as any);
   };
+
+  // Combined refresh handler
+  const handleRefresh = useCallback(async () => {
+    console.log('[MyData] Manual refresh triggered');
+    // Refresh all data sources
+    await Promise.all([
+      refreshDaily(),
+      refreshWeekly(),
+      refreshDataService()
+    ]);
+  }, [refreshDaily, refreshWeekly, refreshDataService]);
+
+  // Calculate which average to display based on the time range
+  const getAverageDisplayInfo = (): AverageDisplayInfo => {
+    switch (currentTimeRange) {
+      case 'D':
+        // For 'Day' view, show today's actual hit count from useDailyData
+        return { value: hitsToday, label: "Today's Hits", chartData: [] };
+      case 'W':
+        // For 'Week' view, use the current week average from useCurrentWeekData
+        return { value: currentWeekAverage, label: "Daily Avg (This Week)", chartData: weeklyData };
+      case 'M':
+        // For 'Month' view, use the monthly average
+        return { value: usageStats.averageHitsPerDay, label: "Daily Avg (Month)", chartData: [] };
+      case 'Y':
+        // For 'Year' view, use the yearly average
+        return { value: usageStats.averageHitsPerDay, label: "Daily Avg (Year)", chartData: monthlyData };
+      default:
+        // Default to today's hits
+        return { value: hitsToday, label: "Today's Hits", chartData: [] };
+    }
+  };
+
+  const averageDisplayInfo = getAverageDisplayInfo();
 
   // Sample strain data - in a real app, this would come from your database
   const mockStrainData = [
@@ -1363,8 +1513,8 @@ export default memo(function MyData() {
   ];
 
   // Only show loading view on initial load, not during refresh
-  if (isLoading && !isRefreshing) return <LoadingView />;
-  if (error) return <ErrorView error={error} />;
+  if (isLoading && !dataServiceRefreshing) return <LoadingView />;
+  if (error && !isLoading) return <ErrorView error={error} />;
 
   const weekdayAvg = usageStats.weekdayStats?.weekday.avg || 0;
   const weekendAvg = usageStats.weekdayStats?.weekend.avg || 0;
@@ -1376,12 +1526,10 @@ export default memo(function MyData() {
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        removeClippedSubviews={true}
         refreshControl={
           <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={refreshData}
+            refreshing={dataServiceRefreshing} // Use dataServiceRefreshing for refresh indicator
+            onRefresh={handleRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
             progressBackgroundColor={COLORS.cardBackground}
@@ -1394,23 +1542,40 @@ export default memo(function MyData() {
           {/* Goals Section */}
           <Section title="Goals & Tracking">
             <GoalTrackingCard
-              currentUsage={usageStats.averageHitsPerDay}
+              currentUsage={hitsToday} // Use today's hits from useDailyData
               goalUsage={dailyGoal}
               onEditGoal={() => setGoalModalVisible(true)}
             />
           </Section>
 
           <Section title="Consumption Data">
-          <DailyAverageCard
-              data={weeklyData}
-              averageHits={usageStats.averageHitsPerDay}
-              onPress={() => handleNavigation("DAILY_AVERAGE")}
-            />
-            <WeeklyUsageBanner
-              weeklyData={weeklyData}
-              average={usageStats.averageHitsPerDay}
-              onPress={() => handleNavigation("WEEKLY_AVERAGE")}
-            />
+            {dailyLoading ? (
+              <ActivityIndicator color={COLORS.primary} />
+            ) : dailyError ? (
+              <Text style={styles.errorText}>{dailyError}</Text>
+            ) : (
+              <DailyAverageCard
+                data={averageDisplayInfo.chartData}
+                averageHits={hitsToday} // Use today's hits from useDailyData
+                averageLabel="Today's Hits"
+                onPress={() => handleNavigation("DAILY_AVERAGE")}
+              />
+            )}
+            
+            {weeklyLoading ? (
+              <ActivityIndicator color={COLORS.primary} />
+            ) : weeklyError ? (
+              <Text style={styles.errorText}>{weeklyError}</Text>
+            ) : (
+              <WeeklyUsageBanner
+                weeklyData={weeklyData}
+                average={currentWeekAverage} // Use current week average from useCurrentWeekData
+                percentageChange={percentageChange}
+                averageLabel="Avg Hits/Day (This Week)"
+                onPress={() => handleNavigation("WEEKLY_AVERAGE")}
+              />
+            )}
+            
             <BongHitLogsCard
               totalHits={bongHitSummary.totalHits}
               averageDuration={bongHitSummary.averageDuration}
@@ -1422,7 +1587,7 @@ export default memo(function MyData() {
           <Section title="Usage Overview">
             <StrainUsageCard
               strainData={mockStrainData}
-              totalHits={usageStats.totalHits || 100}
+              totalHits={usageStats.totalHits}
               onViewAll={() => handleNavigation("STRAIN_USAGE")}
             />
           </Section>
@@ -1432,26 +1597,26 @@ export default memo(function MyData() {
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
 
-          {/* AI Recommendations Card */}
           <AIRecommendationCard onPress={handleNavigateToAI} />
-
-          <AchievementsButton 
+          
+          <AchievementsButton
             onPress={handleAchievementsPress}
-            unlocked={stats.unlocked}
-            total={stats.total}
+            unlocked={achievementStats.unlocked}
+            total={achievementStats.total}
           />
         </View>
       </ScrollView>
 
-      {/* Goal Setting Modal */}
       <SetGoalModal
         visible={goalModalVisible}
-        onClose={() => setGoalModalVisible(false)}
-        onSave={(goal) => setDailyGoal(goal)}
         currentGoal={dailyGoal}
+        onSave={(goal) => {
+          setDailyGoal(goal);
+          setGoalModalVisible(false);
+        }}
+        onClose={() => setGoalModalVisible(false)}
       />
 
-      {/* Subscription Modal */}
       <SubscriptionModal
         visible={subscriptionModalVisible}
         onClose={() => setSubscriptionModalVisible(false)}
@@ -1459,7 +1624,7 @@ export default memo(function MyData() {
       />
 
       {newlyUnlocked && (
-        <AchievementUnlockedNotification 
+        <AchievementUnlockedNotification
           achievement={newlyUnlocked}
           onPress={handleAchievementNotificationPress}
           onDismiss={clearNewlyUnlocked}
@@ -1475,10 +1640,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   contentContainer: {
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   mainContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+  },
+  errorText: {
+    color: '#FF5252',
+    textAlign: 'center',
+    margin: 10,
   }
 });
 
@@ -12265,24 +12435,37 @@ export class BluetoothHandler {
           return; // Return void instead of -1
         }
 
-        const rawData: string[] = base64.decode(characteristic.value).split(';');
-        // Ensure we handle cases where split might not produce enough parts
-        if (rawData.length < 2) {
-            console.error("Received malformed data:", rawData);
-            return;
-        }
-        const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
-        const duration: number = parseFloat(rawData[1])*100000; // 0.17
-        const timestamp: string = parseRawTimestamp(rawTimestamp);
-        
-        // Instead of directly calling databaseManager, use the callback
-        if (this.onDataCallback) {
-            // Pass rawTimestamp along with parsed timestamp and duration
-            this.onDataCallback(rawTimestamp, timestamp, duration);
-        } else {
-            console.error("No data callback set to handle bong hit data");
-            // Fallback alert if no callback is set
-            Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+        try {
+            const rawData: string[] = base64.decode(characteristic.value).split(';');
+            // Ensure we handle cases where split might not produce enough parts
+            if (rawData.length < 2) {
+                console.error("Received malformed data:", rawData);
+                return;
+            }
+            const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
+            const duration: number = parseFloat(rawData[1])*1000; // 0.17
+            
+            if (isNaN(duration) || duration <= 0) {
+                console.error(`[BluetoothContext] Invalid duration value: ${rawData[1]}`);
+                return;
+            }
+            
+            console.log(`[BluetoothContext] Raw timestamp received: ${rawTimestamp}`);
+            const timestamp: string = parseRawTimestamp(rawTimestamp);
+            console.log(`[BluetoothContext] Parsed ISO timestamp: ${timestamp}`);
+            
+            // Instead of directly calling databaseManager, use the callback
+            if (this.onDataCallback) {
+                // Pass rawTimestamp along with parsed timestamp and duration
+                this.onDataCallback(rawTimestamp, timestamp, duration);
+            } else {
+                console.error("No data callback set to handle bong hit data");
+                // Fallback alert if no callback is set
+                Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+            }
+        } catch (error) {
+            console.error('[BluetoothContext] Error processing Bluetooth data:', error);
+            Alert.alert('Error', 'Failed to process data from device');
         }
     }
 
@@ -12402,7 +12585,7 @@ import {
   SAMPLE_STRAINS
 } from "./constants";
 import { migrations } from "./migrations";
-import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery, getDateRangeWhereClause } from "./utils/SqlTemplates";
+import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery, getDateRangeFilter } from "./utils/SqlTemplates";
 
 // Export constants for use by other modules
 export const DB_VERSION_KEY = "dbVersion";
@@ -12435,6 +12618,7 @@ function formatWeeklyResults(results: any[]): any[] {
   
   // If no results, return zero values for each day
   if (!results || results.length === 0) {
+    console.log('[DatabaseManager] No weekly data found, returning zeros');
     return [
       { label: 'Sun', value: 0 },
       { label: 'Mon', value: 0 },
@@ -12446,19 +12630,26 @@ function formatWeeklyResults(results: any[]): any[] {
     ];
   }
   
+  console.log('[DatabaseManager] Formatting weekly data:', JSON.stringify(results));
+  
   // Convert the results to the expected format
   const formattedResults = results.map((row: any) => ({
     label: dayMapping[row.day_of_week] || 'Unknown',
-    value: row.count || 0
+    value: row.count || 0,
+    // Include the original day number for sorting
+    dayNumber: parseInt(row.day_of_week, 10)
   }));
   
   // Make sure all days are represented
-  const dayValues = Object.values(dayMapping);
+  const dayValues = Object.keys(dayMapping).sort().map(day => dayMapping[day]);
   const dataByDay = new Map(formattedResults.map(item => [item.label, item]));
   
-  return dayValues.map(day => 
+  // Create array with all days in order, using values from results when available
+  const orderedData = dayValues.map(day => 
     dataByDay.get(day) || { label: day, value: 0 }
   );
+  
+  return orderedData;
 }
 
 /**
@@ -12469,28 +12660,47 @@ function formatMonthlyResults(results: any[]): any[] {
   const monthMapping: { [key: string]: string } = {
     '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', 
     '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Aug',
-    '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
+    '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec',
+    // Add single-digit versions for robustness
+    '1': 'Jan', '2': 'Feb', '3': 'Mar', '4': 'Apr',
+    '5': 'May', '6': 'Jun', '7': 'Jul', '8': 'Aug',
+    '9': 'Sep'
   };
   
   // If no results, return zero values for each month
   if (!results || results.length === 0) {
-    return Object.values(monthMapping).map(month => ({
-      label: month,
-      value: 0
-    }));
+    console.log('[DatabaseManager] No monthly data found, returning zeros');
+    return Object.entries(monthMapping)
+      .filter(([key]) => key.length === 2) // Only use the two-digit keys 
+      .map(([_, month]) => ({
+        label: month,
+        value: 0
+      }));
   }
   
-  // Convert the results to the expected format
-  const formattedResults = results.map((row: any) => ({
-    label: monthMapping[row.month] || 'Unknown',
-    value: row.count || 0
-  }));
+  console.log('[DatabaseManager] Formatting monthly data:', JSON.stringify(results));
   
-  // Make sure all months are represented
-  const monthNames = Object.values(monthMapping);
+  // Convert the results to the expected format
+  const formattedResults = results.map((row: any) => {
+    // Ensure month is properly padded with leading zero if needed
+    const monthKey = row.month?.length === 1 ? `0${row.month}` : row.month;
+    return {
+      label: monthMapping[monthKey] || 'Unknown',
+      value: row.count || 0,
+      // Store numeric month for sorting
+      monthNum: parseInt(row.month, 10)
+    };
+  });
+  
+  // Make sure all months are represented (use two-digit keys)
+  const monthValues = Object.entries(monthMapping)
+    .filter(([key]) => key.length === 2)
+    .map(([_, label]) => label);
+  
   const dataByMonth = new Map(formattedResults.map(item => [item.label, item]));
   
-  return monthNames.map(month => 
+  // Create array with all months, using values from results when available
+  return monthValues.map(month => 
     dataByMonth.get(month) || { label: month, value: 0 }
   );
 }
@@ -12718,12 +12928,17 @@ export class DatabaseManager {
       console.log(`[DatabaseManager] Fetching weekly stats from ${startDate || 'all'} to ${endDate || 'now'}`);
       
       // Use the SQL template with date filtering
-      const query = getWeeklyStatsQuery(BONG_HITS_DATABASE_NAME, startDate, endDate);
+      const templateQuery = getWeeklyStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
       
-      const results = await db.getAllAsync(query);
+      console.log(`[DatabaseManager] Weekly Stats Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      const results = await db.getAllAsync(finalQuery, params);
       
       // Process the results to get the proper format for charts
       const formattedResults = formatWeeklyResults(results);
+      
+      console.log(`[DatabaseManager] Formatting weekly data: ${JSON.stringify(results)} -> Formatted: ${JSON.stringify(formattedResults)}`);
       
       return {
         success: true,
@@ -12752,12 +12967,17 @@ export class DatabaseManager {
       console.log(`[DatabaseManager] Fetching monthly stats from ${startDate || 'all'} to ${endDate || 'now'}`);
       
       // Use the SQL template with date filtering
-      const query = getMonthlyStatsQuery(BONG_HITS_DATABASE_NAME, startDate, endDate);
+      const templateQuery = getMonthlyStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
       
-      const results = await db.getAllAsync(query);
+      console.log(`[DatabaseManager] Monthly Stats Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      const results = await db.getAllAsync(finalQuery, params);
       
       // Format the results for the UI
       const formattedResults = formatMonthlyResults(results);
+      
+      console.log(`[DatabaseManager] Formatting monthly data: ${JSON.stringify(results)} -> Formatted: ${JSON.stringify(formattedResults)}`);
       
       return {
         success: true,
@@ -12786,22 +13006,29 @@ export class DatabaseManager {
       console.log(`[DatabaseManager] Fetching usage stats from ${startDate || 'all'} to ${endDate || 'now'}`);
       
       // Get usage statistics with date range
-      const query = getUsageStatsQuery(BONG_HITS_DATABASE_NAME, 365, startDate, endDate); // Pass startDate and endDate
+      const templateQuery = getUsageStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
+      
+      console.log(`[DatabaseManager] Usage Stats Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
       
       // Define the expected type for better TypeScript support
       interface UsageStatsResult {
         total_hits: number;
         active_days: number;
-        avg_hits_per_day: number;
+        avg_hits_per_active_day: number;
         avg_duration_ms: number;
         total_duration_ms: number;
         max_hits_in_day: number;
-        most_active_day: number;
-        least_active_day: number;
+        min_hits_in_day: number;
+        longest_hit: number;
+        shortest_hit: number;
+        most_active_hour: number;
+        least_active_hour: number;
       }
       
       // Use type assertion to handle the database result
-      const usageStats = await db.getFirstAsync(query) as UsageStatsResult | null;
+      const usageStats = await db.getFirstAsync(finalQuery, params) as UsageStatsResult | null;
       
       // No need to check for results - if the query returns no rows, we'll get empty data
       if (!usageStats) {
@@ -12831,19 +13058,21 @@ export class DatabaseManager {
       // Format the results
       const formattedResults = {
         totalHits: usageStats.total_hits || 0,
-        averageHitsPerDay: usageStats.avg_hits_per_day || 0,
+        averageHitsPerDay: usageStats.avg_hits_per_active_day || 0,
         peakDayHits: usageStats.max_hits_in_day || 0,
-        lowestDayHits: 0, // This needs to be calculated from active days
+        lowestDayHits: usageStats.min_hits_in_day || 0, // Updated to use min_hits_in_day
         averageDuration: usageStats.avg_duration_ms || 0,
         totalDuration: usageStats.total_duration_ms || 0,
-        longestHit: 0, // Not calculated in the query
-        shortestHit: 0, // Not calculated in the query
-        mostActiveHour: usageStats.most_active_day || 0,
-        leastActiveHour: usageStats.least_active_day || 0,
+        longestHit: usageStats.longest_hit || 0, // Updated to use longest_hit
+        shortestHit: usageStats.shortest_hit || 0, // Updated to use shortest_hit
+        mostActiveHour: usageStats.most_active_hour || 0, // Updated to use most_active_hour
+        leastActiveHour: usageStats.least_active_hour || 0, // Updated to use least_active_hour
         averageHitsPerHour: 0, // Not calculated in the query
         weekdayStats: weekdayStats,
         consistency: 0 // This needs to be calculated
       };
+      
+      console.log(`[DatabaseManager] Usage Stats Result: ${JSON.stringify(usageStats)} -> Formatted: ${JSON.stringify(formattedResults)}`);
       
       return {
         success: true,
@@ -12864,23 +13093,29 @@ export class DatabaseManager {
    */
   private async getWeekdayStats(db: SQLiteDatabase, startDate?: string, endDate?: string) {
     // Create SQL with date filtering
-    const dateFilter = startDate || endDate ? 
-      getDateRangeWhereClause(startDate, endDate) : 
-      '';
+    const { clause, params } = getDateRangeFilter(startDate, endDate);
     
     const query = `
+      WITH NormalizedData AS (
+        SELECT
+          strftime('%w', timestamp, 'utc') as weekday,
+          strftime('%Y-%m-%d', timestamp, 'utc') as date_str
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+      )
       SELECT
-        SUM(CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('1','2','3','4','5') THEN 1 ELSE 0 END) as weekday_hits,
-        SUM(CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('0','6') THEN 1 ELSE 0 END) as weekend_hits,
-        COUNT(DISTINCT CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('1','2','3','4','5') 
-          THEN strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') END) as weekday_days,
-        COUNT(DISTINCT CASE WHEN strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') IN ('0','6') 
-          THEN strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') END) as weekend_days
-      FROM ${BONG_HITS_DATABASE_NAME}
-      ${dateFilter}
+        SUM(CASE WHEN weekday IN ('1','2','3','4','5') THEN 1 ELSE 0 END) as weekday_hits,
+        SUM(CASE WHEN weekday IN ('0','6') THEN 1 ELSE 0 END) as weekend_hits,
+        COUNT(DISTINCT CASE WHEN weekday IN ('1','2','3','4','5') 
+          THEN date_str END) as weekday_days,
+        COUNT(DISTINCT CASE WHEN weekday IN ('0','6') 
+          THEN date_str END) as weekend_days
+      FROM NormalizedData
     `;
     
     try {
+      console.log(`[DatabaseManager] Weekday Stats Query: ${query}, Params: ${JSON.stringify(params)}`);
+      
       // Define type for better TypeScript support
       interface WeekdayStatsResult {
         weekday_hits: number;
@@ -12890,7 +13125,7 @@ export class DatabaseManager {
       }
       
       // Use type assertion to handle the database result
-      const result = await db.getFirstAsync(query) as WeekdayStatsResult | null;
+      const result = await db.getFirstAsync(query, params) as WeekdayStatsResult | null;
       
       if (!result) {
         return {
@@ -12928,9 +13163,23 @@ export class DatabaseManager {
       console.log(`[DatabaseManager] Fetching time distribution from ${startDate || 'all'} to ${endDate || 'now'}`);
       
       // Use the SQL template with date filtering
-      const query = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME, 365, startDate, endDate); // Pass startDate and endDate
+      const templateQuery = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate, endDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
       
-      const result = await db.getFirstAsync(query);
+      console.log(`[DatabaseManager] Time Distribution Query: ${finalQuery}, Params: ${JSON.stringify(params)}`);
+      
+      // Define the expected result type
+      interface TimeDistributionResult {
+        morning: number;
+        afternoon: number;
+        evening: number;
+        night: number;
+      }
+      
+      const result = await db.getFirstAsync(finalQuery, params) as TimeDistributionResult | null;
+      
+      console.log(`[DatabaseManager] Time Distribution Result: ${JSON.stringify(result)}`);
       
       // If no data, return zeros
       if (!result) {
@@ -12938,7 +13187,7 @@ export class DatabaseManager {
           success: true,
           data: {
             morning: 0,
-            afternoon: 0,
+            afternoon: 0, 
             evening: 0,
             night: 0
           }
@@ -13701,6 +13950,105 @@ export const useAIRecommendations = () => {
 export default useAIRecommendations; 
 
 ================================================================================
+File: src/hooks/useCurrentWeekData.ts
+================================================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import { useBongHitsRepository } from '@/src/providers/AppProvider';
+import { getCurrentWeekProgressRangeLocal } from '@/src/utils/timeUtils';
+
+export function useCurrentWeekData() {
+  const [currentWeekAverage, setCurrentWeekAverage] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const bongHitsRepository = useBongHitsRepository();
+
+  const fetchWeekData = useCallback(async () => {
+    console.log('[useCurrentWeekData] Fetching average for current week...');
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Use the specific repository method for current week average
+      const response = await bongHitsRepository.getAverageHitsForCurrentWeek();
+
+      if (response.success) {
+        setCurrentWeekAverage(response.data ?? 0);
+        console.log(`[useCurrentWeekData] Current week average: ${response.data}`);
+      } else {
+        setError(response.error ?? 'Failed to fetch weekly average');
+        setCurrentWeekAverage(0);
+        console.error(`[useCurrentWeekData] Error: ${response.error}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error fetching weekly data';
+      setError(message);
+      setCurrentWeekAverage(0);
+      console.error(`[useCurrentWeekData] Exception: ${message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [bongHitsRepository]);
+
+  useEffect(() => {
+    fetchWeekData();
+    // Optional: Refetch periodically or based on other triggers
+  }, [fetchWeekData]);
+
+  return { currentWeekAverage, isLoading, error, refresh: fetchWeekData };
+} 
+
+================================================================================
+File: src/hooks/useDailyData.ts
+================================================================================
+
+import { useState, useEffect, useCallback } from 'react';
+import { useBongHitsRepository } from '@/src/providers/AppProvider';
+import { getTodayRangeLocal } from '@/src/utils/timeUtils';
+
+export function useDailyData() {
+  const [hitsToday, setHitsToday] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const bongHitsRepository = useBongHitsRepository();
+
+  const fetchDailyData = useCallback(async () => {
+    console.log('[useDailyData] Fetching data for today...');
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { startDate, endDate } = getTodayRangeLocal();
+      // Use getHitCountForDateRange for consistency, though getHitsForDate works too
+      const response = await bongHitsRepository.getHitCountForDateRange(startDate, endDate);
+
+      if (response.success) {
+        setHitsToday(response.data ?? 0);
+        console.log(`[useDailyData] Today's hits: ${response.data}`);
+      } else {
+        setError(response.error ?? 'Failed to fetch daily data');
+        setHitsToday(0);
+        console.error(`[useDailyData] Error: ${response.error}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error fetching daily data';
+      setError(message);
+      setHitsToday(0);
+      console.error(`[useDailyData] Exception: ${message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [bongHitsRepository]);
+
+  useEffect(() => {
+    fetchDailyData();
+    // Optional: Set up an interval to refetch daily data periodically if needed
+    // const intervalId = setInterval(fetchDailyData, 60 * 60 * 1000); // e.g., every hour
+    // return () => clearInterval(intervalId);
+  }, [fetchDailyData]);
+
+  return { hitsToday, isLoading, error, refresh: fetchDailyData };
+} 
+
+================================================================================
 File: src/hooks/useDataService.ts
 ================================================================================
 
@@ -13815,22 +14163,29 @@ export function useDataService() {
         return;
       }
       
-      // Check if we actually have data
-      const hasData = usageStats.data && usageStats.data.totalHits > 0;
+      // Check if we actually have data in any of the datasets
+      const hasUsageStats = usageStats.data && usageStats.data.totalHits > 0;
+      // Check if weekly/monthly data has any non-zero values
+      const hasWeeklyData = weeklyStats.data && weeklyStats.data.some((d: ChartDataPoint) => d.value > 0);
+      const hasMonthlyData = monthlyStats.data && monthlyStats.data.some((d: ChartDataPoint) => d.value > 0);
       
-      console.log(`[useDataService] Data fetch complete. Has data: ${hasData}`);
+      // Determine overall hasData based on any data existing
+      const hasData = hasUsageStats || hasWeeklyData || hasMonthlyData;
+      
+      console.log(`[useDataService] Data fetch complete. Has data: ${hasData} (Usage: ${hasUsageStats}, Weekly: ${hasWeeklyData}, Monthly: ${hasMonthlyData})`);
       
       // Update state based on whether we have actual data or not
       setState({
         weeklyData: ensureChartDataFormat(weeklyStats.data),
         monthlyData: ensureChartDataFormat(monthlyStats.data),
-        usageStats: {
-          ...DEFAULT_STATE.usageStats,
-          ...(hasData ? usageStats.data as Partial<UsageStats> : {})
-        },
-        timeDistribution: hasData 
-          ? (timeDistribution.data || DEFAULT_STATE.timeDistribution) 
-          : DEFAULT_STATE.timeDistribution,
+        // Conditionally apply usageStats only if they contain data
+        usageStats: hasUsageStats
+                    ? (usageStats.data as UsageStats)
+                    : DEFAULT_STATE.usageStats, // Use default if no usage stats
+        // Conditionally apply timeDistribution only if there's any data
+        timeDistribution: hasData
+                        ? (timeDistribution.data || DEFAULT_STATE.timeDistribution)
+                        : DEFAULT_STATE.timeDistribution,
         isLoading: false,
         error: null
       });
@@ -14071,9 +14426,27 @@ function calculateDateRangeForTimeRange(range: TimeRange): { startDate: Date, en
       startDate.setHours(endDate.getHours() - 24);
       break;
     case 'W': // Last 7 days
-      startDate.setDate(endDate.getDate() - 6); // Go back 6 days to include today (7 days total)
-      startDate.setHours(0, 0, 0, 0); // Start of the first day
-      endDate.setHours(23, 59, 59, 999); // End of today
+      // Ensure we get data for the current week precisely (Sunday to Saturday)
+      // Get the current day of the week (0 = Sunday, 6 = Saturday)
+      const dayOfWeek = endDate.getDay();
+      // Set start date to the beginning of the current week (Sunday)
+      startDate.setDate(endDate.getDate() - dayOfWeek);
+      startDate.setHours(0, 0, 0, 0); // Start of Sunday
+      
+      // Set end date to the end of this week (Saturday)
+      const daysToEnd = 6 - dayOfWeek; // Days until Saturday
+      const weekEndDate = new Date(endDate);
+      weekEndDate.setDate(endDate.getDate() + daysToEnd);
+      weekEndDate.setHours(23, 59, 59, 999); // End of Saturday
+      
+      // Only use the calculated end date if it's in the future
+      if (weekEndDate <= endDate) {
+        // We're already past Saturday, so use current time as end
+        endDate.setHours(23, 59, 59, 999); // End of today
+      } else {
+        // Use the end of Saturday as end date
+        endDate.setTime(weekEndDate.getTime());
+      }
       break;
     case 'M': // Last 30 days
       startDate.setDate(endDate.getDate() - 29); // Go back 29 days to include today (30 days total)
@@ -14246,17 +14619,26 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
   // Stable dependencies: only the date range and timeRange for logging
   }, [dataService.loadDataWithDateRange, timeRange, startDate, endDate, dataService.error]);
 
-  // Effect to TRIGGER fetch when date range changes (i.e., timeRange changes)
+  // Effect to *trigger* fetch when date range changes (i.e., timeRange changes)
   useEffect(() => {
     console.log(`[useTimeRangeData] Fetch Effect: Triggering fetch for ${timeRange}`);
+    
+    // Add more detailed logging for debugging weekly data
+    if (timeRange === 'W') {
+      const currentDay = new Date().getDay();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      console.log(`[useTimeRangeData] Current day is ${dayNames[currentDay]} (day ${currentDay})`);
+      console.log(`[useTimeRangeData] Week range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    }
+    
     fetchDataForCurrentRange(false); // Initial fetch for this time range
 
     // Cleanup function remains simple
     return () => {
       console.log('[useTimeRangeData] Cleaning up Fetch Effect');
     };
-  // Depend ONLY on the dates and the stable fetch function
-  }, [startDate, endDate, fetchDataForCurrentRange]);
+    // Depend *only* on the dates and the stable fetch function
+  }, [startDate, endDate, fetchDataForCurrentRange, timeRange]);
 
   // SEPARATE Effect to PROCESS data when it changes in useDataService
   useEffect(() => {
@@ -15151,7 +15533,7 @@ import {
 } from "../types";
 import { BONG_HITS_DATABASE_NAME, dayLookUpTable } from "../constants";
 import { validateBongHit } from "../utils/validators";
-import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery } from "../utils/SqlTemplates";
+import { getWeeklyStatsQuery, getMonthlyStatsQuery, getTimeDistributionQuery, getUsageStatsQuery, getDateRangeFilter } from "../utils/SqlTemplates";
 
 /**
  * Repository for managing bong hit data
@@ -15163,10 +15545,11 @@ export class BongHitsRepository extends BaseRepository {
    * @param durationMs Duration of the hit in milliseconds
    */
   public async recordBongHit(timestamp: string, durationMs: number): Promise<void> {
-    const hit: BongHit = { timestamp, duration_ms: durationMs };
+    const hit: BongHit = { timestamp: timestamp, duration_ms: durationMs };
     const validationError = validateBongHit(hit);
     
     if (validationError) {
+      console.error(`[BongHitsRepository] Validation error: ${validationError}`);
       throw new Error(validationError);
     }
     
@@ -15188,29 +15571,36 @@ export class BongHitsRepository extends BaseRepository {
    * Retrieves average and max duration over the past n days
    * @param days Number of days to look back
    */
-  public async getBongHitStats(days: number = 7): Promise<BongHitStats> {
+  public async getBongHitStats(days?: number, range?: { startDate: Date, endDate: Date }): Promise<BongHitStats> {
     try {
-      // Calculate start date based on days parameter
-      const startDate = this.getStartDateISO(days);
-      
-      const results = await this.db.getAllAsync<{avg_duration: number, max_duration: number}>(`
+      let filterClause = '';
+      let filterParams: string[] = [];
+
+      if (range) {
+        const { clause, params } = getDateRangeFilter(range.startDate.toISOString(), range.endDate.toISOString());
+        filterClause = clause;
+        filterParams = params;
+      } else if (days) {
+        const startDate = this.getStartDateISO(days);
+        const { clause, params } = getDateRangeFilter(startDate);
+        filterClause = clause;
+        filterParams = params;
+      }
+      // If neither is provided, query runs without date filter
+
+      const query = `
         SELECT
           AVG(duration_ms) AS avg_duration,
           MAX(duration_ms) AS max_duration
         FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= ?
-      `, [startDate]);
-
-      if (!results.length) {
-        // Fallback if no data
-        return this.validateBongHitStats({ averageDuration: 0, longestHit: 0 });
-      }
-
+        ${filterClause}
+      `;
+      console.log(`[BongHitsRepository] getBongHitStats Query: ${query}, Params: ${JSON.stringify(filterParams)}`);
+      const results = await this.db.getAllAsync<{avg_duration: number, max_duration: number}>(query, filterParams);
+      
+      if (!results.length) return this.validateBongHitStats({ averageDuration: 0, longestHit: 0 });
       const row = results[0];
-      return this.validateBongHitStats({
-        averageDuration: row.avg_duration || 0,
-        longestHit: row.max_duration || 0,
-      });
+      return this.validateBongHitStats({ averageDuration: row.avg_duration || 0, longestHit: row.max_duration || 0 });
     } catch (error) {
       console.error("[BongHitsRepository] Error in getBongHitStats:", error);
       throw error;
@@ -15221,41 +15611,52 @@ export class BongHitsRepository extends BaseRepository {
    * Counts hits per day over the past week (filling day indices 0..6)
    * @param days Number of days to look back
    */
-  public async getHitsPerDay(days: number = 7): Promise<DatabaseResponse<Datapoint[]>> {
+  public async getHitsPerDay(days?: number, range?: { startDate: Date, endDate: Date }): Promise<DatabaseResponse<Datapoint[]>> {
     try {
-      // Calculate start date based on days parameter
-      const startDate = this.getStartDateISO(days);
-      
-      const results = await this.db.getAllAsync<{day: string, hit_count: number}>(`
+      let filterClause = '';
+      let filterParams: string[] = [];
+
+      if (range) {
+        const { clause, params } = getDateRangeFilter(range.startDate.toISOString(), range.endDate.toISOString());
+        filterClause = clause;
+        filterParams = params;
+      } else if (days) {
+        const startDate = this.getStartDateISO(days);
+        const { clause, params } = getDateRangeFilter(startDate);
+        filterClause = clause;
+        filterParams = params;
+      }
+
+      const query = `
         SELECT 
-          strftime('%w', timestamp) AS day,
+          strftime('%w', timestamp, 'utc') AS day,
           COUNT(*) AS hit_count
         FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= ?
+        ${filterClause}
         GROUP BY day
         ORDER BY day
-      `, [startDate]);
+      `;
+      console.log(`[BongHitsRepository] getHitsPerDay Query: ${query}, Params: ${JSON.stringify(filterParams)}`);
+      const results = await this.db.getAllAsync<{day: string, hit_count: number}>(query, filterParams);
 
       // Prepare an array for Sunday..Saturday
       const weekData: Datapoint[] = Array.from({ length: 7 }, (_, i) => ({
-        x: dayLookUpTable.get(i) || "",
+        x: dayLookUpTable.get(i) || "", // Use Map for day names
         y: 0,
       }));
 
+      // Populate with actual data
       results.forEach(row => {
         const dayIndex = parseInt(row.day, 10);
         if (dayIndex >= 0 && dayIndex < 7) {
           weekData[dayIndex] = this.validateDatapoint({
-            label: dayLookUpTable.get(dayIndex) || "",
+            label: dayLookUpTable.get(dayIndex) || "", // Use Map
             value: row.hit_count,
           });
         }
       });
 
-      return {
-        success: true,
-        data: weekData
-      };
+      return { success: true, data: weekData };
     } catch (error) {
       return this.handleError(error, "getHitsPerDay");
     }
@@ -15387,15 +15788,12 @@ export class BongHitsRepository extends BaseRepository {
       const startDate = this.getStartDateISO(days);
       
       // Modify SQL template to accept date parameter
-      const templateQuery = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME, days);
-      const query = templateQuery.replace(/WHERE timestamp >= '[^']+'/g, 'WHERE timestamp >= ?');
+      const templateQuery = getTimeDistributionQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
       
-      const [result] = await this.db.getAllAsync<{ 
-        morning: number, 
-        afternoon: number, 
-        evening: number, 
-        night: number 
-      }>(query, [startDate]);
+      // Execute query with proper params
+      const result = await this.db.getFirstAsync<TimeDistribution>(finalQuery, params);
       
       if (!result) {
         return {
@@ -15408,15 +15806,16 @@ export class BongHitsRepository extends BaseRepository {
           }
         };
       }
-
-      const distribution: TimeDistribution = {
-        morning: Number(result.morning || 0),
-        afternoon: Number(result.afternoon || 0),
-        evening: Number(result.evening || 0),
-        night: Number(result.night || 0)
+      
+      return {
+        success: true,
+        data: {
+          morning: result.morning || 0,
+          afternoon: result.afternoon || 0,
+          evening: result.evening || 0,
+          night: result.night || 0
+        }
       };
-
-      return { success: true, data: distribution };
     } catch (error) {
       return this.handleError(error, 'getTimeDistribution');
     }
@@ -15431,154 +15830,51 @@ export class BongHitsRepository extends BaseRepository {
       // Calculate start date based on days parameter
       const startDate = this.getStartDateISO(days);
       
-      // First get daily hits to calculate variance with parameterized date
-      const dailyHitsQuery = `
-        SELECT COUNT(*) as daily_hits
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= ?
-        GROUP BY strftime('%Y-%m-%d', timestamp)
-      `;
-
-      const dailyHits = await this.db.getAllAsync<{ daily_hits: number }>(dailyHitsQuery, [startDate]);
+      // Modify SQL template to accept date parameter
+      const templateQuery = getUsageStatsQuery(BONG_HITS_DATABASE_NAME);
+      const { clause, params } = getDateRangeFilter(startDate);
+      const finalQuery = templateQuery.replace('-- DATE FILTER ADDED EXTERNALLY', clause);
       
-      // Handle case with no data
-      if (!dailyHits.length) {
+      // Execute the query
+      const rawStats = await this.db.getFirstAsync<any>(finalQuery, params);
+      
+      if (!rawStats) {
         return {
           success: true,
-          data: {
-            totalHits: 0,
-            averageHitsPerDay: 0,
-            averageHitsPerHour: 0,
-            averageDuration: 0,
-            totalDuration: 0,
-            peakDayHits: 0,
-            lowestDayHits: 0,
-            mostActiveHour: 0,
-            leastActiveHour: 0,
-            longestHit: 0,
-            shortestHit: 0,
-            consistency: 0,
-            weekdayStats: {
-              weekday: { total: 0, avg: 0 },
-              weekend: { total: 0, avg: 0 }
-            }
-          }
+          data: this.createEmptyUsageStats()
         };
       }
-
-      // Calculate consistency score based on standard deviation of daily hits
-      const hitValues = dailyHits.map(row => row.daily_hits);
-      const stdDev = this.calculateStandardDeviation(hitValues);
-      const mean = hitValues.reduce((a, b) => a + b, 0) / hitValues.length;
-      const cv = mean > 0 ? (stdDev / mean) * 100 : 0;
-      const consistencyScore = Math.min(10, 10 * Math.exp(-0.05 * cv)); // Scale to 0-10
       
-      // Modify usage stats query to accept date parameter
-      const templateQuery = getUsageStatsQuery(BONG_HITS_DATABASE_NAME, days);
-      const query = templateQuery.replace(/WHERE timestamp >= '[^']+'/g, 'WHERE timestamp >= ?');
+      // Fetch daily patterns
+      const { weekdayAvg, weekendAvg } = await this.calculateWeekdayWeekendAverage(startDate);
       
-      const statsResult = await this.db.getFirstAsync<{ 
-        total_hits: number, 
-        active_days: number, 
-        avg_hits_per_active_day: number, 
-        avg_duration_ms: number, 
-        total_duration_ms: number, 
-        max_hits_in_day: number 
-      }>(query, [startDate]);
-      
-      if (!statsResult) {
-        return { success: false, error: "Failed to get usage stats" };
-      }
-      
-      // Get hourly distribution for most/least active hour with parameterized date
-      const hourlyQuery = `
-        SELECT 
-          CAST(strftime('%H', timestamp) AS INTEGER) as hour,
-          COUNT(*) as hits
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= ?
-        GROUP BY hour
-        ORDER BY hits DESC
-      `;
-      
-      const hourlyResults = await this.db.getAllAsync<{ hour: number, hits: number }>(hourlyQuery, [startDate]);
-      const mostActiveHour = hourlyResults.length > 0 ? hourlyResults[0].hour : 0;
-      const leastActiveHour = hourlyResults.length > 0 ? hourlyResults[hourlyResults.length - 1].hour : 0;
-      
-      // Get min/max duration with parameterized date
-      const durationQuery = `
-        SELECT 
-          MIN(duration_ms) as min_duration,
-          MAX(duration_ms) as max_duration
-        FROM ${BONG_HITS_DATABASE_NAME}
-        WHERE timestamp >= ?
-      `;
-      
-      const durationResult = await this.db.getFirstAsync<{ min_duration: number, max_duration: number }>(
-        durationQuery, [startDate]
-      );
-      
-      // Calculate weekday vs weekend stats with parameterized date
-      const weekdayQuery = `
-        WITH DayStats AS (
-          SELECT 
-            CASE WHEN strftime('%w', timestamp) IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
-            strftime('%Y-%m-%d', timestamp) as date,
-            COUNT(*) as hits
-          FROM ${BONG_HITS_DATABASE_NAME}
-          WHERE timestamp >= ?
-          GROUP BY day_type, date
-        )
-        SELECT 
-          day_type,
-          SUM(hits) as total_hits,
-          AVG(hits) as avg_hits
-        FROM DayStats
-        GROUP BY day_type
-      `;
-      
-      const weekdayResults = await this.db.getAllAsync<{ day_type: string, total_hits: number, avg_hits: number }>(
-        weekdayQuery, [startDate]
-      );
-      
-      const weekdayStats = {
-        weekday: { total: 0, avg: 0 },
-        weekend: { total: 0, avg: 0 }
-      };
-      
-      weekdayResults.forEach(row => {
-        if (row.day_type === 'weekday') {
-          weekdayStats.weekday.total = row.total_hits;
-          weekdayStats.weekday.avg = row.avg_hits;
-        } else {
-          weekdayStats.weekend.total = row.total_hits;
-          weekdayStats.weekend.avg = row.avg_hits;
+      // Format the usage stats
+      const usageStats: UsageStats = {
+        totalHits: rawStats.total_hits || 0,
+        averageHitsPerDay: rawStats.avg_hits_per_active_day || 0,
+        peakDayHits: rawStats.max_hits_in_day || 0,
+        lowestDayHits: rawStats.min_hits_in_day || 0,
+        averageDuration: rawStats.avg_duration_ms || 0,
+        totalDuration: rawStats.total_duration_ms || 0,
+        longestHit: rawStats.longest_hit || 0,
+        shortestHit: rawStats.shortest_hit || 0,
+        mostActiveHour: rawStats.most_active_hour || 0,
+        leastActiveHour: rawStats.least_active_hour || 0,
+        
+        // For these more complex statistics, we'd need to do deeper analysis
+        averageHitsPerHour: 0, // Not implemented yet
+        consistency: 0, // Not implemented yet
+        
+        // Weekday vs Weekend stats
+        weekdayStats: {
+          weekday: { avg: weekdayAvg, total: 0 }, // We're only interested in the average
+          weekend: { avg: weekendAvg, total: 0 }  // Total counts less relevant for comparison
         }
-      });
-      
-      // Create final stats object
-      const stats: UsageStats = {
-        totalHits: statsResult.total_hits || 0,
-        averageHitsPerDay: statsResult.avg_hits_per_active_day || 0,
-        averageHitsPerHour: statsResult.total_hits ? (statsResult.total_hits / (24 * (statsResult.active_days || 1))) : 0,
-        averageDuration: statsResult.avg_duration_ms || 0,
-        totalDuration: statsResult.total_duration_ms || 0,
-        peakDayHits: statsResult.max_hits_in_day || 0,
-        lowestDayHits: Math.min(...hitValues),
-        mostActiveHour,
-        leastActiveHour,
-        longestHit: durationResult?.max_duration || 0,
-        shortestHit: durationResult?.min_duration || 0,
-        consistency: Number(consistencyScore.toFixed(2)),
-        weekdayStats
       };
       
-      return {
-        success: true,
-        data: stats
-      };
+      return { success: true, data: usageStats };
     } catch (error) {
-      return this.handleError(error, "getUsageStats");
+      return this.handleError(error, 'getUsageStats');
     }
   }
 
@@ -15659,6 +15955,192 @@ export class BongHitsRepository extends BaseRepository {
     hourOfDay: String(count.hourOfDay || "00"),
     count: Math.max(0, Number(count.count) || 0),
   });
+
+  /**
+   * Get the number of hits recorded on a specific date.
+   * @param date The date to check (as a Date object).
+   */
+  public async getHitsForDate(date: Date): Promise<DatabaseResponse<number>> {
+    const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+    return this.getHitCountForDateRange(startOfDay, endOfDay);
+  }
+
+  /**
+   * Gets the total hit count within a specific date range.
+   * @param startDate The start date (local).
+   * @param endDate The end date (local).
+   */
+  public async getHitCountForDateRange(startDate: Date, endDate: Date): Promise<DatabaseResponse<number>> {
+    try {
+      // Convert local Date objects to ISO strings for the filter function
+      const startDateStr = startDate.toISOString();
+      const endDateStr = endDate.toISOString();
+
+      console.log(`[BongHitsRepository] Fetching hit count for range: ${startDateStr} to ${endDateStr}`);
+
+      const { clause, params } = getDateRangeFilter(startDateStr, endDateStr);
+
+      const query = `
+        SELECT COUNT(*) as count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+      `;
+
+      console.log(`[BongHitsRepository] getHitCountForDateRange Query: ${query}, Params: ${JSON.stringify(params)}`);
+      const result = await this.db.getFirstAsync<{ count: number }>(query, params);
+
+      const count = result?.count ?? 0;
+      console.log(`[BongHitsRepository] Hits found for range: ${count}`);
+
+      return { success: true, data: count };
+    } catch (error) {
+      console.error(`[BongHitsRepository] Error getting hit count for range:`, error);
+      return this.handleError(error, "getHitCountForDateRange");
+    }
+  }
+
+  /**
+   * Gets the average hits per day within a specific date range.
+   * @param startDate The start date (local).
+   * @param endDate The end date (local).
+   */
+  public async getAverageHitsPerDayForDateRange(startDate: Date, endDate: Date): Promise<DatabaseResponse<number>> {
+    try {
+      const startDateStr = startDate.toISOString();
+      const endDateStr = endDate.toISOString();
+
+      console.log(`[BongHitsRepository] Calculating average hits for range: ${startDateStr} to ${endDateStr}`);
+
+      const { clause, params } = getDateRangeFilter(startDateStr, endDateStr);
+
+      const query = `
+        SELECT
+          COUNT(*) as total_hits,
+          COUNT(DISTINCT strftime('%Y-%m-%d', timestamp, 'utc')) as active_days_in_range
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+      `;
+
+      console.log(`[BongHitsRepository] Range Avg Query: ${query}, Params: ${JSON.stringify(params)}`);
+      const result = await this.db.getFirstAsync<{ total_hits: number; active_days_in_range: number }>(query, params);
+
+      const totalHits = result?.total_hits ?? 0;
+      const activeDays = result?.active_days_in_range ?? 0;
+
+      // Calculate duration of the range in days for averaging
+      const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const numberOfDaysInRange = Math.max(1, diffDays); // Ensure at least 1 day
+
+      // Average based on the number of days in the range
+      const average = numberOfDaysInRange > 0 ? totalHits / numberOfDaysInRange : 0;
+
+      console.log(`[BongHitsRepository] Range Hits: ${totalHits}, Days in Range: ${numberOfDaysInRange}, Average: ${average}`);
+
+      return { success: true, data: average };
+    } catch (error) {
+      console.error(`[BongHitsRepository] Error getting average hits for range:`, error);
+      return this.handleError(error, "getAverageHitsPerDayForDateRange");
+    }
+  }
+
+  /**
+   * Gets the average hits per day for the current calendar week (Sunday to Saturday).
+   */
+  public async getAverageHitsForCurrentWeek(): Promise<DatabaseResponse<number>> {
+    const now = new Date();
+    const todayDayOfWeek = now.getDay(); // 0 = Sunday
+
+    // Calculate start of the week (Sunday)
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - todayDayOfWeek);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    // Use end of *today* for the range
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // Fetch total hits for the range Sun -> Today
+    const hitsResponse = await this.getHitCountForDateRange(startOfWeek, endOfToday);
+
+    if (!hitsResponse.success) {
+      return hitsResponse; // Propagate error
+    }
+
+    const totalHits = hitsResponse.data ?? 0;
+    const daysPassedInWeek = todayDayOfWeek + 1; // 1 for Sun, ..., 7 for Sat
+    const average = daysPassedInWeek > 0 ? totalHits / daysPassedInWeek : 0;
+
+    console.log(`[BongHitsRepository] Current Week Avg Recalculated - Hits: ${totalHits}, Days Passed: ${daysPassedInWeek}, Average: ${average}`);
+    return { success: true, data: average };
+  }
+
+  /**
+   * Helper method to create empty usage stats object
+   */
+  private createEmptyUsageStats(): UsageStats {
+    return {
+      totalHits: 0,
+      averageHitsPerDay: 0,
+      averageHitsPerHour: 0,
+      averageDuration: 0,
+      totalDuration: 0,
+      peakDayHits: 0,
+      lowestDayHits: 0,
+      mostActiveHour: 0,
+      leastActiveHour: 0,
+      longestHit: 0,
+      shortestHit: 0,
+      consistency: 0,
+      weekdayStats: {
+        weekday: { total: 0, avg: 0 },
+        weekend: { total: 0, avg: 0 }
+      }
+    };
+  }
+
+  /**
+   * Calculate average hits for weekdays and weekends
+   */
+  private async calculateWeekdayWeekendAverage(startDate: string): Promise<{ weekdayAvg: number, weekendAvg: number }> {
+    try {
+      const query = `
+        WITH DayStats AS (
+          SELECT 
+            CASE WHEN strftime('%w', timestamp, 'utc') IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
+            strftime('%Y-%m-%d', timestamp, 'utc') as date,
+            COUNT(*) as hits
+          FROM ${BONG_HITS_DATABASE_NAME}
+          WHERE timestamp >= ?
+          GROUP BY day_type, date
+        )
+        SELECT 
+          day_type,
+          AVG(hits) as avg_hits
+        FROM DayStats
+        GROUP BY day_type
+      `;
+      
+      const results = await this.db.getAllAsync<{ day_type: string, avg_hits: number }>(query, [startDate]);
+      
+      let weekdayAvg = 0;
+      let weekendAvg = 0;
+      
+      results.forEach(row => {
+        if (row.day_type === 'weekday') {
+          weekdayAvg = row.avg_hits || 0;
+        } else {
+          weekendAvg = row.avg_hits || 0;
+        }
+      });
+      
+      return { weekdayAvg, weekendAvg };
+    } catch (error) {
+      console.error('[BongHitsRepository] Error calculating weekday/weekend averages:', error);
+      return { weekdayAvg: 0, weekendAvg: 0 };
+    }
+  }
 } 
 
 ================================================================================
@@ -19071,10 +19553,26 @@ export class BluetoothService {
     try {
       console.log(`[BluetoothService] Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
       
-      // Add the Alert call here, using rawTimestamp and duration
-      Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+      // Validate that the timestamp is in ISO format before proceeding
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(timestamp)) {
+        const errorMsg = `Invalid timestamp format: ${timestamp}`;
+        console.error(`[BluetoothService] ${errorMsg}`);
+        Alert.alert('Error', errorMsg);
+        return;
+      }
       
-      // Record the bong hit using the parsed timestamp
+      // Validate duration is positive
+      if (duration <= 0) {
+        const errorMsg = `Invalid duration: ${duration}`;
+        console.error(`[BluetoothService] ${errorMsg}`);
+        Alert.alert('Error', errorMsg);
+        return;
+      }
+      
+      // Add the Alert call here, using parsed timestamp and duration
+      Alert.alert(`Timestamp: ${timestamp}\n Duration: ${duration}ms`);
+      
+      // Record the bong hit using the validated timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
       console.log(`[BluetoothService] Bong hit recorded successfully.`);
     } catch (error) {
@@ -20035,19 +20533,19 @@ export const hasActiveFilters = (filters: StrainSearchFilters): boolean => {
 File: src/utils/functions.ts
 ================================================================================
 
-const monthStringToInt: { [key: string]: number } = {
-    "January": 1,
-    "February": 2,
-    "March": 3,
-    "April": 4,
-    "May": 5,
-    "June": 6,
-    "July": 7,
-    "August": 8,
-    "September": 9,
-    "October": 10,
-    "November": 11,
-    "December": 12,
+const monthStringToInt: { [key: string]: string } = {
+    "January": "01",
+    "February": "02",
+    "March": "03",
+    "April": "04",
+    "May": "05",
+    "June": "06",
+    "July": "07",
+    "August": "08",
+    "September": "09",
+    "October": "10",
+    "November": "11",
+    "December": "12",
 };
 
 /**
@@ -20076,7 +20574,7 @@ export function parseRawTimestamp(rawTimestamp: string): string {
             console.error(`Unknown month: ${monthStr}`);
             throw new Error('Unknown month');
         }
-        const month: string = String(monthNum).padStart(2, '0');
+        const month: string = monthNum;
         
         // Create a proper Date object
         const dateStr = `${year}-${month}-${day}T${time}.000Z`;
@@ -20257,98 +20755,95 @@ File: src/utils/SqlTemplates.ts
 /**
  * Get the query for usage statistics
  * @param tableName The table name to query from
- * @param daysBack Number of days to look back
- * @param startDate Optional ISO date string for the start date
- * @param endDate Optional ISO date string for the end date
  * @returns SQL query string
  */
-export function getUsageStatsQuery(tableName: string, daysBack: number, startDate?: string, endDate?: string): string {
-  // Use date range filtering if provided, otherwise use daysBack
-  const dateFilter = startDate || endDate 
-    ? getDateRangeWhereClause(startDate, endDate) 
-    : `WHERE timestamp >= date('now', '-${daysBack} days')`;
-  
+export function getUsageStatsQuery(tableName: string): string {
+  // Date filter clause will be added externally
   return `
-    WITH DailyStats AS (
-      SELECT 
-        strftime('%Y-%m-%d', timestamp) as day,
-        strftime('%w', timestamp) as weekday,
+    WITH FilteredData AS (
+      SELECT timestamp, duration_ms
+      FROM ${tableName}
+      -- DATE FILTER ADDED EXTERNALLY
+    ),
+    DailyStats AS (
+      SELECT
+        strftime('%Y-%m-%d', timestamp, 'utc') as day,
+        strftime('%w', timestamp, 'utc') as weekday,
         COUNT(*) as daily_hits,
         AVG(duration_ms) as avg_duration_per_day,
         MIN(duration_ms) as min_duration,
         MAX(duration_ms) as max_duration,
         SUM(duration_ms) as total_duration_per_day
-      FROM ${tableName}
-      ${dateFilter}
+      FROM FilteredData
       GROUP BY day
     ),
     TotalStats AS (
-      SELECT 
+      SELECT
         COUNT(*) as total_hits,
-        COUNT(DISTINCT strftime('%Y-%m-%d', timestamp)) as active_days,
+        COUNT(DISTINCT strftime('%Y-%m-%d', timestamp, 'utc')) as active_days,
         AVG(duration_ms) as overall_avg_duration,
         SUM(duration_ms) as total_duration
-      FROM ${tableName}
-      ${dateFilter}
+      FROM FilteredData
     ),
     DayOfWeekStats AS (
-      SELECT 
-        weekday, 
+      SELECT
+        weekday,
         COUNT(*) as total_hits,
         AVG(daily_hits) as avg_hits_per_day
       FROM DailyStats
       GROUP BY weekday
+    ),
+    HourlyStats AS (
+       SELECT
+         CAST(strftime('%H', timestamp, 'utc') AS INTEGER) as hour,
+         COUNT(*) as hits
+       FROM FilteredData
+       GROUP BY hour
     )
-    SELECT 
-      (SELECT total_hits FROM TotalStats) as total_hits,
-      (SELECT active_days FROM TotalStats) as active_days,
-      (SELECT CAST(total_hits AS REAL) / active_days FROM TotalStats) as avg_hits_per_active_day,
-      (SELECT CAST(total_hits AS REAL) / ${daysBack} FROM TotalStats) as avg_hits_per_day,
-      (SELECT overall_avg_duration FROM TotalStats) as avg_duration_ms,
-      (SELECT total_duration FROM TotalStats) as total_duration_ms,
-      (SELECT MAX(daily_hits) FROM DailyStats) as max_hits_in_day,
-      (SELECT MAX(avg_duration_per_day) FROM DailyStats) as max_avg_duration,
-      (SELECT MAX(total_duration_per_day) FROM DailyStats) as max_duration_in_day,
-      (SELECT weekday FROM DayOfWeekStats ORDER BY total_hits DESC LIMIT 1) as most_active_day,
-      (SELECT weekday FROM DayOfWeekStats ORDER BY total_hits ASC LIMIT 1) as least_active_day
+    SELECT
+      COALESCE((SELECT total_hits FROM TotalStats), 0) as total_hits,
+      COALESCE((SELECT active_days FROM TotalStats), 0) as active_days,
+      CASE WHEN COALESCE((SELECT active_days FROM TotalStats), 0) > 0
+           THEN CAST(COALESCE((SELECT total_hits FROM TotalStats), 0) AS REAL) / (SELECT active_days FROM TotalStats)
+           ELSE 0
+      END as avg_hits_per_active_day,
+      COALESCE((SELECT overall_avg_duration FROM TotalStats), 0) as avg_duration_ms,
+      COALESCE((SELECT total_duration FROM TotalStats), 0) as total_duration_ms,
+      COALESCE((SELECT MAX(daily_hits) FROM DailyStats), 0) as max_hits_in_day,
+      COALESCE((SELECT MIN(daily_hits) FROM DailyStats WHERE daily_hits > 0), 0) as min_hits_in_day,
+      COALESCE((SELECT MAX(max_duration) FROM DailyStats), 0) as longest_hit,
+      COALESCE((SELECT MIN(min_duration) FROM DailyStats WHERE min_duration > 0), 0) as shortest_hit,
+      COALESCE((SELECT hour FROM HourlyStats ORDER BY hits DESC LIMIT 1), -1) as most_active_hour,
+      COALESCE((SELECT hour FROM HourlyStats ORDER BY hits ASC LIMIT 1), -1) as least_active_hour
   `;
 }
 
 /**
  * Get the query for time distribution of usage
  * @param tableName The table name to query from
- * @param daysBack Number of days to look back
- * @param startDate Optional ISO date string for the start date
- * @param endDate Optional ISO date string for the end date
  * @returns SQL query string
  */
-export function getTimeDistributionQuery(tableName: string, daysBack: number, startDate?: string, endDate?: string): string {
-  // Use date range filtering if provided, otherwise use daysBack
-  const dateFilter = startDate || endDate 
-    ? getDateRangeWhereClause(startDate, endDate) 
-    : `WHERE timestamp >= date('now', '-${daysBack} days')`;
-  
+export function getTimeDistributionQuery(tableName: string): string {
+  // Date filter clause will be added externally
   return `
     WITH HourlyHits AS (
-      SELECT 
-        CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+      SELECT
+        CAST(strftime('%H', timestamp, 'utc') AS INTEGER) as hour,
         COUNT(*) as hits
       FROM ${tableName}
-      ${dateFilter}
+      -- DATE FILTER ADDED EXTERNALLY
       GROUP BY hour
     ),
     TotalHits AS (
-      SELECT SUM(hits) as total FROM HourlyHits
+      -- Use COALESCE to ensure total is not NULL if HourlyHits is empty
+      SELECT COALESCE(SUM(hits), 0) as total FROM HourlyHits
     )
     SELECT
-      CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 5 AND hour < 12) AS REAL) / 
-        (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as morning,
-      CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 12 AND hour < 17) AS REAL) / 
-        (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as afternoon,
-      CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 17 AND hour < 22) AS REAL) / 
-        (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as evening,
-      CAST((SELECT COALESCE(SUM(hits), 0) FROM HourlyHits WHERE hour >= 22 OR hour < 5) AS REAL) / 
-        (SELECT CASE WHEN total = 0 THEN 1 ELSE total END FROM TotalHits) as night
+      -- Use MAX(1, ...) to prevent division by zero
+      CAST(COALESCE((SELECT SUM(hits) FROM HourlyHits WHERE hour >= 5 AND hour < 12), 0) AS REAL) / MAX(1, (SELECT total FROM TotalHits)) as morning,
+      CAST(COALESCE((SELECT SUM(hits) FROM HourlyHits WHERE hour >= 12 AND hour < 17), 0) AS REAL) / MAX(1, (SELECT total FROM TotalHits)) as afternoon,
+      CAST(COALESCE((SELECT SUM(hits) FROM HourlyHits WHERE hour >= 17 AND hour < 22), 0) AS REAL) / MAX(1, (SELECT total FROM TotalHits)) as evening,
+      CAST(COALESCE((SELECT SUM(hits) FROM HourlyHits WHERE hour >= 22 OR hour < 5), 0) AS REAL) / MAX(1, (SELECT total FROM TotalHits)) as night
   `;
 }
 
@@ -20357,17 +20852,15 @@ export function getTimeDistributionQuery(tableName: string, daysBack: number, st
  * @param tableName The table name to query from
  * @returns SQL query string
  */
-export function getWeeklyStatsQuery(tableName: string, startDate?: string, endDate?: string): string {
-  // Add date range filtering if dates are provided
-  const dateFilter = getDateRangeWhereClause(startDate, endDate);
-  
+export function getWeeklyStatsQuery(tableName: string): string {
+  // Date filter clause will be added externally
   return `
-    SELECT 
-      strftime('%w', timestamp / 1000, 'unixepoch', 'localtime') as day_of_week,
+    SELECT
+      strftime('%w', timestamp, 'utc') as day_of_week,
       COUNT(*) as count,
       AVG(duration_ms) as avg_duration
     FROM ${tableName}
-    ${dateFilter}
+    -- DATE FILTER ADDED EXTERNALLY
     GROUP BY day_of_week
     ORDER BY day_of_week ASC
   `;
@@ -20378,16 +20871,14 @@ export function getWeeklyStatsQuery(tableName: string, startDate?: string, endDa
  * @param tableName The table name to query from
  * @returns SQL query string
  */
-export function getMonthlyStatsQuery(tableName: string, startDate?: string, endDate?: string): string {
-  // Add date range filtering if dates are provided
-  const dateFilter = getDateRangeWhereClause(startDate, endDate);
-  
+export function getMonthlyStatsQuery(tableName: string): string {
+  // Date filter clause will be added externally
   return `
-    SELECT 
-      strftime('%m', timestamp / 1000, 'unixepoch', 'localtime') as month,
+    SELECT
+      strftime('%m', timestamp, 'utc') as month,
       COUNT(*) as count
     FROM ${tableName}
-    ${dateFilter}
+    -- DATE FILTER ADDED EXTERNALLY
     GROUP BY month
     ORDER BY month ASC
   `;
@@ -20447,27 +20938,105 @@ export function buildStrainFilterQuery(
   };
 }
 
-// Helper function to create WHERE clause for date filtering
-export function getDateRangeWhereClause(startDate?: string, endDate?: string): string {
+// Helper function to create WHERE clause for date filtering using ISO strings
+export function getDateRangeFilter(startDate?: string, endDate?: string): { clause: string, params: string[] } {
   if (!startDate && !endDate) {
-    return '';
+    // No date range specified, return empty clause and params
+    return { clause: '', params: [] };
   }
-  
-  const conditions = [];
-  
+
+  const conditions: string[] = [];
+  const params: string[] = [];
+
   if (startDate) {
-    // Convert ISO string to timestamp in milliseconds
-    const startTimestamp = new Date(startDate).getTime();
-    conditions.push(`timestamp >= ${startTimestamp}`);
+    console.log(`[SqlTemplates] Adding start date condition: timestamp >= ${startDate}`);
+    conditions.push(`timestamp >= ?`);
+    params.push(startDate); // Pass the ISO string as a parameter
   }
-  
+
   if (endDate) {
-    // Convert ISO string to timestamp in milliseconds
-    const endTimestamp = new Date(endDate).getTime();
-    conditions.push(`timestamp <= ${endTimestamp}`);
+    console.log(`[SqlTemplates] Adding end date condition: timestamp <= ${endDate}`);
+    conditions.push(`timestamp <= ?`);
+    params.push(endDate); // Pass the ISO string as a parameter
   }
-  
-  return `WHERE ${conditions.join(' AND ')}`;
+
+  // Combine conditions with AND
+  const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  return { clause, params };
+} 
+
+================================================================================
+File: src/utils/timeUtils.ts
+================================================================================
+
+/**
+ * Utility functions for calculating date ranges in the local timezone.
+ */
+
+/**
+ * Gets the start and end of the current day in the local timezone.
+ * @returns { startDate: Date, endDate: Date }
+ */
+export function getTodayRangeLocal(): { startDate: Date, endDate: Date } {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0); // Start of today (local)
+  const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999); // End of today (local)
+  console.log(`[timeUtils] Today Range (Local): ${startDate.toISOString()} to ${endDate.toISOString()}`);
+  return { startDate, endDate };
+}
+
+/**
+ * Gets the start of the current week (Sunday) and the end of the current day in the local timezone.
+ * @param weekStartsOnSunday If true, week starts Sunday(0). If false, starts Monday(1). Default true.
+ * @returns { startDate: Date, endDate: Date }
+ */
+export function getCurrentWeekProgressRangeLocal(weekStartsOnSunday: boolean = true): { startDate: Date, endDate: Date } {
+  const now = new Date();
+  const currentDayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
+
+  const startDate = new Date(now);
+  const dayOffset = weekStartsOnSunday ? currentDayOfWeek : (currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1);
+  startDate.setDate(now.getDate() - dayOffset);
+  startDate.setHours(0, 0, 0, 0); // Start of the first day of the week (local)
+
+  const endDate = new Date(); // End of today (local)
+  endDate.setHours(23, 59, 59, 999);
+
+  console.log(`[timeUtils] Current Week Progress Range (Local): ${startDate.toISOString()} to ${endDate.toISOString()}`);
+  return { startDate, endDate };
+}
+
+/**
+ * Gets the start and end of the current full week (e.g., Sun-Sat) in the local timezone.
+ * @param weekStartsOnSunday If true, week starts Sunday(0). If false, starts Monday(1). Default true.
+ * @returns { startDate: Date, endDate: Date }
+ */
+export function getCurrentFullWeekRangeLocal(weekStartsOnSunday: boolean = true): { startDate: Date, endDate: Date } {
+  const { startDate: startOfWeek } = getCurrentWeekProgressRangeLocal(weekStartsOnSunday);
+  const endDate = new Date(startOfWeek);
+  endDate.setDate(startOfWeek.getDate() + 6); // Go to the end of the week (Saturday or Sunday)
+  endDate.setHours(23, 59, 59, 999);
+
+  console.log(`[timeUtils] Current Full Week Range (Local): ${startOfWeek.toISOString()} to ${endDate.toISOString()}`);
+  return { startDate: startOfWeek, endDate };
+}
+
+/**
+ * Gets the start and end for the last N days, ending today.
+ * @param days Number of days to look back.
+ * @returns { startDate: Date, endDate: Date }
+ */
+export function getLastNDaysRangeLocal(days: number): { startDate: Date, endDate: Date } {
+  const endDate = new Date(); // End of today
+  endDate.setHours(23, 59, 59, 999);
+
+  const startDate = new Date();
+  startDate.setDate(endDate.getDate() - (days - 1)); // Go back N-1 days to include today
+  startDate.setHours(0, 0, 0, 0); // Start of the first day
+
+  console.log(`[timeUtils] Last ${days} Days Range (Local): ${startDate.toISOString()} to ${endDate.toISOString()}`);
+  return { startDate, endDate };
 } 
 
 ================================================================================
@@ -20547,9 +21116,37 @@ export function validateJournalEntry(entry: JournalEntry): string | null {
  * @returns Whether the string is a valid ISO timestamp
  */
 export function isValidISOTimestamp(timestamp: string): boolean {
-  if (typeof timestamp !== 'string') return false;
-  const date = new Date(timestamp);
-  return !isNaN(date.getTime()) && date.toISOString() === timestamp;
+  try {
+    if (typeof timestamp !== 'string') {
+      console.error(`[Validators] Invalid timestamp type: ${typeof timestamp}`);
+      return false;
+    }
+    
+    // Check for ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
+    // This regex checks for the basic pattern but isn't exhaustive
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(timestamp)) {
+      console.error(`[Validators] Timestamp doesn't match ISO format: ${timestamp}`);
+      return false;
+    }
+    
+    const date = new Date(timestamp);
+    const isValid = !isNaN(date.getTime());
+    
+    // Extra validation: Check that the timestamp is truly ISO format by ensuring
+    // toISOString() produces the exact same string
+    const roundTrip = isValid && date.toISOString() === timestamp;
+    
+    if (!isValid) {
+      console.error(`[Validators] Invalid date from timestamp: ${timestamp}`);
+    } else if (!roundTrip) {
+      console.error(`[Validators] Timestamp not in canonical ISO format. Original: ${timestamp}, Parsed: ${date.toISOString()}`);
+    }
+    
+    return isValid && roundTrip;
+  } catch (error) {
+    console.error(`[Validators] Error validating timestamp: ${error}`);
+    return false;
+  }
 }
 
 /**
