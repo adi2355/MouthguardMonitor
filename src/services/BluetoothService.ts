@@ -40,16 +40,23 @@ export class BluetoothService {
 
   /**
    * Handle data received from the Bluetooth device
-   * @param timestamp ISO string timestamp
+   * @param rawTimestamp The original timestamp string from the device
+   * @param timestamp ISO string timestamp (parsed)
    * @param duration Duration in milliseconds
    */
-  private async handleReceivedData(timestamp: string, duration: number): Promise<void> {
+  private async handleReceivedData(rawTimestamp: string, timestamp: string, duration: number): Promise<void> {
     try {
-      console.log(`[BluetoothService] Recording bong hit - Timestamp: ${timestamp}, Duration: ${duration}ms`);
+      console.log(`[BluetoothService] Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
+      
+      // Add the Alert call here, using rawTimestamp and duration
+      Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
+      
+      // Record the bong hit using the parsed timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
+      console.log(`[BluetoothService] Bong hit recorded successfully.`);
     } catch (error) {
-      console.error('[BluetoothService] Error recording bong hit:', error);
-      Alert.alert('Error', 'Failed to record bong hit data');
+      console.error('[BluetoothService] Error handling received data:', error);
+      Alert.alert('Error', 'Failed to process or record received data');
     }
   }
 

@@ -14,16 +14,16 @@ type ConnectedDevice = {
 export class BluetoothHandler {
     private manager: BleManager;
     private connectedDevice: ConnectedDevice | null;
-    // Callback for when data is received
-    private onDataCallback: ((timestamp: string, duration: number) => void) | null = null;
+    // Update callback signature to include rawTimestamp
+    private onDataCallback: ((rawTimestamp: string, timestamp: string, duration: number) => void) | null = null;
 
     constructor() {
         this.manager = new BleManager();
         this.connectedDevice = null;
     }
 
-    // Set a callback function to handle received data
-    public setOnDataCallback(callback: (timestamp: string, duration: number) => void): void {
+    // Update the expected callback signature
+    public setOnDataCallback(callback: (rawTimestamp: string, timestamp: string, duration: number) => void): void {
         this.onDataCallback = callback;
     }
 
@@ -102,25 +102,31 @@ export class BluetoothHandler {
     private handleBluetoothConnection(error: BleError | null, characteristic: Characteristic | null) {
         if (error) {
           console.log("Stream error:", error);
-          return -1;
+          return; // Return void instead of -1
         } else if (!characteristic?.value) {
           console.log("No data was received");
-          return -1;
+          return; // Return void instead of -1
         }
 
         const rawData: string[] = base64.decode(characteristic.value).split(';');
+        // Ensure we handle cases where split might not produce enough parts
+        if (rawData.length < 2) {
+            console.error("Received malformed data:", rawData);
+            return;
+        }
         const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
         const duration: number = parseFloat(rawData[1])*100000; // 0.17
         const timestamp: string = parseRawTimestamp(rawTimestamp);
         
         // Instead of directly calling databaseManager, use the callback
         if (this.onDataCallback) {
-            this.onDataCallback(timestamp, duration);
+            // Pass rawTimestamp along with parsed timestamp and duration
+            this.onDataCallback(rawTimestamp, timestamp, duration);
         } else {
             console.error("No data callback set to handle bong hit data");
+            // Fallback alert if no callback is set
+            Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
         }
-        
-        Alert.alert(`Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
     }
 
     /*
