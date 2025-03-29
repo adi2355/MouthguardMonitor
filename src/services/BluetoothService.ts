@@ -6,6 +6,7 @@ import { BluetoothHandler } from "../contexts/BluetoothContext";
 import { DeviceService } from "./DeviceService";
 import { BongHitsRepository } from "../repositories/BongHitsRepository";
 import { parseRawTimestamp } from "../utils/functions";
+import { dataChangeEmitter, dbEvents } from "../utils/EventEmitter";
 
 /**
  * BluetoothService uses composition with BluetoothHandler and integrates with DeviceService
@@ -70,6 +71,10 @@ export class BluetoothService {
       // Record the bong hit using the validated timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
       console.log(`[BluetoothService] Bong hit recorded successfully.`);
+      
+      // Emit an event to notify listeners that data has changed
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED);
+      console.log(`[BluetoothService] Emitted '${dbEvents.DATA_CHANGED}' event.`);
     } catch (error) {
       console.error('[BluetoothService] Error handling received data:', error);
       Alert.alert('Error', 'Failed to process or record received data');

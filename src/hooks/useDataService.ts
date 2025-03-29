@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { databaseManager } from '@/src/DatabaseManager';
 import { DataState, ChartDataPoint, UsageStats, WeekdayStats } from '@/src/types';
+import { dataChangeEmitter, dbEvents } from '../utils/EventEmitter';
 
 const DEFAULT_STATE: DataState = {
   weeklyData: [],
@@ -157,6 +158,23 @@ export function useDataService() {
     console.log('[useDataService] Initial data load...');
     loadDataWithDateRange(defaultDateRange.startDate, defaultDateRange.endDate);
   }, [loadDataWithDateRange, defaultDateRange]); // Dependencies for ensuring it only runs when needed
+
+  // Listen for database change events
+  useEffect(() => {
+    console.log('[useDataService] Setting up database change listener');
+    
+    const handleDataChange = () => {
+      console.log('[useDataService] Database change detected, refreshing data...');
+      refreshData();
+    };
+    
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    return () => {
+      console.log('[useDataService] Cleaning up database change listener');
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, [refreshData]);
 
   return {
     ...state,
