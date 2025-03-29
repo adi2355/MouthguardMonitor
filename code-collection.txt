@@ -8622,18 +8622,132 @@ const styles = StyleSheet.create({
 File: app/screens/TestDataScreen.tsx
 ================================================================================
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getInsertStatements, COLORS, BONG_HITS_DATABASE_NAME } from '../../src/constants';
 import { DatabaseManager } from '../../src/DatabaseManager';
+import { BluetoothService } from '../../src/services/BluetoothService';
+import { BongHitsRepository } from '../../src/repositories/BongHitsRepository';
+import { DeviceService } from '../../src/services/DeviceService';
+import { StorageService } from '../../src/services/StorageService';
+import { parseRawTimestamp } from '../../src/utils/functions';
+
+// Test durations in seconds
+const TEST_DURATIONS = [
+  0.123, // 123ms
+  0.456, // 456ms
+  0.789, // 789ms
+  1.234, // 1234ms
+];
+
+// Time offsets in hours for test data (relative to current time)
+const TIME_OFFSETS = [
+  0,     // Current time
+  2,     // 2 hours ago
+  6,     // 6 hours ago
+  24,    // 1 day ago
+];
 
 export default function TestDataScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [bluetoothService, setBluetoothService] = useState<BluetoothService | null>(null);
+  const [customTimestamp, setCustomTimestamp] = useState('');
+  const [customDuration, setCustomDuration] = useState('');
+
+  // Function to generate a timestamp string based on current date with an offset
+  const getTestTimestamp = (offsetHours: number = 0): string => {
+    const now = new Date();
+    now.setHours(now.getHours() - offsetHours);
+    
+    const day = now.toLocaleString('en-US', { weekday: 'long' });
+    const month = now.toLocaleString('en-US', { month: 'long' });
+    const date = now.getDate();
+    const year = now.getFullYear();
+    const time = now.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false 
+    });
+    
+    return `${day}, ${month} ${date} ${year} ${time}`;
+  };
+
+  // Initialize the services when component mounts
+  useEffect(() => {
+    const initServices = async () => {
+      try {
+        const dbManager = DatabaseManager.getInstance();
+        await dbManager.ensureInitialized();
+        const db = await dbManager.getDatabase(BONG_HITS_DATABASE_NAME);
+        
+        // Create repositories and services with proper dependencies
+        const bongHitsRepo = new BongHitsRepository(db);
+        const storageService = new StorageService();
+        const deviceService = new DeviceService(storageService);
+        
+        // Create the BluetoothService using our repositories
+        const btService = new BluetoothService(deviceService, bongHitsRepo);
+        setBluetoothService(btService);
+        
+        console.log('[TestDataScreen] Services initialized successfully');
+      } catch (error) {
+        console.error('[TestDataScreen] Error initializing services:', error);
+        Alert.alert('Error', 'Failed to initialize services');
+      }
+    };
+    
+    initServices();
+  }, []);
+
+  // Function to directly call the handleReceivedData method of BluetoothService
+  const simulateBongHit = async (rawTimestamp: string, durationInSeconds: number) => {
+    if (!bluetoothService) {
+      Alert.alert('Error', 'BluetoothService not initialized');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setResult(null);
+      
+      // This normally happens inside BluetoothHandler and gets passed to BluetoothService
+      // We're simulating that flow here
+      console.log(`[TestDataScreen] Simulating data - Raw: ${rawTimestamp}, Duration: ${durationInSeconds}s`);
+      
+      // Parse the raw timestamp to ISO format
+      const isoTimestamp = parseRawTimestamp(rawTimestamp);
+      console.log(`[TestDataScreen] Parsed ISO timestamp: ${isoTimestamp}`);
+      
+      // Add random milliseconds to ensure uniqueness for the database
+      const date = new Date(isoTimestamp);
+      date.setMilliseconds(Math.floor(Math.random() * 1000));
+      const uniqueTimestamp = date.toISOString();
+      console.log(`[TestDataScreen] Unique ISO timestamp: ${uniqueTimestamp}`);
+      
+      // Convert duration from seconds to milliseconds
+      const durationMs = durationInSeconds * 1000;
+      
+      // Access the private handleReceivedData method through our trick
+      // @ts-ignore - We know this is private but we're accessing it for testing
+      await (bluetoothService as any).handleReceivedData(rawTimestamp, uniqueTimestamp, durationMs);
+      
+      setResult(`Successfully processed bong hit:\nRaw: ${rawTimestamp}\nISO: ${uniqueTimestamp}\nDuration: ${durationMs}ms`);
+      
+      // Force navigation back to update the UI
+      router.push('/(tabs)/mydata');
+    } catch (error) {
+      console.error('[TestDataScreen] Error simulating bong hit:', error);
+      setResult(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const insertTestTimestamps = async () => {
     setLoading(true);
@@ -8662,12 +8776,35 @@ export default function TestDataScreen() {
       
       setResult(`Successfully inserted ${result?.count || 0} test timestamps.`);
       Alert.alert('Success', `Inserted ${result?.count || 0} test timestamps into the database.`);
+      
+      // Navigate to MyData to see results
+      router.push('/(tabs)/mydata');
     } catch (error) {
       console.error('Error inserting test data:', error);
       setResult(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       Alert.alert('Error', `Failed to insert test data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCustomTestData = async () => {
+    if (!customTimestamp || !customDuration) {
+      Alert.alert('Missing Data', 'Please enter both timestamp and duration');
+      return;
+    }
+    
+    try {
+      const durationValue = parseFloat(customDuration);
+      if (isNaN(durationValue) || durationValue <= 0) {
+        Alert.alert('Invalid Duration', 'Duration must be a positive number');
+        return;
+      }
+      
+      await simulateBongHit(customTimestamp, durationValue);
+    } catch (error) {
+      console.error('[TestDataScreen] Error processing custom data:', error);
+      Alert.alert('Error', 'Failed to process custom data');
     }
   };
 
@@ -8680,28 +8817,89 @@ export default function TestDataScreen() {
         >
           <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Test Data Generator</Text>
+        <Text style={styles.headerTitle}>Bluetooth Testing Interface</Text>
       </View>
 
       <ScrollView style={styles.content}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bong Hit Timestamps</Text>
+          <Text style={styles.sectionTitle}>Simulate Bluetooth Data</Text>
           <Text style={styles.sectionDescription}>
-            Insert test timestamp data into the BongHits database. This will help test data visualization
-            and ensure the database is working correctly.
+            Send test data through the entire Bluetooth pipeline, including data processing and 
+            database storage. This simulates exactly what happens when real Bluetooth data is received.
           </Text>
           
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={insertTestTimestamps}
-            disabled={loading}
-          >
-            <Ionicons name="time-outline" size={20} color="#fff" style={styles.buttonIcon} />
-            <Text style={styles.buttonText}>
-              {loading ? 'Inserting Data...' : 'Insert Test Timestamps'}
-            </Text>
-            {loading && <ActivityIndicator color="#fff" style={{ marginLeft: 10 }} />}
-          </TouchableOpacity>
+          {/* Preset test data */}
+          <View style={styles.testDataContainer}>
+            <Text style={styles.subsectionTitle}>Preset Test Cases</Text>
+            {TIME_OFFSETS.map((offset, index) => {
+              const timestamp = getTestTimestamp(offset);
+              const duration = TEST_DURATIONS[index % TEST_DURATIONS.length];
+              const timeDesc = offset === 0 
+                ? 'Current time' 
+                : offset < 24 
+                  ? `${offset} hours ago` 
+                  : `${Math.floor(offset/24)} day${offset >= 48 ? 's' : ''} ago`;
+              
+              return (
+                <TouchableOpacity 
+                  key={index}
+                  style={styles.testDataButton}
+                  onPress={() => simulateBongHit(timestamp, duration)}
+                  disabled={loading || !bluetoothService}
+                >
+                  <Ionicons name="pulse-outline" size={18} color="#fff" style={styles.buttonIcon} />
+                  <View style={styles.testDataInfo}>
+                    <Text style={styles.testDataText}>{timeDesc}</Text>
+                    <Text style={styles.testDataSubtext}>Duration: {duration}s</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          
+          {/* Custom test data */}
+          <View style={styles.testDataContainer}>
+            <Text style={styles.subsectionTitle}>Custom Test Data</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Raw timestamp (e.g. Tuesday, March 28 2024 15:40:12)"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              value={customTimestamp}
+              onChangeText={setCustomTimestamp}
+            />
+            <TextInput
+              style={styles.textInput}
+              placeholder="Duration in seconds (e.g. 0.123)"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              keyboardType="numeric"
+              value={customDuration}
+              onChangeText={setCustomDuration}
+            />
+            <TouchableOpacity 
+              style={styles.customDataButton}
+              onPress={handleCustomTestData}
+              disabled={loading || !bluetoothService}
+            >
+              <Ionicons name="send-outline" size={18} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.buttonText}>Send Custom Data</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Database insertion */}
+          <View style={styles.testDataContainer}>
+            <Text style={styles.subsectionTitle}>Bulk Test Data</Text>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={insertTestTimestamps}
+              disabled={loading}
+            >
+              <Ionicons name="time-outline" size={20} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.buttonText}>
+                {loading ? 'Inserting Data...' : 'Insert Bulk Test Data'}
+              </Text>
+              {loading && <ActivityIndicator color="#fff" style={{ marginLeft: 10 }} />}
+            </TouchableOpacity>
+          </View>
           
           {result && (
             <View style={styles.resultContainer}>
@@ -8770,6 +8968,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 22,
   },
+  subsectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 12,
+  },
   actionButton: {
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
@@ -8797,7 +9001,52 @@ const styles = StyleSheet.create({
   resultText: {
     color: COLORS.text.primary,
     fontSize: 14,
-  }
+  },
+  testDataContainer: {
+    marginBottom: 20,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
+    padding: 16,
+  },
+  testDataButton: {
+    backgroundColor: 'rgba(0,120,255,0.6)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+  },
+  testDataInfo: {
+    flex: 1,
+  },
+  testDataText: {
+    color: COLORS.text.primary,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  testDataSubtext: {
+    color: COLORS.text.secondary,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  textInput: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    color: COLORS.text.primary,
+    fontSize: 14,
+  },
+  customDataButton: {
+    backgroundColor: '#00aa55',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
 }); 
 
 ================================================================================
@@ -14402,6 +14651,7 @@ File: src/hooks/useTimeRangeData.ts
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useDataService } from './useDataService';
 import { UsageStats, ChartDataPoint, TimeDistribution } from '@/src/types';
+import { useBongHitsRepository } from '@/src/providers/AppProvider';
 
 export type TimeRange = 'D' | 'W' | 'M' | 'Y';
 
@@ -14418,29 +14668,30 @@ interface TimeRangeData {
 // Helper function to get date range based on time range selection
 // This MUST be a pure function or memoized correctly.
 function calculateDateRangeForTimeRange(range: TimeRange): { startDate: Date, endDate: Date } {
-  const endDate = new Date(); // Base end date on current time
+  const now = new Date(); // Base end date on current time
   let startDate = new Date();
+  let endDate = new Date();
 
   switch(range) {
-    case 'D': // Last 24 hours
-      startDate.setHours(endDate.getHours() - 24);
+    case 'D': // Today only - calendar day
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0); // Start of today
+      endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999); // End of today
       break;
-    case 'W': // Last 7 days
-      // Ensure we get data for the current week precisely (Sunday to Saturday)
+    case 'W': // Week - Sunday to Saturday
       // Get the current day of the week (0 = Sunday, 6 = Saturday)
-      const dayOfWeek = endDate.getDay();
+      const dayOfWeek = now.getDay();
       // Set start date to the beginning of the current week (Sunday)
-      startDate.setDate(endDate.getDate() - dayOfWeek);
+      startDate.setDate(now.getDate() - dayOfWeek);
       startDate.setHours(0, 0, 0, 0); // Start of Sunday
       
       // Set end date to the end of this week (Saturday)
       const daysToEnd = 6 - dayOfWeek; // Days until Saturday
-      const weekEndDate = new Date(endDate);
-      weekEndDate.setDate(endDate.getDate() + daysToEnd);
+      const weekEndDate = new Date(now);
+      weekEndDate.setDate(now.getDate() + daysToEnd);
       weekEndDate.setHours(23, 59, 59, 999); // End of Saturday
       
       // Only use the calculated end date if it's in the future
-      if (weekEndDate <= endDate) {
+      if (weekEndDate <= now) {
         // We're already past Saturday, so use current time as end
         endDate.setHours(23, 59, 59, 999); // End of today
       } else {
@@ -14448,16 +14699,18 @@ function calculateDateRangeForTimeRange(range: TimeRange): { startDate: Date, en
         endDate.setTime(weekEndDate.getTime());
       }
       break;
-    case 'M': // Last 30 days
-      startDate.setDate(endDate.getDate() - 29); // Go back 29 days to include today (30 days total)
-      startDate.setHours(0, 0, 0, 0); // Start of the first day
-      endDate.setHours(23, 59, 59, 999); // End of today
+    case 'M': // Current calendar month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0); // First day of month
+      // Last day of month (0th day of next month is last day of current month)
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
       break;
     case 'Y': // Last 365 days (1 year)
+      endDate = new Date();
+      endDate.setHours(23, 59, 59, 999); // End of today
+      startDate = new Date();
       startDate.setFullYear(endDate.getFullYear() - 1);
       startDate.setDate(startDate.getDate() + 1); // Start exactly one year ago
       startDate.setHours(0, 0, 0, 0); // Start of the first day
-      endDate.setHours(23, 59, 59, 999); // End of today
       break;
   }
 
@@ -14479,12 +14732,38 @@ const DEFAULT_TIMERANGE_DATA: TimeRangeData = {
   weekendAvg: 0
 };
 
+// Helper function to calculate statistics from chart data
+function calculateStats(data: number[]): { avg: number; max: number; min: number } {
+  if (!data || data.length === 0) {
+    return { avg: 0, max: 0, min: 0 };
+  }
+
+  const sum = data.reduce((acc, value) => acc + value, 0);
+  const avg = sum / data.length;
+  const max = Math.max(...data);
+  
+  // For min, filter out zeros if other values exist
+  const nonZeroValues = data.filter(value => value > 0);
+  const min = nonZeroValues.length > 0 
+    ? Math.min(...nonZeroValues) 
+    : 0;
+
+  return {
+    avg,
+    max,
+    min
+  };
+}
+
 export function useTimeRangeData(initialRange: TimeRange = 'W') {
   // Use ref to prevent unnecessary re-renders when checking busy state
   const isFetchingRef = useRef(false);
   
   // Use the useDataService hook - get the whole object to avoid dependency issues
   const dataService = useDataService();
+  
+  // Get the BongHitsRepository instance for direct data access
+  const bongHitsRepository = useBongHitsRepository();
 
   const [timeRange, setTimeRange] = useState<TimeRange>(initialRange);
 
@@ -14502,37 +14781,42 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Function to process and format the data after it's been loaded
-  // Now takes explicit arguments rather than implicitly using closure state
   const processData = useCallback((
     stats: UsageStats,
     weekly: ChartDataPoint[],
     monthly: ChartDataPoint[],
-    range: TimeRange
+    range: TimeRange,
+    directData?: ChartDataPoint[] // New parameter for direct repository data
   ): TimeRangeData => {
     console.log(`[useTimeRangeData] Processing data for range ${range}`);
-    const averageValue = stats?.averageHitsPerDay || 0;
-    const maxValue = stats?.peakDayHits || 0;
-    const minValue = (stats?.lowestDayHits > 0 ? stats.lowestDayHits : 0) || 0;
-    const hasData = stats?.totalHits > 0;
-
+    
     let chartData: number[] = [];
     let chartLabels: string[] = [];
     let weekdayAvg = 0;
     let weekendAvg = 0;
-
+    let calculatedStats = { avg: 0, max: 0, min: 0 };
+    
     // Generate chart data based on time range
     switch(range) {
       case 'D':
-        // Placeholder - Requires actual hourly data aggregation
-        const hourLabels = Array.from({ length: 24 }, (_, i) => `${(new Date().getHours() - 23 + i + 24) % 24}:00`);
-        chartData = Array(24).fill(0);
-        chartLabels = hourLabels;
+        // Use directly fetched data if available
+        if (directData && directData.length > 0) {
+          chartData = directData.map(d => d.value);
+          chartLabels = directData.map(d => d.label);
+          calculatedStats = calculateStats(chartData);
+        } else {
+          // Fallback to placeholder if no data
+          const hourLabels = Array.from({ length: 24 }, (_, i) => `${(new Date().getHours() - 23 + i + 24) % 24}:00`);
+          chartData = Array(24).fill(0);
+          chartLabels = hourLabels;
+        }
         break;
 
       case 'W':
         if (weekly && weekly.length > 0) {
           chartData = weekly.map(d => d.value);
           chartLabels = weekly.map(d => d.label);
+          calculatedStats = calculateStats(chartData);
         } else {
           const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((_, i, arr) => arr[(new Date().getDay() - 6 + i + 7) % 7]);
           chartData = Array(7).fill(0);
@@ -14541,16 +14825,24 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
         break;
 
       case 'M':
-        // Placeholder - Requires actual daily data aggregation for the month
-        const monthLabels = Array.from({ length: 30 }, (_, i) => `${new Date(Date.now() - (29 - i) * 86400000).getDate()}`);
-        chartData = Array(30).fill(0);
-        chartLabels = monthLabels;
+        // Use directly fetched data if available
+        if (directData && directData.length > 0) {
+          chartData = directData.map(d => d.value);
+          chartLabels = directData.map(d => d.label);
+          calculatedStats = calculateStats(chartData);
+        } else {
+          // Fallback to placeholder if no data
+          const monthLabels = Array.from({ length: 30 }, (_, i) => `${new Date(Date.now() - (29 - i) * 86400000).getDate()}`);
+          chartData = Array(30).fill(0);
+          chartLabels = monthLabels;
+        }
         break;
 
       case 'Y':
         if (monthly && monthly.length > 0) {
           chartData = monthly.map(d => d.value);
           chartLabels = monthly.map(d => d.label);
+          calculatedStats = calculateStats(chartData);
         } else {
           const yearLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((_, i, arr) => arr[(new Date().getMonth() - 11 + i + 12) % 12]);
           chartData = Array(12).fill(0);
@@ -14559,6 +14851,22 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
         break;
     }
 
+    // Determine if we have data
+    const hasData = (stats?.totalHits > 0 || chartData.some(value => value > 0));
+
+    // Use global stats from dataService if available, otherwise use calculated stats
+    const averageValue = hasData && stats?.averageHitsPerDay 
+      ? stats.averageHitsPerDay 
+      : calculatedStats.avg;
+      
+    const maxValue = hasData && stats?.peakDayHits 
+      ? stats.peakDayHits
+      : calculatedStats.max;
+      
+    const minValue = hasData && stats?.lowestDayHits
+      ? stats.lowestDayHits 
+      : calculatedStats.min;
+    
     if (hasData && stats?.weekdayStats) {
       weekdayAvg = stats.weekdayStats.weekday?.avg || 0;
       weekendAvg = stats.weekdayStats.weekend?.avg || 0;
@@ -14573,11 +14881,13 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
       weekdayAvg,
       weekendAvg
     };
-  // No dependencies since all data is passed as args
   }, []);
 
+  // State to hold directly fetched data
+  const [directData, setDirectData] = useState<ChartDataPoint[] | undefined>(undefined);
+
   // Function to fetch data based on the memoized date range
-  // Now depends only on stable dates and the loadDataWithDateRange function
+  // Refactored to only fetch, not process data
   const fetchDataForCurrentRange = useCallback(async (manualRefresh = false) => {
     if (isFetchingRef.current && !manualRefresh) {
       console.log('[useTimeRangeData] Already fetching data, skipping fetch.');
@@ -14587,10 +14897,11 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
     // Use local copies of dates to ensure stability if called rapidly
     const currentStartDate = startDate;
     const currentEndDate = endDate;
+    const currentRange = timeRange; // Capture the current range
     
     // Format the date range for logging/debugging
     const formatDate = (date: Date) => date.toISOString().split('T')[0];
-    console.log(`[useTimeRangeData] ${manualRefresh ? 'Refreshing' : 'Fetching'} data for range ${timeRange} (${formatDate(currentStartDate)} to ${formatDate(currentEndDate)})`);
+    console.log(`[useTimeRangeData] ${manualRefresh ? 'Refreshing' : 'Fetching'} data for range ${currentRange} (${formatDate(currentStartDate)} to ${formatDate(currentEndDate)})`);
 
     if (manualRefresh) {
       setIsRefreshing(true);
@@ -14602,11 +14913,33 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
     isFetchingRef.current = true;
 
     try {
-      // ONLY trigger database load - don't process data here
+      let directResult: ChartDataPoint[] | undefined = undefined;
+      
+      // For day and month ranges, fetch data directly from the repository
+      if (currentRange === 'D') {
+        const hourlyResponse = await bongHitsRepository.getHourlyAveragesForDay(currentStartDate, currentEndDate);
+        if (hourlyResponse.success && hourlyResponse.data) {
+          directResult = hourlyResponse.data;
+        } else if (hourlyResponse.error) {
+          setError(hourlyResponse.error);
+        }
+      } else if (currentRange === 'M') {
+        const dailyResponse = await bongHitsRepository.getHitsByDayOfMonth(currentStartDate, currentEndDate);
+        if (dailyResponse.success && dailyResponse.data) {
+          directResult = dailyResponse.data;
+        } else if (dailyResponse.error) {
+          setError(dailyResponse.error);
+        }
+      }
+      
+      // Store directData in state for the processing effect to use
+      setDirectData(directResult);
+      
+      // Still trigger dataService load for stats and other ranges
       await dataService.loadDataWithDateRange(currentStartDate, currentEndDate, manualRefresh);
       
-      // Only handle errors from the fetch call
-      if (dataService.error) {
+      // Only handle errors from the fetch call if not already set
+      if (dataService.error && !error) {
         setError(dataService.error);
       }
     } catch (err) {
@@ -14614,57 +14947,66 @@ export function useTimeRangeData(initialRange: TimeRange = 'W') {
       setError(err instanceof Error ? err.message : "An unknown error occurred during fetch trigger");
     } finally {
       isFetchingRef.current = false;
-      // Don't reset loading/refreshing here, let the processing effect do it
+      // Don't reset loading states here - the processing effect will do that
     }
-  // Stable dependencies: only the date range and timeRange for logging
-  }, [dataService.loadDataWithDateRange, timeRange, startDate, endDate, dataService.error]);
+  }, [
+    startDate, 
+    endDate, 
+    timeRange,
+    // Only include stable method references, not the entire objects
+    bongHitsRepository.getHourlyAveragesForDay, 
+    bongHitsRepository.getHitsByDayOfMonth,
+    dataService.loadDataWithDateRange
+  ]);
 
   // Effect to *trigger* fetch when date range changes (i.e., timeRange changes)
   useEffect(() => {
-    console.log(`[useTimeRangeData] Fetch Effect: Triggering fetch for ${timeRange}`);
+    console.log(`[useTimeRangeData] Date Range Effect: Trigger fetch for ${timeRange}`);
     
-    // Add more detailed logging for debugging weekly data
-    if (timeRange === 'W') {
-      const currentDay = new Date().getDay();
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      console.log(`[useTimeRangeData] Current day is ${dayNames[currentDay]} (day ${currentDay})`);
-      console.log(`[useTimeRangeData] Week range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
-    }
+    // Add a cancel flag to prevent state updates after unmount
+    let isCancelled = false;
     
-    fetchDataForCurrentRange(false); // Initial fetch for this time range
-
-    // Cleanup function remains simple
+    // Trigger fetch
+    fetchDataForCurrentRange(false).then(() => {
+      if (isCancelled) {
+        console.log('[useTimeRangeData] Fetch completed but component unmounted, skipping updates');
+      }
+    });
+    
+    // Cleanup function
     return () => {
-      console.log('[useTimeRangeData] Cleaning up Fetch Effect');
+      isCancelled = true;
+      console.log('[useTimeRangeData] Cleanup fetch effect');
     };
-    // Depend *only* on the dates and the stable fetch function
-  }, [startDate, endDate, fetchDataForCurrentRange, timeRange]);
+  }, [fetchDataForCurrentRange]);
 
-  // SEPARATE Effect to PROCESS data when it changes in useDataService
+  // SEPARATE Effect to PROCESS data when it changes
   useEffect(() => {
     // Only process if the underlying service is NOT loading and we are not actively fetching
     if (!dataService.isLoading && !isFetchingRef.current) {
-      console.log('[useTimeRangeData] Processing Effect: Data updated from useDataService.');
+      console.log('[useTimeRangeData] Processing Effect: Handling data updated from services');
+      
       const processed = processData(
         dataService.usageStats,
         dataService.weeklyData,
         dataService.monthlyData,
-        timeRange
+        timeRange,
+        directData
       );
+      
       setData(processed);
       setError(dataService.error); // Update error state from service
       setIsLoading(false);       // Mark this hook as not loading
       setIsRefreshing(false);    // Mark this hook as not refreshing
-    } else {
-      console.log('[useTimeRangeData] Processing Effect: Skipped processing (service loading or fetch in progress)');
     }
-  // Depend on the data coming FROM useDataService and the stable process function
   }, [
+    // Dependencies for processing effect
     dataService.usageStats,
     dataService.weeklyData,
     dataService.monthlyData,
     dataService.isLoading,
     dataService.error,
+    directData,
     timeRange,
     processData
   ]);
@@ -16139,6 +16481,166 @@ export class BongHitsRepository extends BaseRepository {
     } catch (error) {
       console.error('[BongHitsRepository] Error calculating weekday/weekend averages:', error);
       return { weekdayAvg: 0, weekendAvg: 0 };
+    }
+  }
+
+  /**
+   * Gets hourly averages for a specific day, grouped into 3-hour segments for better visualization
+   * @param startDate The start date (local).
+   * @param endDate The end date (local).
+   */
+  public async getHourlyAveragesForDay(startDate: Date, endDate: Date): Promise<DatabaseResponse<ChartDataPoint[]>> {
+    try {
+      const startDateStr = startDate.toISOString();
+      const endDateStr = endDate.toISOString();
+      const { clause, params } = getDateRangeFilter(startDateStr, endDateStr);
+
+      // Group by hour of day in local time
+      const query = `
+        SELECT
+          strftime('%H', timestamp, 'localtime') AS hourOfDay, 
+          COUNT(*) AS count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+        GROUP BY hourOfDay
+        ORDER BY hourOfDay
+      `;
+      
+      console.log(`[BongHitsRepository] getHourlyAveragesForDay Query: ${query}, Params: ${JSON.stringify(params)}`);
+      const results = await this.db.getAllAsync<{hourOfDay: string, count: number}>(query, params);
+
+      // Fill missing hours with zeros and create 3-hour segments
+      const hourSegments = [
+        { label: "12-3 AM", hours: ["00", "01", "02"], value: 0 },
+        { label: "3-6 AM", hours: ["03", "04", "05"], value: 0 },
+        { label: "6-9 AM", hours: ["06", "07", "08"], value: 0 },
+        { label: "9-12 PM", hours: ["09", "10", "11"], value: 0 },
+        { label: "12-3 PM", hours: ["12", "13", "14"], value: 0 },
+        { label: "3-6 PM", hours: ["15", "16", "17"], value: 0 },
+        { label: "6-9 PM", hours: ["18", "19", "20"], value: 0 },
+        { label: "9-12 AM", hours: ["21", "22", "23"], value: 0 }
+      ];
+
+      // Map hourOfDay -> count for easy lookup
+      const hourMap = new Map<string, number>();
+      results.forEach(row => {
+        hourMap.set(row.hourOfDay, row.count);
+      });
+
+      // Aggregate hours into segments
+      hourSegments.forEach(segment => {
+        segment.hours.forEach(hour => {
+          segment.value += hourMap.get(hour) || 0;
+        });
+      });
+
+      // Convert to ChartDataPoint
+      const data: ChartDataPoint[] = hourSegments.map(segment => ({
+        label: segment.label,
+        value: segment.value
+      }));
+
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[BongHitsRepository] Error getting hourly averages for day:`, error);
+      return this.handleError(error, "getHourlyAveragesForDay");
+    }
+  }
+
+  /**
+   * Gets hits grouped by day of the month and organized into weeks
+   * @param startDate The start date (local).
+   * @param endDate The end date (local).
+   */
+  public async getHitsByDayOfMonth(startDate: Date, endDate: Date): Promise<DatabaseResponse<ChartDataPoint[]>> {
+    try {
+      const startDateStr = startDate.toISOString();
+      const endDateStr = endDate.toISOString();
+      const { clause, params } = getDateRangeFilter(startDateStr, endDateStr);
+
+      // Query to get hits by date
+      const query = `
+        SELECT
+          strftime('%Y-%m-%d', timestamp, 'localtime') as date,
+          COUNT(*) as count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+        GROUP BY date
+        ORDER BY date ASC
+      `;
+
+      console.log(`[BongHitsRepository] getHitsByDayOfMonth Query: ${query}, Params: ${JSON.stringify(params)}`);
+      const results = await this.db.getAllAsync<{ date: string; count: number }>(query, params);
+
+      // If no results, return empty array
+      if (!results || results.length === 0) {
+        return { success: true, data: [] };
+      }
+
+      // Group days into week segments
+      const firstDate = new Date(results[0].date);
+      const weekSunday = new Date(firstDate);
+      weekSunday.setDate(firstDate.getDate() - firstDate.getDay()); // Go back to the previous Sunday
+
+      // Prepare week segments
+      const weekSegments: { startDate: Date; endDate: Date; label: string; value: number }[] = [];
+      let currentWeekStart = new Date(weekSunday);
+
+      // Create segments for the weeks in the month
+      for (let i = 0; i < 5; i++) { // Max 5 weeks in a month
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(currentWeekStart.getDate() + 6); // Saturday
+
+        if (weekEnd < startDate) {
+          // Skip weeks before our date range
+          currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+          continue;
+        }
+
+        if (currentWeekStart > endDate) {
+          // Stop if we've gone beyond our date range
+          break;
+        }
+
+        const formattedStartDate = `${currentWeekStart.getDate()}`;
+        const formattedEndDate = `${weekEnd.getDate()}`;
+
+        weekSegments.push({
+          startDate: new Date(currentWeekStart),
+          endDate: new Date(weekEnd),
+          label: `${formattedStartDate}-${formattedEndDate}`,
+          value: 0
+        });
+
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+      }
+
+      // Map date string -> count for easy lookup
+      const dateMap = new Map<string, number>();
+      results.forEach(row => {
+        dateMap.set(row.date, row.count);
+      });
+
+      // Aggregate days into week segments
+      for (const segment of weekSegments) {
+        let currentDate = new Date(segment.startDate);
+        while (currentDate <= segment.endDate) {
+          const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
+          segment.value += dateMap.get(dateString) || 0;
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+
+      // Convert to ChartDataPoint
+      const data: ChartDataPoint[] = weekSegments.map(segment => ({
+        label: segment.label,
+        value: segment.value
+      }));
+
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[BongHitsRepository] Error getting hits by day of month:`, error);
+      return this.handleError(error, "getHitsByDayOfMonth");
     }
   }
 } 
@@ -20576,17 +21078,21 @@ export function parseRawTimestamp(rawTimestamp: string): string {
         }
         const month: string = monthNum;
         
-        // Create a proper Date object
-        const dateStr = `${year}-${month}-${day}T${time}.000Z`;
+        // Create a Date object from the local time
+        // This correctly parses as local time, not UTC
+        const localDate = new Date(`${year}-${month}-${day}T${time}`);
         
-        // Validate the date
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) {
-            console.error('Created invalid date:', dateStr);
+        // Check if the date is valid
+        if (isNaN(localDate.getTime())) {
+            console.error('Created invalid date:', localDate);
             throw new Error('Invalid resulting date');
         }
         
-        return date.toISOString();
+        // Convert to UTC ISO string - this will apply the proper timezone offset
+        const utcTimestamp = localDate.toISOString();
+        console.log(`[parseRawTimestamp] Local timestamp: ${localDate.toString()}, UTC: ${utcTimestamp}`);
+        
+        return utcTimestamp;
     } catch (error) {
         console.error('Error parsing timestamp:', error);
         // Fallback - create a current timestamp in ISO format

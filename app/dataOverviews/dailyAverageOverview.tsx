@@ -23,11 +23,19 @@ export default function DailyAverageOverview() {
     refreshTimeRangeData
   } = useTimeRangeData('D'); // Default to daily view
 
+  // Only show loading view for initial load, not for refreshes
   if (isLoading && !isRefreshing) return <LoadingView />;
   if (error) return <ErrorView error={error} />;
   
   // Check if there's actually any data to display
   const hasRealData = data.chartData.some(value => value > 0);
+
+  // Handle time range change without causing flicker
+  const handleTimeRangeChange = (range: 'D' | 'W' | 'M' | 'Y') => {
+    if (range !== timeRange) {
+      setTimeRange(range);
+    }
+  };
 
   return (
     <SafeAreaProvider>
@@ -92,7 +100,8 @@ export default function DailyAverageOverview() {
                   styles.timeRangeButton,
                   timeRange === range && styles.timeRangeButtonActive
                 ]}
-                onPress={() => setTimeRange(range)}
+                onPress={() => handleTimeRangeChange(range)}
+                disabled={isLoading} // Prevent multiple rapid changes
               >
                 <Text style={[
                   styles.timeRangeButtonText,
@@ -109,8 +118,17 @@ export default function DailyAverageOverview() {
 
         {/* Chart Section */}
         <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>Daily Trend</Text>
-          <View style={styles.chartContainer}>
+          <Text style={styles.sectionTitle}>
+            {timeRange === 'D' ? 'Day Trend' : 
+             timeRange === 'W' ? 'Weekly Trend' : 
+             timeRange === 'M' ? 'Monthly Trend' : 'Yearly Trend'}
+          </Text>
+          <View style={[styles.chartContainer, isRefreshing && styles.chartRefreshing]}>
+            {isRefreshing && (
+              <View style={styles.refreshingOverlay}>
+                {/* Loading indicator can be added here if needed */}
+              </View>
+            )}
             <LineChart 
               data={data.chartData}
               labels={data.chartLabels}
@@ -362,5 +380,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     padding: 20,
+  },
+  chartRefreshing: {
+    opacity: 0.7, // Reduce opacity during refresh
+    position: 'relative',
+  },
+  refreshingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    zIndex: 1,
+    borderRadius: 16,
   },
 });

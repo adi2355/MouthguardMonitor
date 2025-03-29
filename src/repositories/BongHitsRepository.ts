@@ -619,4 +619,164 @@ export class BongHitsRepository extends BaseRepository {
       return { weekdayAvg: 0, weekendAvg: 0 };
     }
   }
+
+  /**
+   * Gets hourly averages for a specific day, grouped into 3-hour segments for better visualization
+   * @param startDate The start date (local).
+   * @param endDate The end date (local).
+   */
+  public async getHourlyAveragesForDay(startDate: Date, endDate: Date): Promise<DatabaseResponse<ChartDataPoint[]>> {
+    try {
+      const startDateStr = startDate.toISOString();
+      const endDateStr = endDate.toISOString();
+      const { clause, params } = getDateRangeFilter(startDateStr, endDateStr);
+
+      // Group by hour of day in local time
+      const query = `
+        SELECT
+          strftime('%H', timestamp, 'localtime') AS hourOfDay, 
+          COUNT(*) AS count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+        GROUP BY hourOfDay
+        ORDER BY hourOfDay
+      `;
+      
+      console.log(`[BongHitsRepository] getHourlyAveragesForDay Query: ${query}, Params: ${JSON.stringify(params)}`);
+      const results = await this.db.getAllAsync<{hourOfDay: string, count: number}>(query, params);
+
+      // Fill missing hours with zeros and create 3-hour segments
+      const hourSegments = [
+        { label: "12-3 AM", hours: ["00", "01", "02"], value: 0 },
+        { label: "3-6 AM", hours: ["03", "04", "05"], value: 0 },
+        { label: "6-9 AM", hours: ["06", "07", "08"], value: 0 },
+        { label: "9-12 PM", hours: ["09", "10", "11"], value: 0 },
+        { label: "12-3 PM", hours: ["12", "13", "14"], value: 0 },
+        { label: "3-6 PM", hours: ["15", "16", "17"], value: 0 },
+        { label: "6-9 PM", hours: ["18", "19", "20"], value: 0 },
+        { label: "9-12 AM", hours: ["21", "22", "23"], value: 0 }
+      ];
+
+      // Map hourOfDay -> count for easy lookup
+      const hourMap = new Map<string, number>();
+      results.forEach(row => {
+        hourMap.set(row.hourOfDay, row.count);
+      });
+
+      // Aggregate hours into segments
+      hourSegments.forEach(segment => {
+        segment.hours.forEach(hour => {
+          segment.value += hourMap.get(hour) || 0;
+        });
+      });
+
+      // Convert to ChartDataPoint
+      const data: ChartDataPoint[] = hourSegments.map(segment => ({
+        label: segment.label,
+        value: segment.value
+      }));
+
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[BongHitsRepository] Error getting hourly averages for day:`, error);
+      return this.handleError(error, "getHourlyAveragesForDay");
+    }
+  }
+
+  /**
+   * Gets hits grouped by day of the month and organized into weeks
+   * @param startDate The start date (local).
+   * @param endDate The end date (local).
+   */
+  public async getHitsByDayOfMonth(startDate: Date, endDate: Date): Promise<DatabaseResponse<ChartDataPoint[]>> {
+    try {
+      const startDateStr = startDate.toISOString();
+      const endDateStr = endDate.toISOString();
+      const { clause, params } = getDateRangeFilter(startDateStr, endDateStr);
+
+      // Query to get hits by date
+      const query = `
+        SELECT
+          strftime('%Y-%m-%d', timestamp, 'localtime') as date,
+          COUNT(*) as count
+        FROM ${BONG_HITS_DATABASE_NAME}
+        ${clause}
+        GROUP BY date
+        ORDER BY date ASC
+      `;
+
+      console.log(`[BongHitsRepository] getHitsByDayOfMonth Query: ${query}, Params: ${JSON.stringify(params)}`);
+      const results = await this.db.getAllAsync<{ date: string; count: number }>(query, params);
+
+      // If no results, return empty array
+      if (!results || results.length === 0) {
+        return { success: true, data: [] };
+      }
+
+      // Group days into week segments
+      const firstDate = new Date(results[0].date);
+      const weekSunday = new Date(firstDate);
+      weekSunday.setDate(firstDate.getDate() - firstDate.getDay()); // Go back to the previous Sunday
+
+      // Prepare week segments
+      const weekSegments: { startDate: Date; endDate: Date; label: string; value: number }[] = [];
+      let currentWeekStart = new Date(weekSunday);
+
+      // Create segments for the weeks in the month
+      for (let i = 0; i < 5; i++) { // Max 5 weeks in a month
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(currentWeekStart.getDate() + 6); // Saturday
+
+        if (weekEnd < startDate) {
+          // Skip weeks before our date range
+          currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+          continue;
+        }
+
+        if (currentWeekStart > endDate) {
+          // Stop if we've gone beyond our date range
+          break;
+        }
+
+        const formattedStartDate = `${currentWeekStart.getDate()}`;
+        const formattedEndDate = `${weekEnd.getDate()}`;
+
+        weekSegments.push({
+          startDate: new Date(currentWeekStart),
+          endDate: new Date(weekEnd),
+          label: `${formattedStartDate}-${formattedEndDate}`,
+          value: 0
+        });
+
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+      }
+
+      // Map date string -> count for easy lookup
+      const dateMap = new Map<string, number>();
+      results.forEach(row => {
+        dateMap.set(row.date, row.count);
+      });
+
+      // Aggregate days into week segments
+      for (const segment of weekSegments) {
+        let currentDate = new Date(segment.startDate);
+        while (currentDate <= segment.endDate) {
+          const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
+          segment.value += dateMap.get(dateString) || 0;
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+
+      // Convert to ChartDataPoint
+      const data: ChartDataPoint[] = weekSegments.map(segment => ({
+        label: segment.label,
+        value: segment.value
+      }));
+
+      return { success: true, data };
+    } catch (error) {
+      console.error(`[BongHitsRepository] Error getting hits by day of month:`, error);
+      return this.handleError(error, "getHitsByDayOfMonth");
+    }
+  }
 } 

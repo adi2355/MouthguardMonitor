@@ -41,17 +41,21 @@ export function parseRawTimestamp(rawTimestamp: string): string {
         }
         const month: string = monthNum;
         
-        // Create a proper Date object
-        const dateStr = `${year}-${month}-${day}T${time}.000Z`;
+        // Create a Date object from the local time
+        // This correctly parses as local time, not UTC
+        const localDate = new Date(`${year}-${month}-${day}T${time}`);
         
-        // Validate the date
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) {
-            console.error('Created invalid date:', dateStr);
+        // Check if the date is valid
+        if (isNaN(localDate.getTime())) {
+            console.error('Created invalid date:', localDate);
             throw new Error('Invalid resulting date');
         }
         
-        return date.toISOString();
+        // Convert to UTC ISO string - this will apply the proper timezone offset
+        const utcTimestamp = localDate.toISOString();
+        console.log(`[parseRawTimestamp] Local timestamp: ${localDate.toString()}, UTC: ${utcTimestamp}`);
+        
+        return utcTimestamp;
     } catch (error) {
         console.error('Error parsing timestamp:', error);
         // Fallback - create a current timestamp in ISO format
