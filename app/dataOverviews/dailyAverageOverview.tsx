@@ -1,41 +1,56 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS } from '../../src/constants';
-import { useTimeRangeData } from '../../src/hooks/useTimeRangeData';
+import { useDailyAverageData } from '../../src/hooks/useDailyAverageData';
+import { TimeRange } from '../../src/hooks/useTimeRangeData';
 import LoadingView from '../components/shared/LoadingView';
 import ErrorView from '../components/shared/ErrorView';
 import LineChart from '../components/charts/LineChart';
 
-
-
 export default function DailyAverageOverview() {
   const router = useRouter();
-  const {
-    timeRange, 
-    setTimeRange, 
-    data, 
-    isLoading, 
-    isRefreshing,
-    error,
-    refreshTimeRangeData
-  } = useTimeRangeData('D'); // Default to daily view
+  const { daily, weekly, monthly, yearly, isLoading, error, refreshData } = useDailyAverageData();
+  const [selectedFilter, setSelectedFilter] = useState<TimeRange>('D'); // Default to daily view
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Handle refresh
+  const handleRefresh = React.useCallback(async () => {
+    setIsRefreshing(true);
+    await refreshData();
+    setIsRefreshing(false);
+  }, [refreshData]);
+
+  // Get the data for the currently selected filter
+  const currentData = useMemo(() => {
+    switch (selectedFilter) {
+      case 'D': return daily;
+      case 'W': return weekly;
+      case 'M': return monthly;
+      case 'Y': return yearly;
+      default: return null;
+    }
+  }, [selectedFilter, daily, weekly, monthly, yearly]);
 
   // Only show loading view for initial load, not for refreshes
   if (isLoading && !isRefreshing) return <LoadingView />;
-  if (error) return <ErrorView error={error} />;
   
   // Check if there's actually any data to display
-  const hasRealData = data.chartData.some(value => value > 0);
+  const hasRealData = currentData?.chartData.some(item => item.value > 0) || false;
 
-  // Handle time range change without causing flicker
-  const handleTimeRangeChange = (range: 'D' | 'W' | 'M' | 'Y') => {
-    if (range !== timeRange) {
-      setTimeRange(range);
-    }
-  };
+  // Calculate min, max, and average from the current data for display
+  const averageValue = currentData?.average || 0;
+  const chartData = currentData?.chartData || [];
+  
+  // Extract values for calculations
+  const values = chartData.map(item => item.value);
+  const maxValue = values.length > 0 ? Math.max(...values) : 0;
+  const minValue = values.length > 0 ? Math.min(...(values.filter(v => v > 0) || [1])) : 0;
+
+  // Get labels for chart
+  const chartLabels = chartData.map(item => item.label);
 
   return (
     <SafeAreaProvider>
@@ -46,7 +61,7 @@ export default function DailyAverageOverview() {
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={refreshTimeRangeData}
+            onRefresh={handleRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
             progressBackgroundColor={COLORS.cardBackground}
@@ -72,18 +87,18 @@ export default function DailyAverageOverview() {
         <View style={styles.mainStatsCard}>
           <View style={styles.averageContainer}>
             <Text style={styles.averageLabel}>Daily Average</Text>
-            <Text style={styles.averageValue}>{hasRealData ? data.averageValue.toFixed(1) : "0.0"}</Text>
+            <Text style={styles.averageValue}>{hasRealData ? averageValue.toFixed(1) : "0.0"}</Text>
             <Text style={styles.averageUnit}>hits per day</Text>
           </View>
           
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{hasRealData ? data.maxValue : 0}</Text>
+              <Text style={styles.statValue}>{hasRealData ? maxValue : 0}</Text>
               <Text style={styles.statLabel}>Max</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{hasRealData ? data.minValue : 0}</Text>
+              <Text style={styles.statValue}>{hasRealData ? minValue : 0}</Text>
               <Text style={styles.statLabel}>Min</Text>
             </View>
           </View>
@@ -98,14 +113,13 @@ export default function DailyAverageOverview() {
                 key={range}
                 style={[
                   styles.timeRangeButton,
-                  timeRange === range && styles.timeRangeButtonActive
+                  selectedFilter === range && styles.timeRangeButtonActive
                 ]}
-                onPress={() => handleTimeRangeChange(range)}
-                disabled={isLoading} // Prevent multiple rapid changes
+                onPress={() => setSelectedFilter(range)}
               >
                 <Text style={[
                   styles.timeRangeButtonText,
-                  timeRange === range && styles.timeRangeButtonTextActive
+                  selectedFilter === range && styles.timeRangeButtonTextActive
                 ]}>
                   {range === 'D' ? 'Day' : 
                    range === 'W' ? 'Week' : 
@@ -119,22 +133,28 @@ export default function DailyAverageOverview() {
         {/* Chart Section */}
         <View style={styles.chartSection}>
           <Text style={styles.sectionTitle}>
-            {timeRange === 'D' ? 'Day Trend' : 
-             timeRange === 'W' ? 'Weekly Trend' : 
-             timeRange === 'M' ? 'Monthly Trend' : 'Yearly Trend'}
+            {selectedFilter === 'D' ? 'Day Trend' : 
+             selectedFilter === 'W' ? 'Weekly Trend' : 
+             selectedFilter === 'M' ? 'Monthly Trend' : 'Yearly Trend'}
           </Text>
           <View style={[styles.chartContainer, isRefreshing && styles.chartRefreshing]}>
             {isRefreshing && (
               <View style={styles.refreshingOverlay}>
-                {/* Loading indicator can be added here if needed */}
+                <ActivityIndicator color={COLORS.primary} />
               </View>
             )}
-            <LineChart 
-              data={data.chartData}
-              labels={data.chartLabels}
-              color={COLORS.primary}
-              alwaysShowZero={true}
-            />
+            {!currentData && !isRefreshing ? (
+              <View style={styles.noDataContainer}>
+                <Text style={styles.noDataText}>No data available for this time range</Text>
+              </View>
+            ) : (
+              <LineChart 
+                data={values}
+                labels={chartLabels}
+                color={COLORS.primary}
+                alwaysShowZero={true}
+              />
+            )}
           </View>
         </View>
 
@@ -154,7 +174,7 @@ export default function DailyAverageOverview() {
               <Text style={styles.insightTitle}>Usage Pattern</Text>
               <Text style={styles.insightText}>
                 {hasRealData ? (
-                  data.averageValue > 10 
+                  averageValue > 10 
                     ? "Your daily usage is above average. Consider setting daily limits."
                     : "Your daily usage is within a moderate range."
                 ) : (
@@ -176,7 +196,7 @@ export default function DailyAverageOverview() {
               <Text style={styles.insightTitle}>Consistency</Text>
               <Text style={styles.insightText}>
                 {hasRealData ? (
-                  data.maxValue / (data.minValue || 1) > 3
+                  maxValue / (minValue || 1) > 3
                     ? "Your usage varies significantly day to day."
                     : "Your usage is relatively consistent throughout the week."
                 ) : (
@@ -327,6 +347,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 3,
+    minHeight: 200,
+  },
+  chartRefreshing: {
+    opacity: 0.7,
+  },
+  refreshingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  noDataContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 200,
+  },
+  noDataText: {
+    color: COLORS.text.tertiary,
+    fontSize: 14,
   },
   analysisSection: {
     paddingHorizontal: 16,
@@ -367,32 +410,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text.secondary,
     lineHeight: 20,
-  },
-  emptyChartContainer: {
-    height: 220,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  emptyChartText: {
-    color: COLORS.text.secondary,
-    fontSize: 16,
-    textAlign: 'center',
-    padding: 20,
-  },
-  chartRefreshing: {
-    opacity: 0.7, // Reduce opacity during refresh
-    position: 'relative',
-  },
-  refreshingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    zIndex: 1,
-    borderRadius: 16,
   },
 });
