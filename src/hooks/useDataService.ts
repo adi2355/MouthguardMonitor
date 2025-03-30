@@ -150,8 +150,12 @@ export function useDataService() {
 
   // Function for manual refresh
   const refreshData = useCallback(() => {
-    return loadDataWithDateRange(defaultDateRange.startDate, defaultDateRange.endDate, true);
-  }, [loadDataWithDateRange, defaultDateRange]);
+    // Calculate the current end date *every time* refresh is called
+    const currentEndDate = new Date();
+    console.log(`[useDataService] Refresh triggered. Using startDate: ${defaultDateRange.startDate.toISOString()}, endDate: ${currentEndDate.toISOString()}`);
+    // Use the original start date but the fresh end date
+    return loadDataWithDateRange(defaultDateRange.startDate, currentEndDate, true);
+  }, [loadDataWithDateRange, defaultDateRange.startDate]); // Only depend on startDate from defaultRange
 
   // Initial data load - only run once on mount
   useEffect(() => {

@@ -30,10 +30,9 @@ File: app.json
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.BLUETOOTH",
-        "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_CONNECT"
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.anonymous.CanovaReactNativeApp"
     },
@@ -905,7 +904,7 @@ export default function HomeScreen() {
             {/* Current Week Average Card */}
             <View style={styles.statCardLarge}>
               <Text style={styles.statLabelLarge}>Avg Hits/Day (This Week)</Text>
-              <Text style={styles.statValueLarge}>{currentWeekAverage.toFixed(1)}</Text>
+              <Text style={styles.statValueLarge}>{Math.round(currentWeekAverage)}</Text>
             </View>
             
             {stats && (
@@ -1587,7 +1586,7 @@ export default memo(function MyData() {
             ) : (
               <WeeklyUsageBanner
                 weeklyData={weeklyData}
-                average={currentWeekAverage} // Use current week average from useCurrentWeekData
+                average={Math.round(currentWeekAverage)}
                 percentageChange={percentageChange}
                 averageLabel="Avg Hits/Day (This Week)"
                 onPress={() => handleNavigation("WEEKLY_AVERAGE")}
@@ -1611,7 +1610,14 @@ export default memo(function MyData() {
           </Section>
 
           <Section title="Detailed Statistics">
-            <StatsOverviewCard stats={usageStats} />
+            <StatsOverviewCard stats={{
+              ...usageStats,
+              averageHitsPerDay: Math.round(usageStats.averageHitsPerDay),
+              weekdayStats: {
+                weekday: { ...usageStats.weekdayStats.weekday, avg: Math.round(usageStats.weekdayStats.weekday.avg) },
+                weekend: { ...usageStats.weekdayStats.weekend, avg: Math.round(usageStats.weekdayStats.weekend.avg) }
+              }
+            }} />
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
 
@@ -5968,7 +5974,7 @@ const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
               <View style={styles.statRow}>
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Daily Average</Text>
-                  <Text style={styles.statValue}>{stats.averageHitsPerDay.toFixed(1)}</Text>
+                  <Text style={styles.statValue}>{stats.averageHitsPerDay}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
@@ -5978,7 +5984,7 @@ const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Total Hits</Text>
-                  <Text style={styles.statValue}>{stats.totalHits}</Text>
+                  <Text style={styles.statValue}>{stats.totalHits ?? 0}</Text>
                 </View>
               </View>
             </LinearGradient>
@@ -6059,14 +6065,14 @@ const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Weekday Avg</Text>
                   <Text style={styles.statValue}>
-                    {stats.weekdayStats.weekday.avg.toFixed(1)}
+                    {stats.weekdayStats.weekday.avg}
                   </Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Weekend Avg</Text>
                   <Text style={styles.statValue}>
-                    {stats.weekdayStats.weekend.avg.toFixed(1)}
+                    {stats.weekdayStats.weekend.avg}
                   </Text>
                 </View>
                 <View style={styles.statDivider} />
