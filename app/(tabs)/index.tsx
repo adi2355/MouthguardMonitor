@@ -235,7 +235,7 @@ export default function HomeScreen() {
             {/* Current Week Average Card */}
             <View style={styles.statCardLarge}>
               <Text style={styles.statLabelLarge}>Avg Hits/Day (This Week)</Text>
-              <Text style={styles.statValueLarge}>{currentWeekAverage.toFixed(1)}</Text>
+              <Text style={styles.statValueLarge}>{Math.round(currentWeekAverage)}</Text>
             </View>
             
             {stats && (

@@ -95,7 +95,7 @@ const WeeklyUsageBanner: React.FC<WeeklyUsageBannerProps> = ({
           >
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>{averageLabel}</Text>
-              <Text style={styles.statValue}>{average.toFixed(1)}</Text>
+              <Text style={styles.statValue}>{average}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>

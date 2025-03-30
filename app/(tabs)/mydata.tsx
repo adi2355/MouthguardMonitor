@@ -12,6 +12,7 @@ import { BongHit, ChartDataPoint } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { dataChangeEmitter, dbEvents } from '../../src/utils/EventEmitter';
 
 // Import components from their new structure
 import LoadingView from '../components/shared/LoadingView';
@@ -68,6 +69,7 @@ export default memo(function MyData() {
   });
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   const { stats: achievementStats, newlyUnlocked, clearNewlyUnlocked } = useAchievements();
+  const [refreshKey, setRefreshKey] = useState(0); // Add refreshKey state
   
   // Note: In a real implementation, this would be based on user selection
   const [currentTimeRange, setCurrentTimeRange] = useState<'D' | 'W' | 'M' | 'Y'>('D'); // Default to daily view
@@ -114,6 +116,22 @@ export default memo(function MyData() {
     
     fetchBongHitData();
   }, [dataServiceRefreshing]); // Re-fetch when refreshing
+
+  // Listen specifically for data changes to force a re-render if needed
+  useEffect(() => {
+    const handleDataChange = () => {
+      console.log('[MyData] Received data change event, forcing re-render key update.');
+      // We still rely on useDataService to fetch the data via its own listener,
+      // but we increment this key to ensure MyData re-renders.
+      setRefreshKey(prevKey => prevKey + 1);
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, []); // Empty dependency array means this effect runs once on mount
 
   const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
@@ -254,7 +272,7 @@ export default memo(function MyData() {
             ) : (
               <WeeklyUsageBanner
                 weeklyData={weeklyData}
-                average={currentWeekAverage} // Use current week average from useCurrentWeekData
+                average={Math.round(currentWeekAverage)}
                 percentageChange={percentageChange}
                 averageLabel="Avg Hits/Day (This Week)"
                 onPress={() => handleNavigation("WEEKLY_AVERAGE")}
@@ -278,7 +296,14 @@ export default memo(function MyData() {
           </Section>
 
           <Section title="Detailed Statistics">
-            <StatsOverviewCard stats={usageStats} />
+            <StatsOverviewCard stats={{
+              ...usageStats,
+              averageHitsPerDay: Math.round(usageStats.averageHitsPerDay),
+              weekdayStats: {
+                weekday: { ...usageStats.weekdayStats.weekday, avg: Math.round(usageStats.weekdayStats.weekday.avg) },
+                weekend: { ...usageStats.weekdayStats.weekend, avg: Math.round(usageStats.weekdayStats.weekend.avg) }
+              }
+            }} />
             <TimeDistributionCard timeData={timeDistribution} />
           </Section>
 

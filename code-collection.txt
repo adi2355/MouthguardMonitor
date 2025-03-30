@@ -1327,6 +1327,7 @@ import { BongHit, ChartDataPoint } from '../../src/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { dataChangeEmitter, dbEvents } from '../../src/utils/EventEmitter';
 
 // Import components from their new structure
 import LoadingView from '../components/shared/LoadingView';
@@ -1383,6 +1384,7 @@ export default memo(function MyData() {
   });
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   const { stats: achievementStats, newlyUnlocked, clearNewlyUnlocked } = useAchievements();
+  const [refreshKey, setRefreshKey] = useState(0); // Add refreshKey state
   
   // Note: In a real implementation, this would be based on user selection
   const [currentTimeRange, setCurrentTimeRange] = useState<'D' | 'W' | 'M' | 'Y'>('D'); // Default to daily view
@@ -1429,6 +1431,22 @@ export default memo(function MyData() {
     
     fetchBongHitData();
   }, [dataServiceRefreshing]); // Re-fetch when refreshing
+
+  // Listen specifically for data changes to force a re-render if needed
+  useEffect(() => {
+    const handleDataChange = () => {
+      console.log('[MyData] Received data change event, forcing re-render key update.');
+      // We still rely on useDataService to fetch the data via its own listener,
+      // but we increment this key to ensure MyData re-renders.
+      setRefreshKey(prevKey => prevKey + 1);
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, []); // Empty dependency array means this effect runs once on mount
 
   const handleNavigation = useCallback((route: keyof typeof ROUTES) => {
     router.push(ROUTES[route] as any);
@@ -14442,6 +14460,7 @@ File: src/hooks/useDataService.ts
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { databaseManager } from '@/src/DatabaseManager';
 import { DataState, ChartDataPoint, UsageStats, WeekdayStats } from '@/src/types';
+import { dataChangeEmitter, dbEvents } from '../utils/EventEmitter';
 
 const DEFAULT_STATE: DataState = {
   weeklyData: [],
@@ -14598,6 +14617,23 @@ export function useDataService() {
     console.log('[useDataService] Initial data load...');
     loadDataWithDateRange(defaultDateRange.startDate, defaultDateRange.endDate);
   }, [loadDataWithDateRange, defaultDateRange]); // Dependencies for ensuring it only runs when needed
+
+  // Listen for database change events
+  useEffect(() => {
+    console.log('[useDataService] Setting up database change listener');
+    
+    const handleDataChange = () => {
+      console.log('[useDataService] Database change detected, refreshing data...');
+      refreshData();
+    };
+    
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    return () => {
+      console.log('[useDataService] Cleaning up database change listener');
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, [refreshData]);
 
   return {
     ...state,
@@ -20151,6 +20187,7 @@ import { BluetoothHandler } from "../contexts/BluetoothContext";
 import { DeviceService } from "./DeviceService";
 import { BongHitsRepository } from "../repositories/BongHitsRepository";
 import { parseRawTimestamp } from "../utils/functions";
+import { dataChangeEmitter, dbEvents } from "../utils/EventEmitter";
 
 /**
  * BluetoothService uses composition with BluetoothHandler and integrates with DeviceService
@@ -20215,6 +20252,10 @@ export class BluetoothService {
       // Record the bong hit using the validated timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
       console.log(`[BluetoothService] Bong hit recorded successfully.`);
+      
+      // Emit an event to notify listeners that data has changed
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED);
+      console.log(`[BluetoothService] Emitted '${dbEvents.DATA_CHANGED}' event.`);
     } catch (error) {
       console.error('[BluetoothService] Error handling received data:', error);
       Alert.alert('Error', 'Failed to process or record received data');
@@ -21152,6 +21193,63 @@ export const LAYOUT_ANIMATION_CONFIG = {
   mass: 0.3,
   stiffness: 100
 } as const; 
+
+================================================================================
+File: src/utils/EventEmitter.ts
+================================================================================
+
+/**
+ * Simple event emitter for communicating between services and hooks
+ */
+export class EventEmitter {
+  private listeners: Record<string, Function[]> = {};
+
+  /**
+   * Add event listener
+   * @param event Event name
+   * @param callback Function to call when event is emitted
+   */
+  on(event: string, callback: Function) {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
+    this.listeners[event].push(callback);
+  }
+
+  /**
+   * Remove event listener
+   * @param event Event name
+   * @param callback Function to remove
+   */
+  off(event: string, callback: Function) {
+    if (!this.listeners[event]) return;
+    this.listeners[event] = this.listeners[event].filter(cb => cb !== callback);
+  }
+
+  /**
+   * Emit event to all listeners
+   * @param event Event name
+   * @param args Arguments to pass to listeners
+   */
+  emit(event: string, ...args: any[]) {
+    if (!this.listeners[event]) return;
+    this.listeners[event].forEach(callback => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error(`[EventEmitter] Error in event listener for ${event}:`, error);
+      }
+    });
+  }
+}
+
+// Create and export singleton instance
+export const dataChangeEmitter = new EventEmitter();
+
+// Define common event names
+export const dbEvents = {
+  DATA_CHANGED: 'dataChanged'
+}; 
 
 ================================================================================
 File: src/utils/filters.ts

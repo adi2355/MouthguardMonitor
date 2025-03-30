@@ -87,7 +87,7 @@ const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
               <View style={styles.statRow}>
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Daily Average</Text>
-                  <Text style={styles.statValue}>{stats.averageHitsPerDay.toFixed(1)}</Text>
+                  <Text style={styles.statValue}>{stats.averageHitsPerDay}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
@@ -97,7 +97,7 @@ const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Total Hits</Text>
-                  <Text style={styles.statValue}>{stats.totalHits}</Text>
+                  <Text style={styles.statValue}>{stats.totalHits ?? 0}</Text>
                 </View>
               </View>
             </LinearGradient>
@@ -178,14 +178,14 @@ const StatsOverviewCard: React.FC<StatsOverviewCardProps> = ({ stats }) => {
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Weekday Avg</Text>
                   <Text style={styles.statValue}>
-                    {stats.weekdayStats.weekday.avg.toFixed(1)}
+                    {stats.weekdayStats.weekday.avg}
                   </Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statItem}>
                   <Text style={styles.statLabel}>Weekend Avg</Text>
                   <Text style={styles.statValue}>
-                    {stats.weekdayStats.weekend.avg.toFixed(1)}
+                    {stats.weekdayStats.weekend.avg}
                   </Text>
                 </View>
                 <View style={styles.statDivider} />
