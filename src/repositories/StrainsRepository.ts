@@ -30,41 +30,51 @@ export class StrainsRepository extends BaseRepository {
         
         // Use a transaction for better performance and atomicity
         await this.executeTransaction(async () => {
-          for (const strain of SAMPLE_STRAINS) {
+          console.log('[StrainsRepository] Starting strain insertion transaction...');
+          for (const [index, strain] of SAMPLE_STRAINS.entries()) {
             // Validate strain data before inserting
             const validationError = validateStrain(strain);
             if (validationError) {
-              console.warn(`[StrainsRepository] Skipping invalid strain: ${validationError}`, strain);
+              console.warn(`[StrainsRepository] Skipping invalid strain (${index + 1}): ${validationError}`, strain.name);
               continue;
             }
-            
-            await this.db.runAsync(
-              `INSERT INTO ${STRAINS_DATABASE_NAME} (
-                name, overview, genetic_type, lineage, thc_range, 
-                cbd_level, dominant_terpenes, qualitative_insights, 
-                effects, negatives, uses, thc_rating, user_rating, combined_rating
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                strain.name,
-                strain.overview,
-                strain.genetic_type,
-                strain.lineage,
-                strain.thc_range,
-                strain.cbd_level,
-                strain.dominant_terpenes,
-                strain.qualitative_insights,
-                strain.effects,
-                strain.negatives,
-                strain.uses,
-                strain.thc_rating,
-                strain.user_rating,
-                strain.combined_rating
-              ]
-            );
+
+            try {
+              await this.db.runAsync(
+                `INSERT INTO ${STRAINS_DATABASE_NAME} (
+                  name, overview, genetic_type, lineage, thc_range, 
+                  cbd_level, dominant_terpenes, qualitative_insights, 
+                  effects, negatives, uses, thc_rating, user_rating, combined_rating
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO NOTHING`,
+                [
+                  strain.name,
+                  strain.overview,
+                  strain.genetic_type,
+                  strain.lineage,
+                  strain.thc_range,
+                  strain.cbd_level,
+                  strain.dominant_terpenes,
+                  strain.qualitative_insights,
+                  strain.effects,
+                  strain.negatives,
+                  strain.uses,
+                  strain.thc_rating,
+                  strain.user_rating,
+                  strain.combined_rating
+                ]
+              );
+              // Log progress inside the loop
+              console.log(`[StrainsRepository] Inserted/Skipped strain ${index + 1}/${SAMPLE_STRAINS.length}: ${strain.name}`);
+            } catch (insertError) {
+              console.error(`[StrainsRepository] Error inserting strain ${index + 1} (${strain.name}):`, insertError);
+              throw insertError; // Re-throw to fail the transaction
+            }
           }
+          console.log('[StrainsRepository] Finished strain insertion transaction loop.');
         });
         
-        console.log(`[StrainsRepository] Inserted ${SAMPLE_STRAINS.length} initial strains.`);
+        console.log(`[StrainsRepository] Strain insertion transaction completed.`);
       } else {
         console.log(`[StrainsRepository] Strains table already contains ${count} records.`);
       }

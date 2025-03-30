@@ -13,7 +13,10 @@
       "bundleIdentifier": "com.anonymous.CanovaReactNativeApp",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "This app requires Bluetooth access to connect to devices.",
-        "NSBluetoothPeripheralUsageDescription": "This app requires Bluetooth access to communicate with nearby devices."
+        "NSBluetoothPeripheralUsageDescription": "This app requires Bluetooth access to communicate with nearby devices.",
+        "UIBackgroundModes": [
+          "bluetooth-central"
+        ]
       }
     },
     "android": {

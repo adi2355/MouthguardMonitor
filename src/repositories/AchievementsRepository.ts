@@ -35,25 +35,33 @@ export class AchievementsRepository extends BaseRepository {
         
         // Use a transaction for better performance and atomicity
         await this.executeTransaction(async () => {
-          for (const achievement of ACHIEVEMENTS) {
-            await this.db.runAsync(
-              `INSERT INTO achievements (
-                id, category, name, unlock_condition, notes, icon, complexity
-              ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [
-                achievement.id,
-                achievement.category,
-                achievement.name,
-                achievement.unlockCondition,
-                achievement.notes || null,
-                achievement.icon || null,
-                achievement.complexity || 1
-              ]
-            );
+          console.log('[AchievementsRepository] Starting achievement definition seeding transaction...');
+          for (const [index, achievement] of ACHIEVEMENTS.entries()) {
+            try {
+              await this.db.runAsync(
+                `INSERT INTO achievements (
+                  id, category, name, unlock_condition, notes, icon, complexity
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING`,
+                [
+                  achievement.id,
+                  achievement.category,
+                  achievement.name,
+                  achievement.unlockCondition,
+                  achievement.notes || null,
+                  achievement.icon || null,
+                  achievement.complexity || 1
+                ]
+              );
+              console.log(`[AchievementsRepository] Seeded achievement ${index + 1}/${ACHIEVEMENTS.length}: ${achievement.name}`);
+            } catch (insertError) {
+              console.error(`[AchievementsRepository] Error seeding achievement ${index + 1} (${achievement.name}):`, insertError);
+              throw insertError;
+            }
           }
+          console.log('[AchievementsRepository] Finished achievement seeding loop.');
         });
-        
-        console.log(`[AchievementsRepository] Seeded ${ACHIEVEMENTS.length} achievements.`);
+        console.log(`[AchievementsRepository] Achievement seeding transaction completed.`);
       } else {
         console.log(`[AchievementsRepository] Achievements table already contains ${count} records.`);
       }
@@ -325,6 +333,22 @@ export class AchievementsRepository extends BaseRepository {
     } catch (error) {
       console.error('[AchievementsRepository] Error calculating strain progress:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Check if achievements exist in the database
+   * @returns Boolean indicating if any achievements exist
+   */
+  public async achievementsExist(): Promise<boolean> {
+    try {
+      const result = await this.db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM achievements`
+      );
+      return (result?.count ?? 0) > 0;
+    } catch (error) {
+      console.error('[AchievementsRepository] Error checking if achievements exist:', error);
+      return false; // Assume they don't exist on error
     }
   }
 } 

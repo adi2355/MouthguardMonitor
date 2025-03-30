@@ -23,17 +23,47 @@ export class BaseRepository {
    */
   protected async executeTransaction<T>(operations: () => Promise<T>): Promise<T> {
     try {
+      console.log('[Transaction] Beginning transaction...');
       await this.db.execAsync('BEGIN TRANSACTION');
+      console.log('[Transaction] Transaction started, executing operations...');
+      
       const result = await operations();
+      
+      console.log('[Transaction] Operations completed successfully, committing transaction...');
       await this.db.execAsync('COMMIT');
+      console.log('[Transaction] Transaction committed.');
       return result;
     } catch (error) {
       console.error('[Transaction] Error during transaction, rolling back:', error);
+      
+      // Try to get more specific error info
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error('[Transaction] Error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        });
+      } else {
+        console.error('[Transaction] Non-Error object thrown:', error);
+      }
+      
       try {
+        console.log('[Transaction] Attempting to roll back transaction...');
         await this.db.execAsync('ROLLBACK');
+        console.log('[Transaction] Transaction rolled back successfully.');
       } catch (rollbackError) {
         console.error('[Transaction] Error rolling back transaction:', rollbackError);
+        if (rollbackError instanceof Error) {
+          console.error('[Transaction] Rollback error details:', {
+            message: rollbackError.message,
+            name: rollbackError.name,
+            stack: rollbackError.stack
+          });
+        }
       }
+      
       throw error;
     }
   }

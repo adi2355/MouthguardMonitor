@@ -1,4 +1,4 @@
-import { Alert, PermissionsAndroid, Platform } from "react-native";
+import { Alert, PermissionsAndroid, Platform, AppState } from "react-native";
 import * as ExpoDevice from "expo-device";
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 import base64 from "react-native-base64";
@@ -47,13 +47,16 @@ export class BluetoothService {
    */
   private async handleReceivedData(rawTimestamp: string, timestamp: string, duration: number): Promise<void> {
     try {
-      console.log(`[BluetoothService] Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
+      console.log(`[BluetoothService] BG Received data - Raw: ${rawTimestamp}, Parsed: ${timestamp}, Duration: ${duration}ms`);
       
       // Validate that the timestamp is in ISO format before proceeding
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(timestamp)) {
         const errorMsg = `Invalid timestamp format: ${timestamp}`;
         console.error(`[BluetoothService] ${errorMsg}`);
-        Alert.alert('Error', errorMsg);
+        // Don't show alert in background mode
+        if (Platform.OS === 'ios' && AppState.currentState === 'active') {
+          Alert.alert('Error', errorMsg);
+        }
         return;
       }
       
@@ -61,23 +64,32 @@ export class BluetoothService {
       if (duration <= 0) {
         const errorMsg = `Invalid duration: ${duration}`;
         console.error(`[BluetoothService] ${errorMsg}`);
-        Alert.alert('Error', errorMsg);
+        // Don't show alert in background mode
+        if (Platform.OS === 'ios' && AppState.currentState === 'active') {
+          Alert.alert('Error', errorMsg);
+        }
         return;
       }
       
-      // Add the Alert call here, using parsed timestamp and duration
-      Alert.alert(`Timestamp: ${timestamp}\n Duration: ${duration}ms`);
+      // Only show alert when app is in foreground
+      if (Platform.OS === 'ios' && AppState.currentState === 'active') {
+        Alert.alert(`Timestamp: ${timestamp}\n Duration: ${duration}ms`);
+      }
       
       // Record the bong hit using the validated timestamp
       await this.bongHitsRepository.recordBongHit(timestamp, duration);
-      console.log(`[BluetoothService] Bong hit recorded successfully.`);
+      console.log(`[BluetoothService] BG Bong hit recorded successfully.`);
       
       // Emit an event to notify listeners that data has changed
       dataChangeEmitter.emit(dbEvents.DATA_CHANGED);
-      console.log(`[BluetoothService] Emitted '${dbEvents.DATA_CHANGED}' event.`);
+      console.log(`[BluetoothService] BG Emitted '${dbEvents.DATA_CHANGED}' event.`);
     } catch (error) {
-      console.error('[BluetoothService] Error handling received data:', error);
-      Alert.alert('Error', 'Failed to process or record received data');
+      console.error('[BluetoothService] BG Error handling received data:', error);
+      
+      // Only show alert when app is in foreground
+      if (Platform.OS === 'ios' && AppState.currentState === 'active') {
+        Alert.alert('Error', 'Failed to process or record received data');
+      }
     }
   }
 

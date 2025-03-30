@@ -5,16 +5,42 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  */
 export class StorageService {
   /**
-   * Store a value in AsyncStorage
+   * Store a value in AsyncStorage with retry logic
    * @param key Storage key
    * @param value Value to store (will be JSON stringified)
+   * @param retries Number of retries if operation fails
    */
-  public async setValue<T>(key: string, value: T): Promise<void> {
+  public async setValue<T>(key: string, value: T, retries: number = 3): Promise<void> {
     try {
       const jsonValue = JSON.stringify(value);
+      console.log(`[StorageService] Attempting to set key: '${key}' with value: ${jsonValue}`);
       await AsyncStorage.setItem(key, jsonValue);
+      
+      // Verify the value was actually set
+      const verifyValue = await AsyncStorage.getItem(key);
+      if (verifyValue === null) {
+        console.warn(`[StorageService] Verification failed for key: '${key}' - value was not persisted!`);
+        if (retries > 0) {
+          console.log(`[StorageService] Retrying set operation for key: '${key}', ${retries} attempts left`);
+          // Add a small delay before retry
+          await new Promise(resolve => setTimeout(resolve, 100));
+          return this.setValue(key, value, retries - 1);
+        } else {
+          throw new Error(`Failed to persist value for key: '${key}' after multiple attempts`);
+        }
+      }
+      
+      console.log(`[StorageService] Successfully set and verified key: '${key}'`);
     } catch (error) {
-      console.error(`[StorageService] Error setting value for key ${key}:`, error);
+      console.error(`[StorageService] Error setting value for key '${key}':`, error);
+      
+      if (retries > 0) {
+        console.log(`[StorageService] Retrying set operation for key: '${key}', ${retries} attempts left`);
+        // Add a small delay before retry
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return this.setValue(key, value, retries - 1);
+      }
+      
       throw error;
     }
   }
@@ -26,10 +52,23 @@ export class StorageService {
    */
   public async getValue<T>(key: string): Promise<T | null> {
     try {
+      console.log(`[StorageService] Attempting to get value for key: '${key}'`);
       const jsonValue = await AsyncStorage.getItem(key);
-      return jsonValue !== null ? JSON.parse(jsonValue) as T : null;
+      console.log(`[StorageService] Raw value for key '${key}': ${jsonValue === null ? 'null' : jsonValue}`);
+      if (jsonValue !== null) {
+        try {
+          const parsedValue = JSON.parse(jsonValue) as T;
+          console.log(`[StorageService] Parsed value for key '${key}':`, parsedValue);
+          return parsedValue;
+        } catch (parseError) {
+          console.error(`[StorageService] Error parsing JSON for key '${key}':`, parseError, `Raw value: ${jsonValue}`);
+          return null;
+        }
+      } else {
+        return null;
+      }
     } catch (error) {
-      console.error(`[StorageService] Error getting value for key ${key}:`, error);
+      console.error(`[StorageService] Error getting value for key '${key}':`, error);
       return null;
     }
   }
@@ -40,9 +79,11 @@ export class StorageService {
    */
   public async removeValue(key: string): Promise<void> {
     try {
+      console.log(`[StorageService] Attempting to remove key: '${key}'`);
       await AsyncStorage.removeItem(key);
+      console.log(`[StorageService] Successfully removed key: '${key}'`);
     } catch (error) {
-      console.error(`[StorageService] Error removing key ${key}:`, error);
+      console.error(`[StorageService] Error removing key '${key}':`, error);
       throw error;
     }
   }
@@ -53,7 +94,9 @@ export class StorageService {
    */
   public async clearAll(): Promise<void> {
     try {
+      console.warn('[StorageService] Attempting to clear all AsyncStorage data!');
       await AsyncStorage.clear();
+      console.log('[StorageService] Successfully cleared all AsyncStorage data.');
     } catch (error) {
       console.error('[StorageService] Error clearing AsyncStorage:', error);
       throw error;
@@ -67,10 +110,13 @@ export class StorageService {
    */
   public async hasKey(key: string): Promise<boolean> {
     try {
+      console.log(`[StorageService] Checking existence of key: '${key}'`);
       const value = await AsyncStorage.getItem(key);
-      return value !== null;
+      const keyExists = value !== null;
+      console.log(`[StorageService] Key '${key}' ${keyExists ? 'exists' : 'does NOT exist'}. Raw value: ${value === null ? 'null' : value}`);
+      return keyExists;
     } catch (error) {
-      console.error(`[StorageService] Error checking key ${key}:`, error);
+      console.error(`[StorageService] Error checking key '${key}':`, error);
       return false;
     }
   }
@@ -83,6 +129,7 @@ export class StorageService {
   public async getMultipleValues(keys: string[]): Promise<Record<string, any>> {
     try {
       const result: Record<string, any> = {};
+      console.log(`[StorageService] Getting multiple keys: ${keys.join(', ')}`);
       const keyValuePairs = await AsyncStorage.multiGet(keys);
       
       keyValuePairs.forEach(([key, value]) => {
@@ -95,6 +142,7 @@ export class StorageService {
         }
       });
       
+      console.log(`[StorageService] Retrieved multiple values:`, result);
       return result;
     } catch (error) {
       console.error('[StorageService] Error getting multiple values:', error);

@@ -4,6 +4,15 @@ import * as ExpoDevice from "expo-device";
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 import base64 from "react-native-base64";
 import { parseRawTimestamp } from "../utils/functions";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Storage key for device UUIDs
+const DEVICE_UUIDS_STORAGE_KEY = "CANOVA_DEVICE_UUIDS";
+
+// Interface for state restoration event based on react-native-ble-plx implementation
+interface StateRestoredEvent {
+    connectedPeripherals: Device[];
+}
 
 type ConnectedDevice = {
     device: Device;
@@ -11,15 +20,148 @@ type ConnectedDevice = {
     characteristicUUID: string
 }
 
+type StoredDeviceUUIDs = {
+    [deviceId: string]: {
+        serviceUUID: string;
+        characteristicUUID: string;
+    }
+}
+
 export class BluetoothHandler {
     private manager: BleManager;
     private connectedDevice: ConnectedDevice | null;
-    // Update callback signature to include rawTimestamp
     private onDataCallback: ((rawTimestamp: string, timestamp: string, duration: number) => void) | null = null;
+    private isRestoringState: boolean = false;
 
     constructor() {
-        this.manager = new BleManager();
+        console.log('[BluetoothHandler] Initializing BleManager with state restoration');
+        this.manager = new BleManager({
+            // Unique identifier for state restoration
+            restoreStateIdentifier: "CanovaAppBluetoothRestoreID",
+
+            // Function called when state is restored
+            restoreStateFunction: this.handleStateRestoration.bind(this)
+        });
         this.connectedDevice = null;
+    }
+
+    /**
+     * Handle BLE state restoration when app is relaunched in background
+     */
+    private async handleStateRestoration(restoredState: StateRestoredEvent | null) {
+        try {
+            if (!restoredState) {
+                console.log("[BluetoothHandler] No BLE state to restore.");
+                return;
+            }
+            
+            this.isRestoringState = true;
+            console.log("[BluetoothHandler] Restoring BLE state...");
+            
+            // Get the previously connected peripherals
+            const connectedPeripherals = restoredState.connectedPeripherals || [];
+            console.log(`[BluetoothHandler] Found ${connectedPeripherals.length} connected peripheral(s) in restored state.`);
+            
+            if (connectedPeripherals.length === 0) {
+                console.log("[BluetoothHandler] No connected peripherals to restore.");
+                this.isRestoringState = false;
+                return;
+            }
+            
+            try {
+                // Get stored device UUIDs from AsyncStorage
+                const storedUUIDs = await this.getStoredUUIDs();
+                
+                for (const peripheral of connectedPeripherals) {
+                    if (!peripheral || !peripheral.id) {
+                        console.warn("[BluetoothHandler] Invalid peripheral in restored state");
+                        continue;
+                    }
+                    
+                    console.log(`[BluetoothHandler] Attempting to restore connection for device: ${peripheral.id}`);
+                    
+                    // Check if we have stored UUIDs for this device
+                    if (storedUUIDs && storedUUIDs[peripheral.id]) {
+                        const { serviceUUID, characteristicUUID } = storedUUIDs[peripheral.id];
+                        
+                        if (!serviceUUID || !characteristicUUID) {
+                            console.warn(`[BluetoothHandler] Incomplete UUIDs for device ${peripheral.id}`);
+                            continue;
+                        }
+                        
+                        console.log(`[BluetoothHandler] Found stored UUIDs for ${peripheral.id}: ${serviceUUID}, ${characteristicUUID}`);
+                        
+                        try {
+                            // Set up the connectedDevice state
+                            this.connectedDevice = {
+                                device: peripheral,
+                                serviceUUID,
+                                characteristicUUID
+                            };
+                            
+                            // Re-establish the characteristic monitoring
+                            this.streamOnConnectedDevice();
+                            console.log(`[BluetoothHandler] Successfully re-attached monitor for ${peripheral.id}`);
+                        } catch (monitorError) {
+                            console.error(`[BluetoothHandler] Error re-attaching monitor for ${peripheral.id}:`, monitorError);
+                            // Continue with the next peripheral rather than trying to reconnect to avoid potential cascading errors
+                        }
+                    } else {
+                        console.warn(`[BluetoothHandler] No stored UUIDs found for device ${peripheral.id}`);
+                    }
+                }
+            } catch (storageError) {
+                console.error('[BluetoothHandler] Error accessing stored UUIDs:', storageError);
+            }
+        } catch (error) {
+            console.error('[BluetoothHandler] Error during state restoration:', error);
+        } finally {
+            // Always reset the restoration flag to prevent lock-ups
+            this.isRestoringState = false;
+        }
+    }
+
+    /**
+     * Get stored service and characteristic UUIDs for devices
+     */
+    private async getStoredUUIDs(): Promise<StoredDeviceUUIDs | null> {
+        try {
+            const uuidsJson = await AsyncStorage.getItem(DEVICE_UUIDS_STORAGE_KEY);
+            if (!uuidsJson) return null;
+            
+            // Safely parse JSON
+            try {
+                return JSON.parse(uuidsJson);
+            } catch (parseError) {
+                console.error('[BluetoothHandler] Error parsing stored UUIDs JSON:', parseError);
+                return null;
+            }
+        } catch (error) {
+            console.error('[BluetoothHandler] Error retrieving stored UUIDs:', error);
+            // Don't throw error, just return null to prevent app crashes
+            return null;
+        }
+    }
+
+    /**
+     * Store service and characteristic UUIDs for a device
+     */
+    private async storeDeviceUUIDs(deviceId: string, serviceUUID: string, characteristicUUID: string): Promise<void> {
+        try {
+            // Get existing stored UUIDs
+            const existingUUIDs = await this.getStoredUUIDs() || {};
+            
+            // Add or update the UUIDs for this device
+            existingUUIDs[deviceId] = { serviceUUID, characteristicUUID };
+            
+            // Store the updated UUIDs
+            const jsonValue = JSON.stringify(existingUUIDs);
+            await AsyncStorage.setItem(DEVICE_UUIDS_STORAGE_KEY, jsonValue);
+            console.log(`[BluetoothHandler] Stored UUIDs for device ${deviceId}`);
+        } catch (error) {
+            // Log but don't throw to prevent app crashes
+            console.error('[BluetoothHandler] Error storing device UUIDs:', error);
+        }
     }
 
     // Update the expected callback signature
@@ -56,11 +198,17 @@ export class BluetoothHandler {
                 throw Error("Bad number of characteristics");
             }
             const characteristic = characteristics[0];
+            
+            // Store the discovered UUIDs for state restoration
+            await this.storeDeviceUUIDs(deviceId, service.uuid, characteristic.uuid);
+            
             this.connectedDevice = {
                 device: deviceConnection,
                 serviceUUID: service.uuid,
                 characteristicUUID: characteristic.uuid
-            }
+            };
+            
+            console.log(`[BluetoothHandler] Connected to device ${deviceId}, Service: ${service.uuid}, Characteristic: ${characteristic.uuid}`);
 
         } catch (error) {
             console.error('Error discovering services/characteristics:', error);
@@ -79,21 +227,38 @@ export class BluetoothHandler {
         }
     }
 
-    /*
+    /**
      * This function starts listening for data on the connected device
      */
     public streamOnConnectedDevice() {
         if (this.connectedDevice === null) {
-            throw Error("Tried to stream with no device connected");
+            console.error("[BluetoothHandler] Tried to stream with no device connected");
+            return; // Just return instead of throwing error when in restoration
         } 
         
-        // Sync data
-        this.sendCurrentTimestamp()
-        this.connectedDevice.device.monitorCharacteristicForService(
-            this.connectedDevice.serviceUUID,
-            this.connectedDevice.characteristicUUID,
-            this.handleBluetoothConnection.bind(this)
-        );
+        try {
+            // Only try to sync timestamp if not in state restoration
+            if (!this.isRestoringState) {
+                try {
+                    this.sendCurrentTimestamp();
+                } catch (syncError) {
+                    console.error("[BluetoothHandler] Error syncing timestamp:", syncError);
+                    // Continue with monitoring even if timestamp sync fails
+                }
+            }
+            
+            // Set up monitoring
+            console.log(`[BluetoothHandler] Setting up monitoring for ${this.connectedDevice.serviceUUID}, ${this.connectedDevice.characteristicUUID}`);
+            this.connectedDevice.device.monitorCharacteristicForService(
+                this.connectedDevice.serviceUUID,
+                this.connectedDevice.characteristicUUID,
+                this.handleBluetoothConnection.bind(this)
+            );
+            console.log(`[BluetoothHandler] Monitoring set up successfully`);
+        } catch (error) {
+            console.error("[BluetoothHandler] Error starting stream:", error);
+            // Don't rethrow to avoid crashing the app during background restoration
+        }
     }
 
     /* 
@@ -142,32 +307,34 @@ export class BluetoothHandler {
         }
     }
 
-    /*
+    /**
      * This function generates the current timestamp which will be used to sync the Trak+ to an accurate timestamp on connection.
      */
     private async sendCurrentTimestamp() {
         if (!this.connectedDevice) {
-            throw new Error("Tried to send timestamp to device, but connection not found");
+            console.error("[BluetoothHandler] Tried to send timestamp to device, but connection not found");
+            return false;
         }
+        
         try {
             const timestamp = Math.floor(Date.now() / 1000); // Seconds, not milliseconds
             const gmtOffset = new Date().getTimezoneOffset() * 60;  // Offset in seconds (e.g., GMT-5 -> -18000)
-            const base64Timestamp = base64.encode( `${timestamp},${gmtOffset}`)
+            const base64Timestamp = base64.encode(`${timestamp},${gmtOffset}`);
 
             // Write data to the characteristic
             await this.manager.writeCharacteristicWithResponseForDevice(
-              this.connectedDevice.device.id,
-              this.connectedDevice.serviceUUID,
-              this.connectedDevice.characteristicUUID,
-              base64Timestamp
+                this.connectedDevice.device.id,
+                this.connectedDevice.serviceUUID,
+                this.connectedDevice.characteristicUUID,
+                base64Timestamp
             );
       
-            console.log(`Sent: Timestamp ${timestamp}, GMT Offset ${gmtOffset}`);
+            console.log(`[BluetoothHandler] Sent: Timestamp ${timestamp}, GMT Offset ${gmtOffset}`);
             return true;
-          } catch (error) {
-            console.error('Error sending data:', error);
+        } catch (error) {
+            console.error('[BluetoothHandler] Error sending data:', error);
             return false;
-          }
+        }
     }
 
     public getBLEManager(): BleManager {
