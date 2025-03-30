@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useBongHitsRepository } from '@/src/providers/AppProvider';
 import { getCurrentWeekProgressRangeLocal } from '@/src/utils/timeUtils';
+import { dataChangeEmitter, dbEvents } from '../utils/EventEmitter'; // Import emitter
 
 export function useCurrentWeekData() {
   const [currentWeekAverage, setCurrentWeekAverage] = useState<number>(0);
@@ -8,9 +9,12 @@ export function useCurrentWeekData() {
   const [error, setError] = useState<string | null>(null);
   const bongHitsRepository = useBongHitsRepository();
 
-  const fetchWeekData = useCallback(async () => {
-    console.log('[useCurrentWeekData] Fetching average for current week...');
-    setIsLoading(true);
+  const fetchWeekData = useCallback(async (isFromEvent: boolean = false) => {
+    // Prevent setting loading state if triggered by event and already loaded
+    if (!isFromEvent) {
+      setIsLoading(true);
+    }
+    console.log(`[useCurrentWeekData] Fetching average for current week... (Triggered by: ${isFromEvent ? 'event' : 'mount/refresh'})`);
     setError(null);
     try {
       // Use the specific repository method for current week average
@@ -30,14 +34,36 @@ export function useCurrentWeekData() {
       setCurrentWeekAverage(0);
       console.error(`[useCurrentWeekData] Exception: ${message}`);
     } finally {
-      setIsLoading(false);
+      // Only set loading false if it wasn't triggered by an event after initial load
+      if (!isFromEvent || isLoading) {
+        setIsLoading(false);
+      }
     }
-  }, [bongHitsRepository]);
+  }, [bongHitsRepository, isLoading]); // Add isLoading to dependencies
 
+  // Initial fetch on mount
   useEffect(() => {
-    fetchWeekData();
+    fetchWeekData(false);
     // Optional: Refetch periodically or based on other triggers
   }, [fetchWeekData]);
 
-  return { currentWeekAverage, isLoading, error, refresh: fetchWeekData };
+  // Add effect to listen for database changes
+  useEffect(() => {
+    const handleDataChange = () => {
+      console.log('[useCurrentWeekData] Database change detected, refreshing weekly average...');
+      // Pass true to indicate this fetch is triggered by an event
+      fetchWeekData(true);
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    console.log('[useCurrentWeekData] Added database change listener.');
+
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+      console.log('[useCurrentWeekData] Removed database change listener.');
+    };
+    // Depend only on fetchWeekData which is stable due to useCallback
+  }, [fetchWeekData]);
+
+  return { currentWeekAverage, isLoading, error, refresh: () => fetchWeekData(false) }; // Ensure manual refresh sets loading
 } 
