@@ -1,40 +1,40 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, ViewStyle, ActivityIndicator, Dimensions } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ViewStyle, ActivityIndicator, Dimensions, Platform, Animated } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur'; // Import if using GlassCard
-import { COLORS, DEVICE_ID_SIM } from '@/src/constants'; // Import the simulated device ID
-import { useSensorDataRepository } from '@/src/providers/AppProvider'; // Import the repository hook
-import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter'; // Import event emitter
-import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types'; // Import types
+import { BlurView } from 'expo-blur';
+import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
+import { useSensorDataRepository } from '@/src/providers/AppProvider';
+import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
+import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
 import BarChart from '../components/charts/BarChart';
 
 // Safe wrapper for LineChart that ensures proper dataset format
-const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }: any) => {
+const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }) => {
   // Determine if there is actual data to render
   const hasActualData = data && 
                        data.datasets && 
-                       data.datasets.some((ds: any) => ds.data && ds.data.length > 0 && 
-                                                     ds.data.some((val: any) => val !== null && val !== undefined));
+                       data.datasets.some((ds) => ds.data && ds.data.length > 0 && 
+                                                 ds.data.some((val) => val !== null && val !== undefined));
 
   // Don't render if no data structure at all
   if (!data || !data.datasets) {
-    return <Text style={styles.metricValueSub}>{emptyMessage}</Text>;
+    return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
   }
 
   // If datasets exist but are empty, show empty message
   if (!hasActualData) {
-    return <Text style={styles.metricValueSub}>{emptyMessage}</Text>;
+    return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
   }
 
   // Create a safe data structure with properly formatted datasets
   const safeData = {
     labels: data.labels || [],
-    datasets: data.datasets.map((dataset: any, index: number) => ({
+    datasets: data.datasets.map((dataset, index) => ({
       data: dataset.data || [],
       color: dataset.color || (() => 'rgba(0, 176, 118, 1)'),
       strokeWidth: dataset.strokeWidth || 2,
@@ -43,75 +43,92 @@ const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }: a
     legend: data.legend || undefined
   };
 
-  return <LineChart data={safeData} {...props} />;
+  return (
+    <LineChart 
+      data={safeData}
+      withDots={false}
+      bezier={props.bezier !== undefined ? props.bezier : true}
+      chartConfig={{
+        backgroundColor: 'transparent',
+        backgroundGradientFrom: 'transparent',
+        backgroundGradientTo: 'transparent',
+        fillShadowGradientFrom: safeData.datasets[0].color(0.8),
+        fillShadowGradientTo: 'rgba(255, 255, 255, 0)',
+        decimalPlaces: 0,
+        color: (opacity = 1) => safeData.datasets[0].color(opacity),
+        labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+        propsForBackgroundLines: {
+          strokeDasharray: '4, 4',
+          strokeWidth: 0.5,
+          stroke: 'rgba(0, 0, 0, 0.05)',
+        },
+      }}
+      {...props} 
+    />
+  );
 };
 
-// Re-use or adapt the GlassCard component from index.tsx or devices.tsx
-// If not using GlassCard, replace with styled View components.
-interface GlassCardProps {
-  style?: ViewStyle;
-  children: React.ReactNode;
-  intensity?: number;
-}
-
-const GlassCard: React.FC<GlassCardProps> = ({ style, children, intensity = 15 }) => {
-  // Basic fallback View if BlurView/GlassCard isn't available/desired
-  return <View style={[styles.glassCardFallback, style]}>{children}</View>;
-};
-
-// Define the Theme based on your constants
-const THEME = {
-  background: COLORS.background,
-  cardBackground: COLORS.card,
-  primary: COLORS.primary,
-  text: {
-    primary: COLORS.textPrimary,
-    secondary: COLORS.textSecondary,
-    tertiary: COLORS.textTertiary,
-  },
-  divider: 'rgba(0,0,0,0.08)',
-  card: {
-    shadow: 'rgba(0,0,0,0.12)',
-    border: 'rgba(0,0,0,0.05)',
-  },
-  error: COLORS.error,
-  warning: COLORS.warning,
-  info: COLORS.info,
+// Enhanced GlassCard component with improved styling
+const GlassCard = ({ style, children, intensity = 15 }) => {
+  // Use BlurView on iOS for true glass effect, fallback for Android
+  if (Platform.OS === 'ios') {
+    return (
+      <View style={[styles.cardContainer, style]}>
+        <BlurView intensity={intensity} tint="light" style={styles.blurView}>
+          <View style={styles.cardContent}>
+            {children}
+          </View>
+        </BlurView>
+      </View>
+    );
+  }
+  
+  // Fallback for Android with enhanced styling
+  return (
+    <View style={[styles.cardContainer, styles.cardAndroid, style]}>
+      <View style={styles.cardContent}>
+        {children}
+      </View>
+    </View>
+  );
 };
 
 export default function ReportsDetailedScreen() {
   const sensorDataRepository = useSensorDataRepository(); // Get the repository
 
+  // Animation values
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+
   // State for storing fetched data
-  const [impacts, setImpacts] = useState<ImpactEvent[]>([]);
-  const [motionPackets, setMotionPackets] = useState<MotionPacket[]>([]);
-  const [fsrPackets, setFsrPackets] = useState<FSRPacket[]>([]);
-  const [hrmPackets, setHrmPackets] = useState<HRMPacket[]>([]);
-  const [htmPackets, setHtmPackets] = useState<HTMPacket[]>([]);
+  const [impacts, setImpacts] = useState([]);
+  const [motionPackets, setMotionPackets] = useState([]);
+  const [fsrPackets, setFsrPackets] = useState([]);
+  const [hrmPackets, setHrmPackets] = useState([]);
+  const [htmPackets, setHtmPackets] = useState([]);
 
   // State for aggregated stats
-  const [sessionStats, setSessionStats] = useState<any>(null);
-  const [impactTimelineData, setImpactTimelineData] = useState<any | null>(null);
-  const [severityDistData, setSeverityDistData] = useState<any | null>(null);
-  const [chieData, setChieData] = useState<any | null>(null);
-  const [directionData, setDirectionData] = useState<any[] | null>(null);
-  const [biteForceData, setBiteForceData] = useState<any | null>(null);
-  const [hrChartData, setHrChartData] = useState<any | null>(null);
-  const [tempChartData, setTempChartData] = useState<any | null>(null);
+  const [sessionStats, setSessionStats] = useState(null);
+  const [impactTimelineData, setImpactTimelineData] = useState(null);
+  const [severityDistData, setSeverityDistData] = useState(null);
+  const [chieData, setChieData] = useState(null);
+  const [directionData, setDirectionData] = useState(null);
+  const [biteForceData, setBiteForceData] = useState(null);
+  const [hrChartData, setHrChartData] = useState(null);
+  const [tempChartData, setTempChartData] = useState(null);
 
   // Loading and error states
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Assume single device for now
   const deviceId = DEVICE_ID_SIM;
 
-  const getRiskStyle = (risk: string | undefined) => {
+  const getRiskStyle = (risk) => {
     switch (risk?.toLowerCase()) {
       case 'high': 
-      case 'critical': return styles.riskHigh;
-      case 'moderate': return styles.riskModerate;
-      default: return styles.riskLow;
+      case 'critical': return { color: COLORS.error };
+      case 'moderate': return { color: COLORS.warning };
+      default: return { color: COLORS.primary };
     }
   };
 
@@ -141,21 +158,28 @@ export default function ReportsDetailedScreen() {
       ]);
 
       // --- Store Raw Data ---
-      setImpacts(fetchedImpacts as ImpactEvent[]);
-      setMotionPackets(fetchedMotion as MotionPacket[]);
-      setFsrPackets(fetchedFsr as FSRPacket[]);
-      setHrmPackets(fetchedHrm as HRMPacket[]);
-      setHtmPackets(fetchedHtm as HTMPacket[]);
+      setImpacts(fetchedImpacts);
+      setMotionPackets(fetchedMotion);
+      setFsrPackets(fetchedFsr);
+      setHrmPackets(fetchedHrm);
+      setHtmPackets(fetchedHtm);
 
       console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
 
       // --- Process Data for Charts and KPIs ---
       processAndSetChartData(
-        fetchedImpacts as ImpactEvent[],
-        fetchedFsr as FSRPacket[],
-        fetchedHrm as HRMPacket[],
-        fetchedHtm as HTMPacket[]
+        fetchedImpacts,
+        fetchedFsr,
+        fetchedHrm,
+        fetchedHtm
       );
+
+      // Animate cards in
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
 
     } catch (err) {
       console.error('[ReportsDetailed] Error fetching data:', err);
@@ -182,16 +206,13 @@ export default function ReportsDetailedScreen() {
 
   // --- Data Processing Function ---
   const processAndSetChartData = (
-    impactData: ImpactEvent[],
-    fsrData: FSRPacket[],
-    hrmData: HRMPacket[],
-    htmData: HTMPacket[]
+    impactData,
+    fsrData,
+    hrmData,
+    htmData
   ) => {
     console.log('[ReportsDetailed] Processing data...');
-    console.log('[ReportsDetailed] Raw HRM Data:', JSON.stringify(hrmData));
-    console.log('[ReportsDetailed] Raw FSR Data:', JSON.stringify(fsrData));
-    console.log('[ReportsDetailed] Raw HTM Data:', JSON.stringify(htmData));
-
+    
     if (!impactData || impactData.length === 0) {
       console.log('[ReportsDetailed] No impact data.');
       // Reset chart data if no impacts
@@ -229,37 +250,25 @@ export default function ReportsDetailedScreen() {
       processHrChart(hrmData);
       processTempChart(htmData);
       
-      // --- Deeper Logging in processAndSetChartData (No Impact block) ---
-      const hrValuesEmpty = hrmData.map(p => {
+      // Calculate Avg HR
+      const validHrs = hrmData.map(p => {
         const rawValue = p.heartRate;
-        const parsedValue = parseFloat(rawValue as any);
-        console.log(`[HR Debug Empty] Raw: ${rawValue} (Type: ${typeof rawValue}), Parsed: ${parsedValue}, IsNaN: ${isNaN(parsedValue)}`);
-        return parsedValue;
-      });
-      const validHrsEmpty = hrValuesEmpty.filter(hr => {
-        const isNum = !isNaN(hr);
-        console.log(`[HR Filter Empty] Value: ${hr}, IsValidNumber: ${isNum}`);
-        return isNum;
-      });
-      console.log('[ReportsDetailed - No Impacts] Parsed HR Values (All):', JSON.stringify(hrValuesEmpty));
-      console.log('[ReportsDetailed - No Impacts] Filtered Valid HRs:', JSON.stringify(validHrsEmpty));
-      const avgHrValueEmpty = validHrsEmpty.length > 0 ? (validHrsEmpty.reduce((a, b) => a + b, 0) / validHrsEmpty.length) : NaN;
-      const maxHrValueEmpty = validHrsEmpty.length > 0 ? Math.max(...validHrsEmpty) : NaN;
-      console.log('[ReportsDetailed - No Impacts] Calculated Avg HR:', avgHrValueEmpty, ', Calculated Max HR:', maxHrValueEmpty);
+        const parsedValue = parseFloat(rawValue);
+        return !isNaN(parsedValue) ? parsedValue : null;
+      }).filter(hr => hr !== null);
+      
+      const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
+      const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
 
       // Calculate Avg Temp
-      const validTempsEmpty = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
-      const avgTempValueEmpty = validTempsEmpty.length > 0 ? (validTempsEmpty.reduce((a, b) => a + b, 0) / validTempsEmpty.length) : NaN;
-      console.log('[ReportsDetailed - No Impacts] Valid Temps:', JSON.stringify(validTempsEmpty));
-      console.log('[ReportsDetailed - No Impacts] Calculated Avg Temp:', avgTempValueEmpty);
+      const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
+      const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
 
       // Calculate Avg Bite Force
-      const validLeftBitesEmpty = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
-      const validRightBitesEmpty = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
-      const allValidBitesEmpty = [...validLeftBitesEmpty, ...validRightBitesEmpty];
-      const avgBiteValueEmpty = allValidBitesEmpty.length > 0 ? (allValidBitesEmpty.reduce((a, b) => a + b, 0) / allValidBitesEmpty.length) : NaN;
-      console.log('[ReportsDetailed - No Impacts] Valid Bites:', JSON.stringify(allValidBitesEmpty));
-      console.log('[ReportsDetailed - No Impacts] Calculated Avg Bite:', avgBiteValueEmpty);
+      const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
+      const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
+      const allValidBites = [...validLeftBites, ...validRightBites];
+      const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
 
       // Set basic session stats
       const basicStats = {
@@ -267,17 +276,17 @@ export default function ReportsDetailedScreen() {
         maxG: 0,
         avgG: 0,
         highImpacts: 0,
-        avgHr: !isNaN(avgHrValueEmpty) ? avgHrValueEmpty.toFixed(0) : '--',
-        maxHr: !isNaN(maxHrValueEmpty) ? maxHrValueEmpty : '--',
-        avgTemp: !isNaN(avgTempValueEmpty) ? avgTempValueEmpty.toFixed(1) : '--', 
-        avgBite: !isNaN(avgBiteValueEmpty) ? avgBiteValueEmpty.toFixed(0) : '--', // Add avg bite
+        avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
+        maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
+        avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--', 
+        avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
         concussionRisk: 'Low',
         duration: "N/A", 
         caloriesBurned: "N/A", 
         acceleration: "N/A", 
-        biteForce: !isNaN(avgBiteValueEmpty) ? avgBiteValueEmpty.toFixed(0) : '--', // Keep old key for now? Or remove?
+        biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
       };
-      console.log('[ReportsDetailed - No Impacts] Setting Basic Session Stats:', JSON.stringify(basicStats));
+      
       setSessionStats(basicStats);
       return;
     }
@@ -290,37 +299,25 @@ export default function ReportsDetailedScreen() {
     const avgG = magnitudes.length > 0 ? magnitudes.reduce((a, b) => a + b, 0) / totalImpacts : 0;
     const highImpacts = impactData.filter(i => i.magnitude >= 80).length;
 
-    // --- Deeper Logging in processAndSetChartData (WITH Impact block) ---
-    const hrValuesWithImpact = hrmData.map(p => {
+    // Calculate HR stats
+    const validHrs = hrmData.map(p => {
       const rawValue = p.heartRate;
-      const parsedValue = parseFloat(rawValue as any);
-      console.log(`[HR Debug Impact] Raw: ${rawValue} (Type: ${typeof rawValue}), Parsed: ${parsedValue}, IsNaN: ${isNaN(parsedValue)}`);
-      return parsedValue;
-    });
-    const validHrs = hrValuesWithImpact.filter(hr => {
-      const isNum = !isNaN(hr);
-      console.log(`[HR Filter Impact] Value: ${hr}, IsValidNumber: ${isNum}`);
-      return isNum;
-    });
-    console.log('[ReportsDetailed - With Impacts] Parsed HR Values (All):', JSON.stringify(hrValuesWithImpact));
-    console.log('[ReportsDetailed - With Impacts] Filtered Valid HRs:', JSON.stringify(validHrs));
+      const parsedValue = parseFloat(rawValue);
+      return !isNaN(parsedValue) ? parsedValue : null;
+    }).filter(hr => hr !== null);
+    
     const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
     const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
-    console.log('[ReportsDetailed - With Impacts] Calculated Avg HR:', avgHrValue, ', Calculated Max HR:', maxHrValue);
 
     // Calculate Avg Temp
     const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
     const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
-    console.log('[ReportsDetailed - With Impacts] Valid Temps:', JSON.stringify(validTemps));
-    console.log('[ReportsDetailed - With Impacts] Calculated Avg Temp:', avgTempValue);
 
     // Calculate Avg Bite Force
     const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
     const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
     const allValidBites = [...validLeftBites, ...validRightBites];
     const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
-    console.log('[ReportsDetailed - With Impacts] Valid Bites:', JSON.stringify(allValidBites));
-    console.log('[ReportsDetailed - With Impacts] Calculated Avg Bite:', avgBiteValue);
 
     const calculatedStats = {
       totalImpacts,
@@ -328,16 +325,16 @@ export default function ReportsDetailedScreen() {
       avgG: avgG.toFixed(1),
       highImpacts,
       avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
-      maxHr: !isNaN(maxHrValue) ? maxHrValue : '--',
+      maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
       avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--',
-      avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--', // Add avg bite
+      avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
       concussionRisk: highImpacts > 0 || maxG > 100 ? 'High' : (maxG > 80 ? 'Moderate' : 'Low'),
       duration: "N/A",
       caloriesBurned: "N/A",
       acceleration: "N/A",
-      biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--', // Keep old key for now?
+      biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
     };
-    console.log('[ReportsDetailed - With Impacts] Setting Calculated Session Stats:', JSON.stringify(calculatedStats));
+    
     setSessionStats(calculatedStats);
 
     // 2. Process Impact Timeline Data
@@ -397,12 +394,10 @@ export default function ReportsDetailedScreen() {
 
     // 5. Process Direction Data
     const directions = impactData.map(impact => ({
-      x: impact.x, // Use the stored G-force components
+      x: impact.x,
       y: impact.y,
       magnitude: impact.magnitude
     }));
-    // This data needs to be plotted on a polar chart component.
-    // Store the raw points for the chart component to handle.
     setDirectionData(directions);
 
     // 6. Process Bite Force Chart
@@ -416,16 +411,13 @@ export default function ReportsDetailedScreen() {
   };
 
   // Helper function for bite force chart data
-  const processBiteForceChart = (fsrData: FSRPacket[]) => {
-    console.log('[processBiteForceChart] Received FSR Data:', JSON.stringify(fsrData));
+  const processBiteForceChart = (fsrData) => {
     const validFsrData = fsrData.filter(p => 
         (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
         (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
     );
-    console.log('[processBiteForceChart] Filtered Valid FSR Data:', JSON.stringify(validFsrData));
     
     if (validFsrData.length === 0) {
-       console.log('[processBiteForceChart] No valid FSR data found, setting empty chart.');
       setBiteForceData({
         labels: [],
         datasets: [
@@ -444,12 +436,12 @@ export default function ReportsDetailedScreen() {
       });
       return;
     }
+    
     const sortedFsr = [...validFsrData].sort((a, b) => a.timestamp - b.timestamp);
     const biteLabels = sortedFsr.map((_, i) => i.toString());
-    const leftBiteValues = sortedFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0); // Default invalid to 0
-    const rightBiteValues = sortedFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0); // Default invalid to 0
-    console.log('[processBiteForceChart] Final Left Bites:', JSON.stringify(leftBiteValues));
-    console.log('[processBiteForceChart] Final Right Bites:', JSON.stringify(rightBiteValues));
+    const leftBiteValues = sortedFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
+    const rightBiteValues = sortedFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
+    
     const chartData = {
       labels: biteLabels,
       datasets: [
@@ -458,29 +450,18 @@ export default function ReportsDetailedScreen() {
       ],
       legend: ['Left', 'Right']
     };
-    console.log('[processBiteForceChart] Setting Bite Force Chart Data:', JSON.stringify(chartData));
+    
     setBiteForceData(chartData);
   };
 
   // Helper for HR chart
-  const processHrChart = (hrmData: HRMPacket[]) => {
-    console.log('[processHrChart] Received HRM Data:', JSON.stringify(hrmData));
-    const hrProcessingResults = hrmData.map(p => {
-        const rawValue = p.heartRate;
-        const parsedValue = parseFloat(rawValue as any);
-        console.log(`[processHrChart Map Debug] Raw: ${rawValue} (Type: ${typeof rawValue}), Parsed: ${parsedValue}, IsNaN: ${isNaN(parsedValue)}`);
-        return { ...p, heartRate: parsedValue };
-    });
-    const validHrmData = hrProcessingResults.filter(p => {
-        const isNum = !isNaN(p.heartRate);
-        console.log(`[processHrChart Filter Debug] HR: ${p.heartRate}, IsValidNumber: ${isNum}`);
-        return isNum;
-    });
-    console.log('[processHrChart] Parsed HR Objects:', JSON.stringify(hrProcessingResults));
-    console.log('[processHrChart] Filtered Valid HRM Data:', JSON.stringify(validHrmData));
+  const processHrChart = (hrmData) => {
+    const validHrmData = hrmData.map(p => {
+        const parsedValue = parseFloat(p.heartRate);
+        return { ...p, heartRate: !isNaN(parsedValue) ? parsedValue : null };
+    }).filter(p => p.heartRate !== null);
 
     if (validHrmData.length === 0) {
-      console.log('[processHrChart] No valid HRM data found, setting empty chart.');
       setHrChartData({
         labels: [],
         datasets: [{
@@ -491,10 +472,11 @@ export default function ReportsDetailedScreen() {
       });
       return;
     }
+    
     const sortedHrm = [...validHrmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
     const hrLabels = sortedHrm.map((_, i) => i.toString());
-    const hrValues = sortedHrm.map(p => p.heartRate); // Already parsed
-    console.log('[processHrChart] Final HR Values for chart:', JSON.stringify(hrValues));
+    const hrValues = sortedHrm.map(p => p.heartRate);
+    
     const chartData = {
       labels: hrLabels,
       datasets: [{ 
@@ -504,18 +486,15 @@ export default function ReportsDetailedScreen() {
         index: 0
       }]
     };
-    console.log('[processHrChart] Setting HR Chart Data:', JSON.stringify(chartData));
+    
     setHrChartData(chartData);
   };
 
   // Helper for Temp chart
-  const processTempChart = (htmData: HTMPacket[]) => {
-    console.log('[processTempChart] Received HTM Data:', JSON.stringify(htmData));
+  const processTempChart = (htmData) => {
     const validHtmData = htmData.filter(p => typeof p.temperature === 'number' && !isNaN(p.temperature));
-    console.log('[processTempChart] Filtered Valid HTM Data:', JSON.stringify(validHtmData));
 
     if (validHtmData.length === 0) {
-      console.log('[processTempChart] No valid HTM data found, setting empty chart.');
       setTempChartData({
         labels: [],
         datasets: [{
@@ -526,10 +505,11 @@ export default function ReportsDetailedScreen() {
       });
       return;
     }
+    
     const sortedHtm = [...validHtmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
     const tempLabels = sortedHtm.map((_, i) => i.toString());
     const tempValues = sortedHtm.map(p => p.temperature);
-    console.log('[processTempChart] Final Temp Values:', JSON.stringify(tempValues));
+    
     const chartData = {
       labels: tempLabels,
       datasets: [{ 
@@ -539,18 +519,18 @@ export default function ReportsDetailedScreen() {
         index: 0
       }]
     };
-    console.log('[processTempChart] Setting Temp Chart Data:', JSON.stringify(chartData));
+    
     setTempChartData(chartData);
   };
 
   // Fetch data on initial mount
   useEffect(() => {
     fetchData();
-  }, [fetchData]); // fetchData is memoized with useCallback
+  }, [fetchData]);
 
   // Subscribe to data changes
   useEffect(() => {
-    const handleDataChange = (eventData: { type: string, deviceId: string }) => {
+    const handleDataChange = (eventData) => {
       // Re-fetch data if the change affects the current device
       if (eventData.deviceId === deviceId) {
         console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), re-fetching...`);
@@ -559,33 +539,18 @@ export default function ReportsDetailedScreen() {
     };
 
     dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
-    console.log('[ReportsDetailed] Subscribed to data changes.');
-
+    
     // Cleanup subscription on unmount
     return () => {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
-      console.log('[ReportsDetailed] Unsubscribed from data changes.');
     };
-  }, [deviceId, fetchData]); // Dependencies: deviceId and the memoized fetchData
-
-  const renderSessionHistoryItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.historyItem}>
-       <View style={styles.historyIconContainer}>
-         <MaterialCommunityIcons name="history" size={20} color={THEME.primary} />
-       </View>
-       <View style={styles.historyInfo}>
-         <Text style={styles.historyTitle}>{item.type} - {item.sport}</Text>
-         <Text style={styles.historyDate}>{item.date} ({item.stats.duration})</Text>
-       </View>
-       <MaterialCommunityIcons name="chevron-right" size={20} color={THEME.text.tertiary} />
-    </TouchableOpacity>
-  );
+  }, [deviceId, fetchData]);
 
   // Show loading indicator
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={THEME.primary} />
+        <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading Report Data...</Text>
       </View>
     );
@@ -595,7 +560,7 @@ export default function ReportsDetailedScreen() {
   if (error) {
     return (
       <View style={styles.errorContainer}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={THEME.error} />
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.error} />
         <Text style={styles.errorTitle}>Error Loading Report</Text>
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
@@ -609,7 +574,7 @@ export default function ReportsDetailedScreen() {
   if (!sessionStats && !impacts.length && !fsrPackets.length && !hrmPackets.length && !htmPackets.length) {
     return (
       <View style={styles.emptyContainer}>
-        <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={THEME.text.tertiary} />
+        <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
         <Text style={styles.emptyText}>No Data Available</Text>
         <Text style={styles.emptySubText}>Generate test data or connect a device to see reports.</Text>
       </View>
@@ -618,174 +583,304 @@ export default function ReportsDetailedScreen() {
 
   return (
     <SafeAreaProvider>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <LinearGradient
-            colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)', 'transparent']}
-            style={styles.headerGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Detailed Report</Text>
-            {/* Maybe add session selector here later */}
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Enhanced Header */}
+          <View style={styles.header}>
+            <LinearGradient
+              colors={['rgba(0,176,118,0.2)', 'rgba(0,176,118,0.05)', 'transparent']}
+              style={styles.headerGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+            />
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>Detailed Report</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Session Info Card */}
-        <GlassCard style={styles.card}>
-           <View style={styles.cardInner}>
-             <Text style={styles.cardTitle}>Session Report ({deviceId})</Text>
-             <Text style={styles.cardSubtitle}>Total Impacts: {sessionStats?.totalImpacts ?? '--'}</Text>
-             <Text style={styles.cardSubtitle}>Max G-Force: {sessionStats?.maxG ?? '--'}g</Text>
-             <Text style={styles.cardSubtitle}>Avg G-Force: {sessionStats?.avgG ?? '--'}g</Text>
-             <Text style={styles.cardSubtitle}>High Impacts ({'>'}80g): {sessionStats?.highImpacts ?? '--'}</Text>
-           </View>
-        </GlassCard>
+          {/* Session Info Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}]}}>
+            <GlassCard style={styles.summaryCard}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>Session Report</Text>
+                <Text style={styles.deviceId}>({deviceId})</Text>
+              </View>
+              
+              <View style={styles.metricsRow}>
+                <View style={styles.metricColumn}>
+                  <Text style={styles.metricNumber}>{sessionStats?.totalImpacts ?? '0'}</Text>
+                  <Text style={styles.metricLabel}>Total Impacts</Text>
+                </View>
+                
+                <View style={styles.metricDivider} />
+                
+                <View style={styles.metricColumn}>
+                  <Text style={styles.metricNumber}>{sessionStats?.maxG ?? '0'}g</Text>
+                  <Text style={styles.metricLabel}>Max G-Force</Text>
+                </View>
+                
+                <View style={styles.metricDivider} />
+                
+                <View style={styles.metricColumn}>
+                  <Text style={styles.metricNumber}>{sessionStats?.highImpacts ?? '0'}</Text>
+                  <Text style={styles.metricLabel}>High Impacts</Text>
+                </View>
+              </View>
+            </GlassCard>
+          </Animated.View>
 
-        {/* Metrics Grid/List */}
-        <View style={styles.metricsGrid}>
-          {/* Heart Rate */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="heart-pulse" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Heart Rate</Text>
-              <Text style={styles.largeMetricValue}>{sessionStats?.avgHr ?? '--'} <Text style={styles.largeMetricUnit}>bpm</Text></Text>
-              <Text style={styles.metricValueSub}>Avg: {sessionStats?.avgHr ?? '--'} bpm / Max: {sessionStats?.maxHr ?? '--'} bpm</Text>
-              {hrChartData && (
-                <SafeLineChart
-                  data={hrChartData}
-                  emptyMessage="No heart rate data available"
-                  width={Dimensions.get('window').width - 80}
-                  height={150}
-                  bezier
-                  style={{ marginTop: 16 }}
-                />
+          {/* Heart Rate Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
+                  <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Heart Rate</Text>
+              </View>
+              
+              <View style={styles.dataValueContainer}>
+                <Text style={styles.dataValue}>{sessionStats?.avgHr ?? '--'}</Text>
+                <Text style={styles.dataUnit}>bpm</Text>
+              </View>
+              
+              <Text style={styles.dataSubtext}>Avg: {sessionStats?.avgHr ?? '--'} bpm / Max: {sessionStats?.maxHr ?? '--'} bpm</Text>
+              
+              <View style={styles.chartContainer}>
+                {hrChartData && (
+                  <SafeLineChart
+                    data={hrChartData}
+                    emptyMessage="No heart rate data available"
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Temperature Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
+                  <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Avg Temperature</Text>
+              </View>
+              
+              <View style={styles.dataValueContainer}>
+                <Text style={styles.dataValue}>{sessionStats?.avgTemp ?? '--'}</Text>
+                <Text style={styles.dataUnit}>°F</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {tempChartData && (
+                  <SafeLineChart
+                    data={tempChartData}
+                    emptyMessage="No temperature data available"
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Bite Force Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                  <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Bite Force (Left/Right)</Text>
+              </View>
+              
+              <View style={styles.dataValueContainer}>
+                <Text style={styles.dataValue}>{sessionStats?.avgBite ?? '--'}</Text>
+                <Text style={styles.dataUnit}>(Avg)</Text>
+              </View>
+              
+              {biteForceData && biteForceData.datasets[0].data.length > 0 && (
+                <View style={styles.legendContainer}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 176, 118, 1)'}]} />
+                    <Text style={styles.legendText}>Left</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 122, 255, 1)'}]} />
+                    <Text style={styles.legendText}>Right</Text>
+                  </View>
+                </View>
               )}
-            </View>
-          </GlassCard>
+              
+              <View style={styles.chartContainer}>
+                {biteForceData && (
+                  <SafeLineChart
+                    data={biteForceData}
+                    emptyMessage="No bite force data available"
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
 
-          {/* Temperature */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="thermometer" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Avg Temperature</Text>
-              <Text style={styles.largeMetricValue}>{sessionStats?.avgTemp ?? '--'}<Text style={styles.largeMetricUnit}>°F</Text></Text>
-              {tempChartData && (
-                <SafeLineChart
-                  data={tempChartData}
-                  emptyMessage="No temperature data available"
-                  width={Dimensions.get('window').width - 80}
-                  height={150}
-                  bezier
-                  style={{ marginTop: 16 }}
-                />
-              )}
-            </View>
-          </GlassCard>
+          {/* Concussion Risk Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={[styles.dataCard, styles.riskCard]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: `${getRiskStyle(sessionStats?.concussionRisk).color}15`}]}>
+                  <MaterialCommunityIcons 
+                    name="shield-alert-outline" 
+                    size={20} 
+                    color={getRiskStyle(sessionStats?.concussionRisk).color} 
+                  />
+                </View>
+                <Text style={styles.cardTitle}>Concussion Risk</Text>
+              </View>
+              
+              <View style={styles.riskValueContainer}>
+                <Text style={[styles.riskValue, getRiskStyle(sessionStats?.concussionRisk)]}>
+                  {sessionStats?.concussionRisk ?? 'Low'}
+                </Text>
+              </View>
+            </GlassCard>
+          </Animated.View>
 
-          {/* Bite Force */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="tooth-outline" size={28} color={THEME.info} />
-              <Text style={styles.metricLabel}>Bite Force (Left/Right)</Text>
-              <Text style={styles.largeMetricValue}>{sessionStats?.avgBite ?? '--'} <Text style={styles.largeMetricUnit}>(Avg)</Text></Text>
-              <SafeLineChart
-                data={biteForceData}
-                emptyMessage="No bite force data available"
-                width={Dimensions.get('window').width - 80}
-                height={150}
-                bezier
-                style={{ marginTop: 16 }}
-              />
-            </View>
-          </GlassCard>
+          {/* Impact Timeline Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                  <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={COLORS.primary} />
+                </View>
+                <Text style={styles.cardTitle}>Impact Timeline</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {impactTimelineData && impactTimelineData.datasets[0].data.length > 0 ? (
+                  <SafeLineChart
+                    data={impactTimelineData}
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier={false}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
 
-          {/* Concussion Risk */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="shield-alert-outline" size={28} color={getRiskStyle(sessionStats?.concussionRisk).color} />
-              <Text style={styles.metricLabel}>Concussion Risk</Text>
-              <Text style={[styles.largeMetricValue, getRiskStyle(sessionStats?.concussionRisk)]}>
-                {sessionStats?.concussionRisk ?? 'N/A'}
-              </Text>
-            </View>
-          </GlassCard>
+          {/* Severity Distribution Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                  <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
+                </View>
+                <Text style={styles.cardTitle}>Severity Distribution</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {severityDistData && severityDistData.datasets[0].data.length > 0 ? (
+                  <SafeLineChart
+                    data={severityDistData}
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier={false}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
 
-          {/* Impact Timeline Card */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="chart-timeline-variant" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Impact Timeline</Text>
-              <SafeLineChart
-                data={impactTimelineData}
-                emptyMessage="No impact data available"
-                width={Dimensions.get('window').width - 80}
-                height={150}
-                bezier={false}
-                style={{ marginTop: 16 }}
-              />
-            </View>
-          </GlassCard>
+          {/* CHIE Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                  <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {chieData && chieData.datasets[0].data.length > 0 ? (
+                  <SafeLineChart
+                    data={chieData}
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
 
-          {/* Severity Distribution Card */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="chart-histogram" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Severity Distribution</Text>
-              <SafeLineChart
-                data={severityDistData}
-                emptyMessage="No impact data available"
-                width={Dimensions.get('window').width - 80}
-                height={150}
-                bezier={false}
-                style={{ marginTop: 16 }}
-              />
-            </View>
-          </GlassCard>
-
-          {/* CHIE Card */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull] as unknown as ViewStyle}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="brain" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Cumulative Head Impact Exposure</Text>
-              <SafeLineChart
-                data={chieData}
-                emptyMessage="No impact data available"
-                width={Dimensions.get('window').width - 80}
-                height={150}
-                bezier
-                style={{ marginTop: 16 }}
-              />
-            </View>
-          </GlassCard>
-        </View>
-
-        {/* Bottom Spacer */}
-        <View style={{ height: 24 }} />
-      </ScrollView>
+          {/* Bottom Spacer */}
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
-// Add extensive styling - Adapt styles from index.tsx, devices.tsx
+// Refined StyleSheet with Apple-like aesthetics
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
   container: {
     flex: 1,
-    backgroundColor: THEME.background,
+    backgroundColor: COLORS.background,
   },
   contentContainer: {
     paddingBottom: 32,
   },
   header: {
-    height: 140, // Keep consistent header size
+    height: 120,
     position: 'relative',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   headerGradient: {
     ...StyleSheet.absoluteFillObject,
@@ -793,186 +888,222 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 16, // Adjust as needed for safe area
-    justifyContent: 'center', // Center title for this screen
+    paddingTop: 16,
+    justifyContent: 'flex-end',
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 34,
     fontWeight: '700',
-    color: THEME.text.primary,
+    color: COLORS.textPrimary,
     letterSpacing: 0.5,
-    textAlign: 'center', // Center align
   },
-  card: { // Style for general cards
-    marginHorizontal: 16,
+  // Card container styling
+  cardContainer: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  cardContent: {
+    padding: 20,
+  },
+  blurView: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  cardAndroid: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.04)',
+  },
+  summaryCard: {
     marginBottom: 16,
   },
-  cardInner: {
-    padding: 16,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: THEME.text.primary,
+  dataCard: {
     marginBottom: 8,
   },
-  cardSubtitle: {
-      fontSize: 14,
-      color: THEME.text.secondary,
-      marginBottom: 4,
+  riskCard: {
+    minHeight: 120,
   },
-  metricsGrid: {
+  cardHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  metricCard: {
-    width: '48%', // Two columns layout
-    marginBottom: 16,
-    minHeight: 130, // Ensure cards have a minimum height
-  },
-  metricCardFull: {
-      width: '100%', // Span full width
-  },
-  metricContent: {
-    flex: 1, // Ensure content takes up space
     alignItems: 'center',
-    justifyContent: 'flex-start', // Align top for charts
-    padding: 16, // Increased padding maybe
+    marginBottom: 16,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 176, 118, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  deviceId: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+    alignSelf: 'flex-end',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  metricColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+  },
+  metricNumber: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: 4,
   },
   metricLabel: {
-    fontSize: 14,
-    color: THEME.text.secondary,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  dataValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  dataValue: {
+    fontSize: 40,
+    fontWeight: '500',
+    color: COLORS.textPrimary,
+  },
+  dataUnit: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    marginLeft: 4,
+  },
+  dataSubtext: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  chartContainer: {
+    alignItems: 'center',
     marginTop: 8,
-    textAlign: 'center',
   },
-  largeMetricValue: {
-    fontSize: 36, // Larger font size
-    fontWeight: '600',
-    color: THEME.text.primary,
-    textAlign: 'center',
-    marginTop: 8, // Add some space above
-    marginBottom: 4, // Space below before sub-text or chart
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
-  largeMetricUnit: {
-    fontSize: 16, // Smaller unit text
-    fontWeight: '500',
-    color: THEME.text.secondary,
-  },
-  metricValueSub: { // Keep existing for max values etc.
-    fontSize: 14,
-    fontWeight: '500',
-    color: THEME.text.secondary,
-    marginTop: 2,
-    marginBottom: 8, // Space before chart
-    textAlign: 'center',
-  },
-  riskHigh: { color: THEME.error, fontWeight: 'bold' },
-  riskModerate: { color: THEME.warning, fontWeight: 'bold' },
-  riskLow: { color: THEME.primary, fontWeight: 'normal' }, // Or success color
-  historyItem: {
+  legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    marginHorizontal: 8,
   },
-  historyIconContainer: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: 'rgba(0,176,118,0.1)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 12,
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
   },
-  historyInfo: {
-      flex: 1,
+  legendText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
-  historyTitle:{
-      fontSize: 15,
-      fontWeight: '500',
-      color: THEME.text.primary,
-      marginBottom: 2,
+  riskValueContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
   },
-  historyDate:{
-      fontSize: 13,
-      color: THEME.text.secondary,
+  riskValue: {
+    fontSize: 32,
+    fontWeight: '600',
   },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: THEME.divider,
-    marginVertical: 4,
-  },
-  // Fallback style for GlassCard if needed
-  glassCardFallback: {
-    borderRadius: 16,
-    backgroundColor: THEME.cardBackground,
-    borderColor: THEME.card.border,
-    borderWidth: 1,
-    shadowColor: THEME.card.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    // remove marginBottom if applying via parent style
+  emptyChartText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    marginVertical: 30,
+    fontWeight: '500',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: THEME.background,
+    backgroundColor: COLORS.background,
   },
   loadingText: {
-    marginTop: 10,
-    color: THEME.text.secondary,
+    marginTop: 12,
+    color: COLORS.textSecondary,
+    fontSize: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: THEME.background,
+    backgroundColor: COLORS.background,
     padding: 20,
   },
   errorTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: THEME.error,
+    color: COLORS.error,
+    marginTop: 16,
     marginBottom: 8,
     textAlign: 'center',
   },
   errorText: {
-    color: THEME.text.secondary,
+    color: COLORS.textSecondary,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: THEME.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
   },
   retryButtonText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 16,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    minHeight: 300, // Ensure it takes some space
+    minHeight: 300,
   },
   emptyText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: THEME.text.primary,
+    color: COLORS.textPrimary,
     marginTop: 16,
     marginBottom: 8,
   },
   emptySubText: {
     fontSize: 14,
-    color: THEME.text.secondary,
+    color: COLORS.textSecondary,
     textAlign: 'center',
+    lineHeight: 20,
   },
-}); 
+});
