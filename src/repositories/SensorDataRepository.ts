@@ -357,13 +357,24 @@ export class SensorDataRepository {
                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
                ORDER BY timestamp ASC`;
     } else { // hrm_packets, htm_packets use app_timestamp
-      query = `SELECT * FROM ${sensorType}
-               WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
-               ORDER BY app_timestamp ASC`;
+      if (sensorType === 'hrm_packets') {
+         query = `SELECT id, device_id, flags, heart_rate AS heartRate, app_timestamp FROM ${sensorType}
+                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
+                  ORDER BY app_timestamp ASC`;
+      } else { // For htm_packets or any others falling here
+         query = `SELECT * FROM ${sensorType}
+                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
+                  ORDER BY app_timestamp ASC`;
+      }
     }
 
     try {
       const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]); // Use original ms timestamps for query
+      console.log(`[SensorDataRepo] Fetched ${sensorType} results:`, results ? results.length : 0); // Log fetched count
+      // Optional: Log first few results to verify structure
+      if (results && results.length > 0 && sensorType === 'hrm_packets') {
+          console.log(`[SensorDataRepo] First few HRM results structure:`, JSON.stringify(results.slice(0, 3)));
+      }
       return results ?? []; // Return empty array if results are null/undefined
     } catch (error) {
       console.error(`Error querying ${sensorType} data:`, error);

@@ -98,30 +98,6 @@ const LineChart: React.FC<LineChartProps> = ({
         withDots={true}
         segments={5}
         fromZero={true}
-        // Display legend if provided
-        renderDotContent={
-          data.legend ? ({x, y, index, indexData, dataset}) => {
-            // Only show for the first dataset point
-            if (dataset.index === 0) {
-              return (
-                <View key={index} style={{
-                  position: 'absolute',
-                  top: height - 20,
-                  left: x - 12,
-                  backgroundColor: 'transparent'
-                }}>
-                  <Text style={{
-                    color: COLORS.text.secondary,
-                    fontSize: 9
-                  }}>
-                    {data.labels[index]}
-                  </Text>
-                </View>
-              );
-            }
-            return null;
-          } : undefined
-        }
       />
     </View>
   );
