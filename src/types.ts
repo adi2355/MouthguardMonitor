@@ -1,32 +1,159 @@
 // Core data types
-export interface BongHit {
-    id?: number;
-    timestamp: string;
-    duration_ms: number;
-    intensity?: number;
+export interface Athlete {
+    id: string;
+    name: string;
+    team?: string;
+    position?: string;
+    age?: number;
+    height?: string;
+    weight?: string;
+    deviceId?: string;
     notes?: string;
+    number?: string;
+    active?: boolean;
+    createdAt: number;
+    updatedAt: number;
 }
 
-export interface BongHitStats {
-    averageDuration: number;
-    longestHit: number;
-    totalHits?: number;
+export interface SensorData {
+    timestamp: number;
+    values: number[];
 }
 
-export interface DailyStats {
-    date: string;
-    hitCount: number;
-    averageDuration: number;
-}
-
-export interface AverageHourCount {
-    count: number;
-    hourOfDay: string;
-}
-
-export interface Datapoint {
-    x: string | number;
+export interface ImuData {
+    id?: number;
+    deviceId: string;
+    sensorId: number;
+    timestamp: number;
+    x: number;
     y: number;
+    z: number;
+    createdAt: number;
+}
+
+export interface AccelerometerData {
+    id?: number;
+    deviceId: string;
+    sensorId: number;
+    timestamp: number;
+    x: number;
+    y: number;
+    z: number;
+    magnitude: number;
+    createdAt: number;
+}
+
+export interface TemperatureData {
+    id?: number;
+    deviceId: string;
+    sensorId: number;
+    timestamp: number;
+    temperature: number;
+    createdAt: number;
+}
+
+export interface ForceData {
+    id?: number;
+    deviceId: string;
+    sensorId: number;
+    timestamp: number;
+    force: number;
+    createdAt: number;
+}
+
+export interface HeartRateData {
+    id?: number;
+    deviceId: string;
+    timestamp: number;
+    heartRate: number;
+    createdAt: number;
+}
+
+export interface ImpactEvent {
+    id?: number;
+    deviceId: string;
+    athleteId?: string;
+    timestamp: number;
+    magnitude: number;
+    x: number;
+    y: number;
+    z: number;
+    durationMs?: number;
+    location?: string;
+    processed: boolean;
+    severity?: 'low' | 'moderate' | 'severe' | 'critical';
+    notes?: string;
+    createdAt: number;
+}
+
+// --- Device Packet Structures ---
+
+// Matches C struct motion_packet
+export interface MotionPacket {
+  // All values are raw sensor readings
+  gyro: [number, number, number];       // int16_t[3]
+  accel16: [number, number, number];    // int16_t[3] (16g accelerometer)
+  accel200: [number, number, number];   // int16_t[3] (200g accelerometer)
+  mag: [number, number, number];        // int16_t[3]
+  bite_l: number;                       // uint16_t
+  bite_r: number;                       // uint16_t
+  timestamp: number;                    // uint32_t (Device timestamp, likely seconds or custom epoch)
+}
+
+// Matches C struct fsr_packet
+export interface FSRPacket {
+  left_bite: number;                    // int16_t
+  right_bite: number;                   // int16_t
+  timestamp: number;                    // uint32_t (Device timestamp)
+}
+
+// Represents the Heart Rate Measurement characteristic data
+export interface HRMPacket {
+  flags: number;                        // uint8_t
+  heartRate: number;                    // uint8_t or uint16_t depending on flags
+  // Optional fields based on flags (energy expended, rr-interval) not included for simplicity
+  deviceTimestamp?: number;             // Optional: Add if you plan to parse/estimate device time
+  appTimestamp: number;                 // Timestamp when received by the app
+}
+
+// Represents the Health Thermometer Measurement characteristic data
+export interface HTMPacket {
+  flags: number;                        // uint8_t
+  temperature: number;                  // IEEE-11073 float (parsed to a standard number)
+  timestamp?: number;                   // Optional: Device timestamp if included based on flags
+  type?: number;                        // Optional: Location type if included
+  appTimestamp: number;                 // Timestamp when received by the app
+}
+
+export interface Session {
+    id: string;
+    name: string;
+    startTime: number;
+    endTime?: number;
+    team?: string;
+    notes?: string;
+    createdAt: number;
+}
+
+export interface SessionAthlete {
+    sessionId: string;
+    athleteId: string;
+    startTime: number;
+    endTime?: number;
+}
+
+export interface CalibrationData {
+    id?: number;
+    deviceId: string;
+    sensorType: string;
+    timestamp: number;
+    offsetX?: number;
+    offsetY?: number;
+    offsetZ?: number;
+    scaleX?: number;
+    scaleY?: number;
+    scaleZ?: number;
+    createdAt: number;
 }
 
 // Chart-specific types
@@ -49,109 +176,7 @@ export interface ChartData {
 
 // Database types
 export interface DatabaseRow {
-    timestamp?: string;
-    duration_ms?: number;
-    day?: string;
-    month?: string;
-    hour?: string;
-    hit_count?: number;
-    count?: number;
-    avg_duration?: number;
-    max_duration?: number;
-    total_hits?: number;
-    avg_hits_per_day?: number;
-    avg_duration_per_day?: number;
-    daily_hits?: number;
-    days_with_data?: number;
-    weekday_avg?: number;
-    weekday_total?: number;
-    weekend_avg?: number;
-    weekend_total?: number;
-    peak_day_hits?: number;
-    lowest_day_hits?: number;
-    most_active_hour?: number;
-    least_active_hour?: number;
-    total_duration?: number;
-    avg_hits_per_hour?: number;
-    hits_std_dev?: number;
-    // Fields from time distribution query
-    morning?: number;
-    afternoon?: number;
-    evening?: number;
-    night?: number;
-    // Fields from usage stats query
-    average_hits_per_day?: number;
-    shortest_hit?: number;
-    longest_hit?: number;
-    consistency?: number;
-}
-
-export interface UsageStats {
-    // Hit counts
-    averageHitsPerDay: number;
-    totalHits: number;
-    peakDayHits: number;
-    lowestDayHits: number;
-    
-    // Duration stats
-    averageDuration: number;  // in ms
-    longestHit: number;      // in ms
-    shortestHit: number;     // in ms
-    
-    // Time patterns
-    mostActiveHour: number;  // 0-23
-    leastActiveHour: number; // 0-23
-    
-    // Derived metrics
-    totalDuration: number;   // total time in ms
-    averageHitsPerHour: number;
-    consistency: number;     // standard deviation of daily hits
-
-    // Weekday vs Weekend stats
-    weekdayStats: WeekdayStats;
-}
-
-// Add new interfaces for time distribution
-export interface TimeDistribution {
-    morning: number;
-    afternoon: number;
-    evening: number;
-    night: number;
-}
-
-export interface WeekdayStats {
-    weekday: { avg: number; total: number; };
-    weekend: { avg: number; total: number; };
-}
-
-// Component Props interfaces
-export interface WeeklyChartProps {
-    data: ChartDataPoint[];
-    onPress?: () => void;
-}
-
-export interface MonthlyChartProps {
-    data: ChartDataPoint[];
-    onPress?: () => void;
-}
-
-export interface NotificationProps {
-    averageHits: number;
-    percentageChange: number;
-    onDismiss: () => void;
-}
-
-export interface DailyAverageCardProps {
-    data: ChartDataPoint[];
-    averageHits: number;
-    onPress?: () => void;
-}
-
-export interface WeeklyUsageBannerProps {
-    weeklyData: ChartDataPoint[];
-    average: number;
-    percentageChange: number;
-    onPress?: () => void;
+    [key: string]: any;
 }
 
 // API Response types
@@ -161,261 +186,135 @@ export interface DatabaseResponse<T> {
     error?: string;
 }
 
-export interface UsageAnalytics {
-    dailyAverage: number;
-    weeklyAverage: number;
-    percentageChange: number;
-    lastUpdated: string;
-}
-
 export interface SavedDevice {
     id: string;
     name: string;
     lastConnected?: number; // Timestamp in milliseconds
+    batteryLevel?: number; // Battery level (0-100)
+    athleteId?: string; // ID of the athlete this device is assigned to
+}
+
+// Device status for multi-device management
+export interface DeviceStatus {
+    id: string;
+    name: string;
+    connected: boolean;
+    batteryLevel?: number;
+    lastSeen?: number;
+    signalStrength?: number;
+    athleteInfo?: {
+        id: string;
+        name: string;
+    }
+}
+
+// Concussion alert/detection
+export interface ConcussionAlert {
+    id: string;
+    deviceId: string;
+    athleteId?: string;
+    athleteName?: string;
+    timestamp: number;
+    magnitude: number;
+    severity: 'low' | 'moderate' | 'severe' | 'critical';
+    acknowledged: boolean;
+    notes?: string;
+}
+
+// Stats summaries
+export interface SensorStats {
+    deviceId: string;
+    athleteId?: string;
+    sensorType: 'imu' | 'accelerometer' | 'temperature' | 'force' | 'heartRate';
+    min: number;
+    max: number;
+    avg: number;
+    count: number;
+    startTime: number;
+    endTime: number;
+}
+
+// Live monitoring data point
+export interface LiveDataPoint {
+    deviceId: string;
+    timestamp: number;
+    type: 'imu' | 'accelerometer' | 'temperature' | 'force' | 'heartRate';
+    values: number[];
+}
+
+// Session summary
+export interface SessionSummary {
+    id: string;
+    name: string;
+    startTime: number;
+    endTime?: number;
+    athleteCount: number;
+    impactCount: number;
+    averageImpactMagnitude: number;
+    maxImpactMagnitude: number;
+    alerts: number;
+}
+
+// Reports
+export interface ReportParameters {
+    startTime: number;
+    endTime: number;
+    athleteIds?: string[];
+    teamName?: string;
+    includeAccelerometer?: boolean;
+    includeImu?: boolean;
+    includeTemperature?: boolean;
+    includeForce?: boolean;
+    includeHeartRate?: boolean;
+    aggregation?: 'none' | 'minute' | 'hour' | 'day';
+}
+
+export interface AggregatedSensorData {
+    timestamp: number;
+    min: number;
+    max: number;
+    avg: number;
+    count: number;
+}
+
+export interface AthleteReport {
+    athlete: Athlete;
+    totalSessions: number;
+    totalImpacts: number;
+    maxImpact: number;
+    averageImpact: number;
+    impactsByLevel: {
+        low: number;
+        moderate: number;
+        severe: number;
+        critical: number;
+    };
+    heartRateStats?: {
+        min: number;
+        max: number;
+        avg: number;
+    };
+    sessionSummaries: Array<{
+        sessionId: string;
+        sessionName: string;
+        date: number;
+        impactCount: number;
+        maxImpact: number;
+    }>;
 }
 
 // State management types
 export interface DataState {
-    weeklyData: ChartDataPoint[];
-    monthlyData: ChartDataPoint[];
-    usageStats: UsageStats;
-    timeDistribution: TimeDistribution;
     isLoading: boolean;
     error: string | null;
 }
 
-export interface Strain {
-  id?: number;
-  name: string;
-  overview: string;
-  genetic_type: string;
-  lineage: string;
-  thc_range: string;
-  cbd_level: string;
-  dominant_terpenes: string;
-  qualitative_insights: string;
-  effects: string;
-  negatives: string;
-  uses: string;
-  thc_rating: number;
-  user_rating: number;
-  combined_rating: number;
-  created_at?: string;
-}
-
-/**
- * Filters for searching strains
- */
-export interface StrainSearchFilters {
-  geneticType?: 'Indica' | 'Sativa' | 'Hybrid';
-  effects?: string[];
-  sort?: 'name' | 'rating' | 'thc' | 'cbd';
-  minTHC?: number;
-  maxTHC?: number;
-  minCBD?: number;
-  maxCBD?: number;
-  category?: string;
-}
-
-/**
- * Pagination parameters for search results
- */
-export interface PaginationParams {
-  page: number;
-  limit: number;
-}
-
-/**
- * Strain search result
- */
-export interface StrainSearchResult<T> {
-  data: T[];
-  total: number;
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-}
-
-// =========================================================
-// Achievement types (moved from src/types/achievements.ts)
-// =========================================================
-
-export interface Achievement {
-  id: number;
-  category: string;
-  name: string;
-  unlockCondition: string;
-  notes: string;
-  icon: string; // MaterialCommunityIcons name
-  complexity: number; // For achievement difficulty/value
-}
-
-export interface UserAchievement {
-  userId: string;
-  achievementId: number;
-  progress: number; // 0-100%
-  dateUnlocked: string | null;
-  isUnlocked: boolean;
-  isNew: boolean; // For notifications
-  progressData?: any; // JSON data for specific tracking
-}
-
-// Extended UserAchievement with achievement details for UI
-export interface UserAchievementWithDetails extends UserAchievement {
-  id: number;
-  category: string;
-  name: string;
-  unlockCondition: string;
-  notes: string;
-  icon: string;
-  complexity: number;
-}
-
-// =========================================================
-// AI-related types (moved from src/types/ai.ts)
-// =========================================================
-
-// AI recommendation system types
-export interface UserProfile {
-  id: string;
-  experience_level: 'beginner' | 'intermediate' | 'experienced';
-  preferred_effects: string[];
-  medical_needs?: string[];
-  avoid_effects?: string[];
-  preferred_consumption_method?: string;
-  thc_tolerance?: number; // Scale 1-10
-  medications?: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant';
-  timestamp: string;
-}
-
-export interface JournalEntry {
-  id: string;
-  user_id: string;
-  strain_id: number;
-  strain_name: string;
-  consumption_method: string;
-  dosage: number;
-  dosage_unit: string;
-  effects_felt: string[];
-  rating: number;
-  effectiveness: number;
-  notes?: string;
-  mood_before?: string;
-  mood_after?: string;
-  medical_symptoms_relieved?: string[];
-  negative_effects?: string[];
-  duration_minutes?: number;
-  created_at: string;
-}
-
-export interface RecommendationRequest {
-  userProfile: UserProfile;
-  journalEntries?: JournalEntry[];
-  desiredEffects: string[];
-  medicalNeeds?: string[];
-  context?: 'recreational' | 'medical' | 'wellness';
-  locationCode?: string; // For regulations
-}
-
-export interface StrainRecommendation {
-  strainId: number;
-  strainName: string;
-  matchScore: number; // 0-100
-  reasoningFactors: {
-    factor: string;
-    weight: number;
-  }[];
-  alternativeStrains?: {
-    strainId: number;
-    strainName: string;
-    reason: string;
-  }[];
-}
-
-export interface DosageSuggestion {
-  minDosage: number;
-  maxDosage: number;
-  unit: string;
-  gradualApproach: boolean;
-  notes: string;
-}
-
-export interface RecommendationResponse {
-  recommendations: StrainRecommendation[];
-  reasoning: string;
-  confidenceScore: number;
-  disclaimers: string[];
-  dosageSuggestion?: DosageSuggestion;
-  safetyNotes?: string[];
-  error?: {
-    message: string;
-    type: string;
-    recoverable: boolean;
-  };
-}
-
-export interface ChatRequest {
-  message: string;
-  userProfile: UserProfile;
-  locationCode?: string;
-  previousMessages?: {
-    role: 'user' | 'assistant';
-    content: string;
-  }[];
-}
-
-export interface ChatResponse {
-  response: string;
-  educationalLinks?: string[];
-  disclaimers?: string[];
-  regulatoryNotes?: string[];
-  followUpSuggestions?: string[];
-}
-
-export interface JournalAnalysisResult {
-  patterns: string[];
-  insights: string[];
-  recommendations: string[];
-  safetyFlags?: string[];
-}
-
-export interface SafetyValidationResult {
-  valid: boolean;
-  reason?: string;
-  modifications?: Partial<RecommendationRequest>;
-  safetyFlags?: string[];
-  warningLevel?: 'info' | 'warning' | 'critical';
-}
-
-export interface DrugInteractionResult {
-  hasInteractions: boolean;
-  details?: string[];
-  severity?: 'mild' | 'moderate' | 'severe';
-  recommendations?: string[];
-}
-
-export interface OveruseDetectionResult {
-  detected: boolean;
-  level?: 'mild' | 'moderate' | 'severe';
-  details?: string;
-  recommendedAction?: string;
-  coolingOffPeriod?: number; // in days
-}
-
-export interface SafetyRecord {
-  id: string;
-  user_id: string;
-  concern_type: 'overuse' | 'negative_effects' | 'interactions';
-  concern_details: string;
-  resolution_suggestions: string[];
-  cooling_off_until: number | null;
-  created_at: string;
+// Real-time monitoring session state
+export interface MonitoringSessionState {
+    active: boolean;
+    sessionId?: string;
+    sessionName?: string;
+    startTime?: number;
+    connectedDevices: DeviceStatus[];
+    activeAlerts: ConcussionAlert[];
 }

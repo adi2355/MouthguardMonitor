@@ -8,7 +8,6 @@ const DEFAULT_CONFIG = {
   excludeDirs: [
   '.expo',
   'android',
-  'CanovaReactNativeApp/app/dataOverviews',
   'assets',
   'data',
   'ios',
@@ -66,7 +65,7 @@ const DEFAULT_CONFIG = {
     'CanovaReactNativeApp/context.py',
     'CanovaReactNativeApp/tsconfig.json',
     'CanovaReactNativeApp/app.json',
-    'src/constants.ts'
+    
   ],
   maxFileSize: 1024 * 1024, // 1MB
 };

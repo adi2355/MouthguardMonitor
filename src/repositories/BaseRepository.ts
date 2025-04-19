@@ -14,6 +14,7 @@ export class BaseRepository {
    */
   constructor(db: SQLiteDatabase) {
     this.db = db;
+    console.log('[BaseRepository CONSTRUCTOR] Received DB object:', db);
   }
 
   /**

@@ -48,5 +48,6 @@ export const dataChangeEmitter = new EventEmitter();
 
 // Define common event names
 export const dbEvents = {
-  DATA_CHANGED: 'dataChanged'
+  DATA_CHANGED: 'dataChanged',
+  CONCUSSION_DETECTED: 'concussionDetected'
 }; 

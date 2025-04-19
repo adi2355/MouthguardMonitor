@@ -1,4 +1,6 @@
+import React from 'react';
 import { Tabs } from 'expo-router';
+import { StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '@/src/constants';
 
@@ -6,61 +8,121 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.textTertiary,
         tabBarStyle: {
           backgroundColor: COLORS.background,
-          borderTopColor: 'rgba(255, 255, 255, 0.1)',
+          borderTopColor: COLORS.border,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+          shadowColor: COLORS.shadow,
+          shadowOffset: { width: 0, height: -1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
+          elevation: 5,
         },
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.5)',
         headerShown: false,
       }}
-      initialRouteName="index"
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="home" size={24} color={color} />
+          title: 'Dashboard',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="view-dashboard-outline" 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
+      
       <Tabs.Screen
-        name="mydata"
+        name="coach"
         options={{
-          title: 'My Data',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="chart-box" size={24} color={color} />
+          title: 'Coach View',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="clipboard-account-outline" 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
+      
       <Tabs.Screen
         name="devices"
         options={{
-          title: 'Devices',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="devices" size={24} color={color} />
+          title: 'Athletes & Devices',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="account-group" 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
+      
       <Tabs.Screen
-        name="journal"
+        name="livemonitor"
         options={{
-          title: 'Journal',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="notebook" size={24} color={color} />
+          title: 'Live Monitor',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="monitor-dashboard" 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
+      
       <Tabs.Screen
-        name="trending"
+        name="reportsDetailed"
         options={{
-          title: 'Trending',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="trending-up" size={24} color={color} />
+          title: 'Reports',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="chart-timeline-variant" 
+              size={size} 
+              color={color} 
+            />
+          ),
+        }}
+      />
+      
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="cog-outline" 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: COLORS.background,
+    borderTopColor: COLORS.border,
+    height: 60,
+    paddingBottom: 8,
+    paddingTop: 8,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+});

@@ -36,7 +36,7 @@ export default function LoadingView() {
       >
         <Animated.View style={spinStyle}>
           <MaterialCommunityIcons 
-            name="cannabis" 
+            name="loading" 
             size={32} 
             color={COLORS.primary} 
           />
@@ -60,6 +60,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 16,
-    color: COLORS.text.secondary,
+    color: COLORS.textSecondary,
+    marginTop: 8,
   },
 });

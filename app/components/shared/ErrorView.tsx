@@ -27,18 +27,20 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
   title: {
     marginTop: 16,
     fontSize: 20,
     fontWeight: '600',
-    color: COLORS.text.primary,
+    color: COLORS.textPrimary,
   },
   message: {
     marginTop: 8,
     fontSize: 16,
-    color: COLORS.text.secondary,
+    color: COLORS.textSecondary,
     textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: '90%',
   },
 });

@@ -5,30 +5,7 @@ import { BarChart } from "react-native-chart-kit";
 import { LinearGradient } from "expo-linear-gradient";
 import { Datapoint } from "@/src/types";
 import { useMemo } from "react";
-
-// Keep COLORS here for now, we'll move it to constants later
-const COLORS = {
-  background: '#000000',
-  cardBackground: '#1A1A1A',
-  primary: '#00E676',       // Neon green 
-  primaryLight: '#69F0AE',  // Light neon green
-  primaryDark: '#00C853',   // Darker green
-  text: {
-    primary: '#FFFFFF',
-    secondary: '#FFFFFFCC',  // 80% white
-    tertiary: '#FFFFFF99',   // 60% white
-  },
-  chart: {
-    primary: '#00E676',
-    secondary: '#69F0AE',
-    background: '#1A1A1A',
-  },
-  gradientColors: {
-    start: 'rgba(0,230,118,0.4)',
-    middle: 'rgba(105,240,174,0.2)',
-    end: 'rgba(0,0,0,0)',
-  }
-};
+import { COLORS } from "@/src/constants"; // Import the centralized color palette
 
 const windowWidth = Dimensions.get("window").width;
 
@@ -43,12 +20,12 @@ export function WeeklyOverviewChart({ data }: WeeklyOverviewChartProps) {
 
   // Base chart config with optimizations
   const baseChartConfig = useMemo(() => ({
-    backgroundColor: COLORS.chart.background,
-    backgroundGradientFrom: COLORS.chart.background,
-    backgroundGradientTo: COLORS.chart.background,
+    backgroundColor: COLORS.background,
+    backgroundGradientFrom: COLORS.background,
+    backgroundGradientTo: COLORS.background,
     decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
-    labelColor: (opacity = 0.8) => `rgba(255, 255, 255, ${opacity})`,
+    color: (opacity = 1) => `rgba(0, 84, 50, ${opacity})`, // Primary color converted to rgba
+    labelColor: (opacity = 0.8) => `rgba(79, 96, 105, ${opacity})`, // textSecondary
     barPercentage: 0.7,
     useShadowColorFromDataset: false,
     withInnerLines: false,
@@ -57,13 +34,13 @@ export function WeeklyOverviewChart({ data }: WeeklyOverviewChartProps) {
     withVerticalLines: false,
     withHorizontalLines: true,
     propsForBackgroundLines: {
-      stroke: COLORS.text.tertiary,
+      stroke: COLORS.borderLight,
       strokeWidth: 1,
     },
     propsForDots: {
       r: "4",
       strokeWidth: "2",
-      stroke: COLORS.primaryLight,
+      stroke: COLORS.primary,
     },
     style: {
       borderRadius: 16,
@@ -78,7 +55,7 @@ export function WeeklyOverviewChart({ data }: WeeklyOverviewChartProps) {
     labels: data.map((d) => d.label),
     datasets: [{ 
       data: data.map((d) => d.value),
-      color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
+      color: (opacity = 1) => `rgba(0, 84, 50, ${opacity})`, // Primary color converted to rgba
       strokeWidth: 2,
     }]
   }), [data]);
@@ -107,9 +84,9 @@ export function WeeklyOverviewChart({ data }: WeeklyOverviewChartProps) {
       <View style={styles.chartContainer}>
         <LinearGradient
           colors={[
-            COLORS.gradientColors.start,
-            COLORS.gradientColors.middle,
-            COLORS.gradientColors.end
+            `${COLORS.primary}33`, // ~20% opacity 
+            `${COLORS.primary}19`, // ~10% opacity
+            `${COLORS.background}00` // transparent
           ]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
@@ -134,12 +111,12 @@ export function WeeklyOverviewChart({ data }: WeeklyOverviewChartProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.card,
     marginHorizontal: 16,
     marginVertical: 8,
     borderRadius: 16,
     padding: 16,
-    shadowColor: '#00E676',
+    shadowColor: COLORS.shadow,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -147,8 +124,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.borderLight,
   },
   cardHeader: {
     flexDirection: "row",
@@ -158,12 +135,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: COLORS.text.primary,
+    color: COLORS.textPrimary,
     marginLeft: 10,
   },
   cardDescription: {
     fontSize: 15,
-    color: COLORS.text.secondary,
+    color: COLORS.textSecondary,
     marginTop: 4,
     marginBottom: 16,
     lineHeight: 20,
@@ -172,23 +149,19 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: "center",
     paddingHorizontal: 8,
-    backgroundColor: COLORS.cardBackground,
+    backgroundColor: COLORS.background,
     borderRadius: 16,
-    shadowColor: COLORS.primary,
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
-    backgroundColor: COLORS.cardBackground,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
+    backgroundColor: COLORS.background,
+    overflow: 'hidden',
   },
   chartGradient: {
     position: 'absolute',
@@ -199,8 +172,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   noDataText: {
+    color: COLORS.textTertiary,
     fontSize: 16,
-    color: COLORS.text.secondary,
-    padding: 20,
+    marginVertical: 40,
+    fontStyle: 'italic',
   }
 }); 

@@ -1,274 +1,174 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DatabaseManager } from '../DatabaseManager';
 import { StorageService } from './StorageService';
-import { StrainsRepository } from '../repositories/StrainsRepository';
-import { AchievementsRepository } from '../repositories/AchievementsRepository';
-import { BONG_HITS_DATABASE_NAME } from '../constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const FIRST_LAUNCH_KEY = 'hasLaunched';
+import { AthleteRepository } from '../repositories/AthleteRepository';
+import { SensorDataRepository } from '../repositories/SensorDataRepository';
 
 /**
- * Service for handling app setup and first launch
+ * Service for handling app setup/initialization tasks
  */
 export class AppSetupService {
   private storageService: StorageService;
   private databaseManager: DatabaseManager;
-  private strainsRepository: StrainsRepository;
-  private achievementsRepository: AchievementsRepository | null = null;
-
+  
   /**
    * Constructor
-   * @param storageService Storage service for checking first launch
-   * @param databaseManager Database manager for initialization
-   * @param strainsRepository Repository for seeding initial data
+   * @param storageService Injected storage service
+   * @param databaseManager Injected database manager
    */
   constructor(
     storageService: StorageService,
-    databaseManager: DatabaseManager,
-    strainsRepository: StrainsRepository
+    databaseManager: DatabaseManager
   ) {
     this.storageService = storageService;
     this.databaseManager = databaseManager;
-    this.strainsRepository = strainsRepository;
   }
-
+  
   /**
-   * Check if this is the first app launch
-   */
-  public async isFirstLaunch(): Promise<boolean> {
-    try {
-      console.log(`[AppSetupService] Checking if key '${FIRST_LAUNCH_KEY}' exists...`);
-      const hasLaunched = await this.storageService.hasKey(FIRST_LAUNCH_KEY);
-      console.log(`[AppSetupService] Key '${FIRST_LAUNCH_KEY}' exists: ${hasLaunched}. Is first launch? ${!hasLaunched}`);
-      return !hasLaunched; // Return true if key does NOT exist
-    } catch (error) {
-      console.error('[AppSetupService] Error checking first launch flag:', error);
-      // Default to assuming it's NOT the first launch on error to prevent re-initialization loops
-      return false;
-    }
-  }
-
-  /**
-   * Initialize the app for first launch
-   */
-  public async initializeOnFirstLaunch(): Promise<void> {
-    // CRITICAL: Mark first launch EARLY to prevent repeated initializations
-    // We do this OUTSIDE the try/catch to ensure it happens regardless of other errors
-    let flagSet = false;
-    
-    try {
-      console.log(`[AppSetupService] Setting '${FIRST_LAUNCH_KEY}' to true in AsyncStorage FIRST...`);
-      const value = JSON.stringify(true);
-      await AsyncStorage.setItem(FIRST_LAUNCH_KEY, value);
-      
-      // Verify the value was written correctly
-      const verifyValue = await AsyncStorage.getItem(FIRST_LAUNCH_KEY);
-      if (verifyValue === value) {
-        console.log(`[AppSetupService] Successfully set and verified '${FIRST_LAUNCH_KEY}' with direct AsyncStorage call.`);
-        flagSet = true;
-      } else {
-        console.error(`[AppSetupService] Failed to verify '${FIRST_LAUNCH_KEY}', value mismatch! Got: ${verifyValue}`);
-      }
-    } catch (flagError) {
-      console.error(`[AppSetupService] Error setting '${FIRST_LAUNCH_KEY}' flag:`, flagError);
-    }
-    
-    try {
-      console.log('[AppSetupService] Initializing app for first launch sequence...');
-      
-      // Initialize database (runs migrations)
-      console.log('[AppSetupService] Starting database initialization and migration...');
-      await this.databaseManager.initialize();
-      console.log('[AppSetupService] Database initialization and migration completed.');
-      
-      // Seed initial strain data
-      console.log('[AppSetupService] Starting strain data initialization...');
-      try {
-        await this.strainsRepository.initializeData();
-        console.log('[AppSetupService] Strain data initialization completed successfully.');
-      } catch (strainError) {
-        console.error('[AppSetupService] Error during strain data initialization:', strainError);
-        throw strainError; // Re-throw after logging
-      }
-      
-      // Create achievements repository and seed achievement data
-      console.log('[AppSetupService] Getting database for achievements...');
-      const db = await this.databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
-      console.log('[AppSetupService] Creating achievements repository...');
-      this.achievementsRepository = new AchievementsRepository(db);
-      
-      console.log('[AppSetupService] Starting achievements data initialization...');
-      try {
-        await this.achievementsRepository.initializeData();
-        console.log('[AppSetupService] Achievements data initialization completed successfully.');
-      } catch (achievementError) {
-        console.error('[AppSetupService] Error during achievement data initialization:', achievementError);
-        throw achievementError; // Re-throw after logging
-      }
-      
-      // Mark first launch as completed AGAIN for redundancy
-      if (!flagSet) {
-        console.log(`[AppSetupService] Setting '${FIRST_LAUNCH_KEY}' to true again via StorageService...`);
-        await this.storageService.setValue(FIRST_LAUNCH_KEY, true);
-        console.log(`[AppSetupService] Successfully set '${FIRST_LAUNCH_KEY}' via StorageService.`);
-      }
-      
-      console.log('[AppSetupService] First launch initialization sequence completed.');
-    } catch (error) {
-      console.error('[AppSetupService] Error during first launch initialization:', error);
-      
-      // If we haven't set the flag yet, make one last attempt
-      if (!flagSet) {
-        try {
-          console.log(`[AppSetupService] Setting '${FIRST_LAUNCH_KEY}' to true after error...`);
-          await AsyncStorage.setItem(FIRST_LAUNCH_KEY, JSON.stringify(true));
-          console.log(`[AppSetupService] Set '${FIRST_LAUNCH_KEY}' after error.`);
-        } catch (flagError) {
-          console.error(`[AppSetupService] Failed to set '${FIRST_LAUNCH_KEY}' after error:`, flagError);
-        }
-      }
-      
-      throw error; // Re-throw to indicate failure
-    }
-  }
-
-  /**
-   * Ensure achievements data is initialized regardless of first launch status
-   */
-  public async ensureAchievementsInitialized(): Promise<void> {
-    try {
-      console.log('[AppSetupService] Ensuring achievements are initialized...');
-      if (!this.achievementsRepository) {
-        console.log('[AppSetupService] Creating achievements repository...');
-        const db = await this.databaseManager.getDatabase(BONG_HITS_DATABASE_NAME);
-        this.achievementsRepository = new AchievementsRepository(db);
-      }
-
-      // Check if achievements exist before initializing
-      try {
-        const achievementsExist = await this.achievementsRepository.achievementsExist();
-        if (!achievementsExist) {
-          console.log('[AppSetupService] No achievements found, initializing achievements data...');
-          await this.achievementsRepository.initializeData();
-        } else {
-          console.log('[AppSetupService] Achievements data already exists, skipping initialization.');
-        }
-      } catch (error) {
-        // If the check fails (e.g., table doesn't exist yet), initialize anyway
-        console.warn('[AppSetupService] Error checking if achievements exist, attempting initialization anyway:', error);
-        await this.achievementsRepository.initializeData();
-      }
-    } catch (error) {
-      console.error('[AppSetupService] Error ensuring achievements initialized:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Ensure app is initialized regardless of whether it's first launch
-   */
-  public async ensureInitialized(): Promise<void> {
-    console.log('[AppSetupService] Starting ensureInitialized...');
-    try {
-      // Check if this is first launch
-      const isFirst = await this.isFirstLaunch();
-      console.log(`[AppSetupService] isFirstLaunch result: ${isFirst}`);
-      
-      if (isFirst) {
-        console.log('[AppSetupService] Detected first launch, running full initialization...');
-        try {
-          // If first launch, run full initialization
-          await this.initializeOnFirstLaunch();
-        } catch (initError) {
-          console.error('[AppSetupService] Full initialization failed, attempting simple flag set:', initError);
-          
-          // If full initialization fails, at least set the flag to prevent repeat attempts
-          try {
-            // Direct AsyncStorage call as fallback
-            const value = JSON.stringify(true);
-            await AsyncStorage.setItem(FIRST_LAUNCH_KEY, value);
-            console.log(`[AppSetupService] Set '${FIRST_LAUNCH_KEY}' flag as fallback after initialization error`);
-            
-            // Try minimal database initialization
-            await this.databaseManager.ensureInitialized();
-            console.log('[AppSetupService] Minimal database initialization completed as fallback');
-          } catch (flagError) {
-            console.error('[AppSetupService] Even fallback flag setting failed:', flagError);
-            // If everything fails, we'll have to try again next launch
-          }
-          
-          // Rethrow to inform caller of the issue
-          throw initError;
-        }
-      } else {
-        console.log('[AppSetupService] Not first launch, ensuring database and achievements are initialized...');
-        // Otherwise just ensure database is initialized
-        await this.databaseManager.ensureInitialized();
-        
-        // Also ensure achievements are initialized
-        await this.ensureAchievementsInitialized();
-        console.log('[AppSetupService] Database and achievements checked/initialized.');
-      }
-      console.log('[AppSetupService] ensureInitialized completed.');
-    } catch (error) {
-      console.error('[AppSetupService] Error during ensureInitialized:', error);
-      throw error; // Re-throw to indicate failure
-    }
-  }
-
-  /**
-   * Reset app to first launch state (for testing)
-   */
-  public async resetToFirstLaunch(): Promise<void> {
-    try {
-      console.warn('[AppSetupService] Resetting app to first launch state...');
-      // Remove first launch marker
-      await this.storageService.removeValue(FIRST_LAUNCH_KEY);
-      console.log(`[AppSetupService] Removed key '${FIRST_LAUNCH_KEY}'.`);
-      
-      // Clean up database connections
-      await this.databaseManager.cleanup();
-      
-      console.log('[AppSetupService] App reset successfully completed.');
-    } catch (error) {
-      console.error('[AppSetupService] Error resetting to first launch:', error);
-      throw error; // Re-throw to indicate failure
-    }
-  }
-
-  /**
-   * Tests AsyncStorage operations with direct API calls
-   * This helps determine if AsyncStorage is functioning correctly
+   * Test AsyncStorage operation by setting and getting a value
+   * @returns Promise that resolves with true if test passed, false otherwise
    */
   public async testAsyncStorage(): Promise<boolean> {
     try {
-      const testKey = 'asyncStorageTest';
-      const testValue = {test: true, timestamp: new Date().toISOString()};
+      const testKey = 'asyncStorageTestValue';
+      const testValue = `test-${Date.now()}`;
       
-      console.log(`[AppSetupService] DIRECT AsyncStorage Test: Attempting to write key '${testKey}'`);
+      // Set the test value
+      await AsyncStorage.setItem(testKey, testValue);
       
-      // Direct write with AsyncStorage
-      const jsonValue = JSON.stringify(testValue);
-      await AsyncStorage.setItem(testKey, jsonValue);
-      
-      // Verify by reading back
-      const readValue = await AsyncStorage.getItem(testKey);
+      // Get the test value
+      const retrieved = await AsyncStorage.getItem(testKey);
       
       // Clean up
       await AsyncStorage.removeItem(testKey);
       
-      if (readValue === jsonValue) {
-        console.log(`[AppSetupService] DIRECT AsyncStorage Test: SUCCESS - value was correctly stored and retrieved`);
-        return true;
+      // Check if test passed
+      return retrieved === testValue;
+    } catch (error) {
+      console.error('[AppSetupService] AsyncStorage test failed:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Check if this is the first launch and initialize if needed
+   */
+  public async ensureInitialized(): Promise<void> {
+    const hasLaunchedKey = 'hasLaunched';
+    
+    try {
+      const hasLaunched = await this.storageService.getValue<boolean>(hasLaunchedKey);
+      
+      // Always initialize database to ensure tables exist
+      console.log('[AppSetupService] Initializing database...');
+      await this.databaseManager.initialize({ forceRun: true });
+      
+      if (!hasLaunched) {
+        console.log('[AppSetupService] First launch detected, performing initialization...');
+        
+        // Call the first-time setup method
+        await this.performFirstTimeSetup();
       } else {
-        console.error(`[AppSetupService] DIRECT AsyncStorage Test: FAILURE - value mismatch`);
-        console.log(`  Expected: ${jsonValue}`);
-        console.log(`  Received: ${readValue}`);
-        return false;
+        console.log('[AppSetupService] Not first launch, skipping first-time setup');
       }
     } catch (error) {
-      console.error('[AppSetupService] DIRECT AsyncStorage Test: ERROR', error);
-      return false;
+      console.error('[AppSetupService] Error during initialization:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Reset the app to "first launch" state
+   * Warning: This will clear all data
+   */
+  public async resetAppState(): Promise<void> {
+    try {
+      // Clear AsyncStorage
+      await AsyncStorage.clear();
+      
+      // Reset database
+      await this.databaseManager.resetDatabase();
+      
+      console.log('[AppSetupService] App state reset complete');
+    } catch (error) {
+      console.error('[AppSetupService] Error resetting app state:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Perform first-time initialization tasks
+   */
+  private async performFirstTimeSetup(): Promise<void> {
+    try {
+      console.log('[AppSetupService] Performing first-time initialization...');
+      
+      // Get database connection
+      const db = await this.databaseManager.getDatabase('mouthguardMonitor');
+      
+      // Create repositories
+      const athleteRepository = new AthleteRepository(db);
+      const sensorDataRepository = new SensorDataRepository(db);
+      
+      // Create sample data for testing
+      await this.createSampleData(athleteRepository);
+      
+      // Mark initialization as complete
+      await AsyncStorage.setItem('hasLaunched', 'true');
+      
+      console.log('[AppSetupService] First-time initialization complete');
+    } catch (error) {
+      console.error('[AppSetupService] First-time initialization failed:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Create sample data for testing
+   */
+  private async createSampleData(athleteRepository: AthleteRepository): Promise<void> {
+    try {
+      console.log('[AppSetupService] Creating sample athletes for testing...');
+      
+      // Add some test athletes
+      const sampleAthletes = [
+        {
+          name: 'John Doe',
+          team: 'Blue Team',
+          position: 'Forward',
+          age: 19,
+          height: '6\'2"',
+          weight: '185 lbs',
+          deviceId: undefined,
+          notes: 'Sample athlete 1',
+          number: '23',
+          active: true
+        },
+        {
+          name: 'Jane Smith',
+          team: 'Red Team',
+          position: 'Defense',
+          age: 20,
+          height: '5\'9"',
+          weight: '165 lbs',
+          deviceId: undefined,
+          notes: 'Sample athlete 2',
+          number: '45',
+          active: true
+        }
+      ];
+      
+      // Add each athlete
+      for (const athlete of sampleAthletes) {
+        console.log(`[AppSetupService] Adding sample athlete: ${athlete.name}`);
+        await athleteRepository.addAthlete(athlete);
+      }
+      
+      console.log('[AppSetupService] Sample data creation complete');
+    } catch (error) {
+      console.error('[AppSetupService] Error creating sample data:', error);
+      // Don't throw error here - we don't want to fail initialization because of sample data
+      console.log('[AppSetupService] Continuing initialization despite sample data error');
     }
   }
 } 

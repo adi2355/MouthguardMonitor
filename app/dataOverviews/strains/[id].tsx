@@ -1,6 +1,0 @@
-import { Redirect, useLocalSearchParams } from 'expo-router';
-
-export default function StrainDetailsRedirect() {
-  const { id } = useLocalSearchParams();
-  return <Redirect href={`/dataOverviews/strains/strainDetails?id=${id}`} />;
-} 

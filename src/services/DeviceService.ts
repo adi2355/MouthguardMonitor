@@ -33,6 +33,49 @@ export class DeviceService {
   }
 
   /**
+   * Save a single device to storage
+   * @param device BLE device to save
+   */
+  public async saveDevice(device: Device): Promise<void> {
+    try {
+      // Get existing devices
+      const existingDevices = await this.getSavedDevices();
+      
+      // Create SavedDevice from Device
+      const savedDevice: SavedDevice = {
+        id: device.id,
+        name: device.name || 'Unknown Device',
+        lastConnected: Date.now(),
+        batteryLevel: undefined // Will be updated when we get battery data
+      };
+      
+      // Check if device already exists
+      const existingIndex = existingDevices.findIndex(d => d.id === device.id);
+      
+      if (existingIndex !== -1) {
+        // Update existing device
+        existingDevices[existingIndex] = {
+          ...existingDevices[existingIndex],
+          name: savedDevice.name,
+          lastConnected: savedDevice.lastConnected
+          // Preserve existing battery level and athlete ID
+        };
+      } else {
+        // Add new device
+        existingDevices.push(savedDevice);
+      }
+      
+      // Save to storage
+      await this.storageService.setValue(SAVED_DEVICES_KEY, existingDevices);
+      
+      console.log(`[DeviceService] Saved device: ${device.id}`);
+    } catch (error) {
+      console.error('[DeviceService] Error saving device:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Save devices to storage
    * @param devices Array of BLE devices to save
    */
@@ -72,6 +115,74 @@ export class DeviceService {
     } catch (error) {
       console.error('[DeviceService] Error saving devices:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Update the battery level for a device
+   * @param deviceId ID of the device to update
+   * @param batteryLevel Battery level (0-100)
+   */
+  public async updateDeviceBatteryLevel(deviceId: string, batteryLevel: number): Promise<void> {
+    try {
+      const devices = await this.getSavedDevices();
+      const deviceIndex = devices.findIndex(d => d.id === deviceId);
+      
+      if (deviceIndex !== -1) {
+        // Update the battery level
+        devices[deviceIndex] = {
+          ...devices[deviceIndex],
+          batteryLevel
+        };
+        
+        // Save to storage
+        await this.storageService.setValue(SAVED_DEVICES_KEY, devices);
+        console.log(`[DeviceService] Updated battery level for device ${deviceId}: ${batteryLevel}%`);
+      }
+    } catch (error) {
+      console.error('[DeviceService] Error updating device battery level:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update the athlete assignment for a device
+   * @param deviceId ID of the device to update
+   * @param athleteId ID of the athlete to assign
+   */
+  public async updateDeviceAthleteAssignment(deviceId: string, athleteId: string | undefined): Promise<void> {
+    try {
+      const devices = await this.getSavedDevices();
+      const deviceIndex = devices.findIndex(d => d.id === deviceId);
+      
+      if (deviceIndex !== -1) {
+        // Update the athlete assignment
+        devices[deviceIndex] = {
+          ...devices[deviceIndex],
+          athleteId
+        };
+        
+        // Save to storage
+        await this.storageService.setValue(SAVED_DEVICES_KEY, devices);
+        console.log(`[DeviceService] Updated athlete assignment for device ${deviceId}: ${athleteId}`);
+      }
+    } catch (error) {
+      console.error('[DeviceService] Error updating device athlete assignment:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get device by ID
+   * @param deviceId ID of the device to get
+   */
+  public async getDeviceById(deviceId: string): Promise<SavedDevice | null> {
+    try {
+      const devices = await this.getSavedDevices();
+      return devices.find(d => d.id === deviceId) || null;
+    } catch (error) {
+      console.error(`[DeviceService] Error getting device by ID (${deviceId}):`, error);
+      return null;
     }
   }
 

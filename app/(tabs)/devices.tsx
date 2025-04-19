@@ -1,7 +1,5 @@
-import { BluetoothContext, BluetoothHandler } from '@/src/contexts/BluetoothContext';
-import { databaseManager } from '@/src/DatabaseManager';
-import { SavedDevice } from '@/src/types';
-import React, { useState, useEffect, useRef } from 'react';
+import { Athlete, DeviceStatus, SavedDevice } from '@/src/types';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,128 +8,339 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  ScrollView
+  ScrollView,
+  RefreshControl,
+  Platform
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import base64 from 'react-native-base64';
-import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { COLORS } from '@/src/constants';
+import { useRouter } from 'expo-router';
+import { useBluetoothService, useAthleteRepository } from '@/src/providers/AppProvider';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useBluetoothService } from '@/src/providers/AppProvider';
+import { BlurView } from 'expo-blur';
+
+// Custom theme colors for beige theme
+const THEME = {
+  background: '#f2efe4', // Beige background matching bottom bar
+  cardBackground: '#ffffff',
+  primary: '#00b076', // Green primary color
+  success: '#34c759',
+  error: '#ff3b30',
+  warning: '#ff9500',
+  text: {
+    primary: '#333333',
+    secondary: '#666666',
+    tertiary: '#999999',
+    onPrimary: '#ffffff',
+  },
+  divider: 'rgba(0,0,0,0.08)',
+  card: {
+    shadow: 'rgba(0,0,0,0.12)',
+    border: 'rgba(0,0,0,0.05)',
+  }
+};
+
+// Premium Glass Card component
+const GlassCard = ({ style, children, intensity = 15 }) => {
+  return Platform.OS === 'ios' ? (
+    <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
+      {children}
+    </BlurView>
+  ) : (
+    <View style={[styles.glassCardFallback, style]}>
+      {children}
+    </View>
+  );
+};
 
 export default function Devices() {
-  const [savedDevices, setSavedDevices] = useState<SavedDevice[]>([]);
-  const [scannedDevices, setScannedDevices] = useState<Device[]>([]);
-  const [scanning, setScanning] = useState<boolean>(false);
-  const [deviceConnectedId, setDeviceConnectedId] = useState<string|null >(null);
-  const [connectionError, setConnectionError] = useState<string|null>(null);
-
-  //Track devices to avoid duplicate keys when scanning
-  const undiscoveredDeviceSet: React.MutableRefObject<Set<string>> = useRef(new Set<string>());
-  
-  // Use BluetoothService instead of BluetoothContext
+  const router = useRouter();
   const bluetoothService = useBluetoothService();
-
-  useEffect(() => {
-    updateSavedDevices();
-    
-    // Check if there's already a connected device
-    const connectedDevice = bluetoothService.getConnectedDevice();
-    if (connectedDevice) {
-      setDeviceConnectedId(connectedDevice.id);
-    }
-  }, []);
-
-  useEffect(() => {
-    // This effect will run whenever savedDevices or deviceConnectedId changes
-    console.log(`Connected device ID: ${deviceConnectedId}`);
-  }, [savedDevices, deviceConnectedId]);
-
- 
-  function connectAndListenToDevice(deviceId: string, device?: Device): void {
-    if (deviceConnectedId === deviceId) {
-      return;
-    }
-    
-    setConnectionError(null);
-
-    bluetoothService.connectToDevice(deviceId)
-      .then(() => {
-        // The connection and streaming is handled by the service
-        setDeviceConnectedId(deviceId);
-      })
-      .catch(error => {
-        console.error("Connection error:", error);
-        setConnectionError("Failed to connect to device");
-      });
-  }
+  const athleteRepository = useAthleteRepository();
   
-  function updateSavedDevices() {
-    bluetoothService.getSavedDevices()
-      .then(devices => {
-        console.log("Saved devices:", devices);
-        // The service directly returns the devices array without the response wrapper
-        setSavedDevices(devices);
-       
-        // Prevent saved devices from showing during scanning
-        devices.forEach((device: SavedDevice) => {
-          undiscoveredDeviceSet.current.add(device.id);
-        });
-      })
-      .catch(error => {
-        console.error("Error getting saved devices:", error);
-        // Initialize with empty array if there's an error
-        setSavedDevices([]);
-      });
-  }
+  const [savedDevices, setSavedDevices] = useState([]);
+  const [scannedDevices, setScannedDevices] = useState([]);
+  const [scanning, setScanning] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [connectionInProgress, setConnectionInProgress] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [athleteListVisible, setAthleteListVisible] = useState(false);
+  const [athletes, setAthletes] = useState([]);
+  
+  // Load devices and status
+  const loadDevices = useCallback(async () => {
+    try {
+      setLoading(true);
+      // Get device statuses from BluetoothService
+      const deviceStatuses = bluetoothService.getDeviceStatuses();
+      setSavedDevices(deviceStatuses);
 
-  function scanDevices(): void {
-    setScanning(true);
-    setScannedDevices([]);
-    
-    // Only clear the set for new devices, keep saved devices in the set
-    const savedIds = new Set(savedDevices.map(device => device.id));
-    undiscoveredDeviceSet.current = savedIds;
-
-    bluetoothService.scanForDevices(
-      (device) => {
-        if (device && device.name && !undiscoveredDeviceSet.current.has(device.id)) {
-          undiscoveredDeviceSet.current.add(device.id); // Add device ID to the Set
-          setScannedDevices((prevDevices) => [...prevDevices, device]);
-        }
-      },
-      10000 // 10 second timeout
-    ).then(() => {
-      setScanning(false);
-    }).catch(error => {
-      console.error('Error scanning devices:', error);
-      setScanning(false);
+      // Load athletes for assignment
+      const athleteList = await athleteRepository.getAllAthletes();
+      setAthletes(athleteList);
+    } catch (error) {
+      console.error('Error loading devices:', error);
+      Alert.alert('Error', 'Failed to load devices');
+    } finally {
+      setLoading(false);
+    }
+  }, [bluetoothService, athleteRepository]);
+  
+  // Handle refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadDevices();
+    setRefreshing(false);
+  }, [loadDevices]);
+  
+  // Initial load
+  useEffect(() => {
+    loadDevices();
+  }, [loadDevices]);
+  
+  // Subscribe to device status updates
+  useEffect(() => {
+    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates(deviceStatuses => {
+      setSavedDevices(deviceStatuses);
     });
-  }
-
-  // Renders device
-  const renderDevice = ({ item }: { item: Device | SavedDevice }): JSX.Element => (
-    <TouchableOpacity 
-      style={styles.deviceItem} 
-      onPress={() => { (item instanceof Device) ? connectAndListenToDevice(item.id, item) : connectAndListenToDevice(item.id) }}
-    >
-      <View style={styles.deviceIconContainer}>
-        <MaterialCommunityIcons name="bluetooth" size={22} color={COLORS.primary} />
-      </View>
-      <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{item.name}</Text>
-        <Text style={styles.deviceStatus}>
-          {item.id === deviceConnectedId ? "Connected" : "Not Connected"}
-        </Text>
-      </View>
-      <MaterialCommunityIcons 
-        name="chevron-right" 
-        size={24} 
-        color={COLORS.text.secondary} 
-      />
-    </TouchableOpacity>
-  );
+    
+    return () => unsubscribe();
+  }, [bluetoothService]);
+  
+  // Connect to a device
+  const connectToDevice = async (deviceId, deviceName) => {
+    try {
+      setConnectionInProgress(true);
+      setConnectionError(null);
+      
+      await bluetoothService.connectToDevice(deviceId);
+      
+      // Success will be reflected via the subscription to device status updates
+      Alert.alert('Success', `Connected to ${deviceName || deviceId}`);
+    } catch (error) {
+      console.error('Error connecting to device:', error);
+      setConnectionError('Failed to connect to device. Please try again.');
+      Alert.alert('Connection Error', 'Failed to connect to device. Please try again.');
+    } finally {
+      setConnectionInProgress(false);
+    }
+  };
+  
+  // Disconnect from a device
+  const disconnectDevice = async (deviceId) => {
+    try {
+      await bluetoothService.disconnectFromDevice(deviceId);
+      
+      // Success will be reflected via the subscription to device status updates
+    } catch (error) {
+      console.error('Error disconnecting from device:', error);
+      Alert.alert('Disconnection Error', 'Failed to disconnect from device. Please try again.');
+    }
+  };
+  
+  // Scan for devices
+  const scanDevices = async () => {
+    try {
+      setScanning(true);
+      setScannedDevices([]);
+      
+      const foundDevices = await bluetoothService.scanForDevices();
+      setScannedDevices(foundDevices);
+    } catch (error) {
+      console.error('Error scanning for devices:', error);
+      Alert.alert('Scan Error', 'Failed to scan for devices. Please check Bluetooth permissions and try again.');
+    } finally {
+      setScanning(false);
+    }
+  };
+  
+  // Open the athlete assignment modal
+  const openAssignDeviceModal = (deviceId) => {
+    setSelectedDeviceId(deviceId);
+    setAthleteListVisible(true);
+  };
+  
+  // Assign device to athlete
+  const assignDeviceToAthlete = async (athleteId) => {
+    if (!selectedDeviceId) return;
+    
+    try {
+      await athleteRepository.assignDeviceToAthlete(athleteId, selectedDeviceId);
+      
+      // Update local saved devices
+      await loadDevices();
+      
+      // Close the modal
+      setAthleteListVisible(false);
+      setSelectedDeviceId(null);
+      
+      Alert.alert('Success', 'Device assigned to athlete');
+    } catch (error) {
+      console.error('Error assigning device to athlete:', error);
+      Alert.alert('Assignment Error', 'Failed to assign device to athlete. Please try again.');
+    }
+  };
+  
+  // Renders saved device
+  const renderDevice = ({ item }) => {
+    const isConnected = item.connected;
+    
+    return (
+      <TouchableOpacity 
+        style={styles.deviceItem}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={[isConnected ? 'rgba(0,176,118,0.15)' : 'rgba(0,0,0,0.08)', isConnected ? 'rgba(0,176,118,0.05)' : 'rgba(0,0,0,0.02)']}
+          style={styles.deviceIcon}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          borderRadius={20}
+        >
+          <MaterialCommunityIcons 
+            name="tooth-outline" 
+            size={22} 
+            color={isConnected ? THEME.primary : THEME.text.secondary} 
+          />
+        </LinearGradient>
+        <View style={styles.deviceInfo}>
+          <Text style={styles.deviceName}>{item.name}</Text>
+          <Text style={[styles.deviceStatus, isConnected ? styles.connectedText : styles.disconnectedText]}>
+            {isConnected ? "Connected" : "Not Connected"}
+          </Text>
+          {item.batteryLevel !== undefined && (
+            <View style={styles.batteryContainer}>
+              <MaterialCommunityIcons 
+                name={getBatteryIcon(item.batteryLevel)} 
+                size={14} 
+                color={getBatteryColor(item.batteryLevel)} 
+              />
+              <Text style={[styles.batteryText, {color: getBatteryColor(item.batteryLevel)}]}>
+                {item.batteryLevel}%
+              </Text>
+            </View>
+          )}
+          {item.athleteInfo && (
+            <Text style={styles.athleteText}>Assigned to: {item.athleteInfo.name}</Text>
+          )}
+        </View>
+        <View style={styles.deviceActions}>
+          {connectionInProgress && selectedDeviceId === item.id ? (
+            <View style={styles.loadingButton}>
+              <ActivityIndicator size="small" color={THEME.primary} />
+            </View>
+          ) : isConnected ? (
+            <TouchableOpacity 
+              onPress={() => disconnectDevice(item.id)}
+              style={styles.actionButton}
+              disabled={connectionInProgress}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="bluetooth-off" size={20} color={THEME.error} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              onPress={() => connectToDevice(item.id, item.name)}
+              style={styles.actionButton}
+              disabled={connectionInProgress}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="bluetooth-connect" size={20} color={THEME.primary} />
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity 
+            onPress={() => openAssignDeviceModal(item.id)}
+            style={styles.actionButton}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="account-plus" size={20} color={THEME.text.primary} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+  
+  // Renders scanned device
+  const renderScannedDevice = ({ item }) => {
+    // Check if this device is already saved
+    const isAlreadySaved = savedDevices.some(device => device.id === item.id);
+    
+    return (
+      <TouchableOpacity 
+        style={styles.deviceItem}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)']}
+          style={styles.deviceIcon}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          borderRadius={20}
+        >
+          <MaterialCommunityIcons 
+            name="bluetooth-connect" 
+            size={22} 
+            color={THEME.primary} 
+          />
+        </LinearGradient>
+        <View style={styles.deviceInfo}>
+          <Text style={styles.deviceName}>{item.name || item.id}</Text>
+          <Text style={styles.newDeviceLabel}>New Device</Text>
+        </View>
+        <View style={styles.deviceActions}>
+          {!isAlreadySaved && (
+            <TouchableOpacity 
+              onPress={() => connectToDevice(item.id, item.name)}
+              style={styles.actionButton}
+              disabled={connectionInProgress}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="bluetooth-connect" size={20} color={THEME.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+  
+  // Renders athlete for assignment
+  const renderAthlete = ({ item }) => {
+    const hasDevice = item.deviceId !== undefined && item.deviceId !== null;
+    
+    return (
+      <TouchableOpacity 
+        style={[styles.athleteItem, hasDevice && styles.athleteItemDisabled]}
+        onPress={() => !hasDevice && assignDeviceToAthlete(item.id)}
+        disabled={hasDevice}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={[hasDevice ? 'rgba(0,0,0,0.05)' : 'rgba(0,176,118,0.15)', hasDevice ? 'rgba(0,0,0,0.02)' : 'rgba(0,176,118,0.05)']}
+          style={styles.deviceIcon}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          borderRadius={20}
+        >
+          <MaterialCommunityIcons 
+            name="account" 
+            size={22} 
+            color={hasDevice ? THEME.text.tertiary : THEME.primary} 
+          />
+        </LinearGradient>
+        <View style={styles.athleteInfo}>
+          <Text style={[styles.athleteName, hasDevice && styles.textDisabled]}>{item.name}</Text>
+          {hasDevice ? (
+            <Text style={styles.textDisabled}>Already has device assigned</Text>
+          ) : (
+            <Text style={styles.availableText}>Available for assignment</Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaProvider>
@@ -139,285 +348,554 @@ export default function Devices() {
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={THEME.primary}
+            colors={[THEME.primary]}
+            progressBackgroundColor="rgba(0,0,0,0.05)"
+          />
+        }
       >
-        {/* Header */}
+        {/* Premium Header with Gradient */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Devices</Text>
+          <LinearGradient
+            colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)', 'transparent']}
+            style={styles.headerGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Devices</Text>
+          </View>
         </View>
 
-        {/* My Devices Section */}
+        {/* Connected Devices Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My Devices</Text>
-          <View style={styles.sectionCard}>
-            {savedDevices.length > 0 ? (
-              <FlatList
-                data={savedDevices}
-                keyExtractor={(item) => item.id}
-                renderItem={renderDevice}
-                scrollEnabled={false}
-                ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
-              />
-            ) : (
-              <View style={styles.emptyStateContainer}>
-                <MaterialCommunityIcons name="devices" size={40} color={COLORS.text.tertiary} />
-                <Text style={styles.emptyStateText}>No paired devices</Text>
-              </View>
-            )}
-          </View>
+          <Text style={styles.sectionTitle}>Connected Devices</Text>
+          <GlassCard style={styles.sectionCard}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+              style={styles.cardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+            />
+            <View style={styles.cardInner}>
+              {savedDevices.filter(device => device.connected).length > 0 ? (
+                <FlatList
+                  data={savedDevices.filter(device => device.connected)}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderDevice}
+                  scrollEnabled={false}
+                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+                />
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                    style={styles.emptyStateIcon}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    borderRadius={30}
+                  >
+                    <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
+                  </LinearGradient>
+                  <Text style={styles.emptyStateText}>No connected devices</Text>
+                  <Text style={styles.emptyStateSubtext}>Connect to a mouthguard device to monitor impacts</Text>
+                </View>
+              )}
+            </View>
+          </GlassCard>
         </View>
 
         {/* Available Devices Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Available Devices</Text>
-          
-          <TouchableOpacity 
-            style={styles.scanButton} 
-            onPress={scanDevices} 
-            disabled={scanning}
-          >
+          <GlassCard style={styles.sectionCard}>
             <LinearGradient
-              colors={[COLORS.primary, COLORS.primaryDark || '#00C853']}
-              style={styles.scanButtonGradient}
+              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+              style={styles.cardGradient}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <MaterialCommunityIcons 
-                name="bluetooth-settings" 
-                size={20} 
-                color="#000" 
-              />
-              <Text style={styles.scanButtonText}>
-                {scanning ? 'Scanning...' : 'Scan for Devices'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          
-          {scanning && (
-            <View style={styles.scanningIndicator}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-              <Text style={styles.scanningText}>Searching for devices...</Text>
+              end={{ x: 0, y: 1 }}
+            />
+            <View style={styles.cardInner}>
+              {savedDevices.filter(device => !device.connected).length > 0 ? (
+                <FlatList
+                  data={savedDevices.filter(device => !device.connected)}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderDevice}
+                  scrollEnabled={false}
+                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+                />
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                    style={styles.emptyStateIcon}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    borderRadius={30}
+                  >
+                    <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
+                  </LinearGradient>
+                  <Text style={styles.emptyStateText}>No available devices</Text>
+                  <Text style={styles.emptyStateSubtext}>All saved devices are currently connected</Text>
+                </View>
+              )}
             </View>
-          )}
-          
-          {scannedDevices.length > 0 && (
-            <View style={styles.sectionCard}>
-              <FlatList
-                data={scannedDevices}
-                keyExtractor={(item) => item.id}
-                renderItem={renderDevice}
-                scrollEnabled={false}
-                ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
-              />
-            </View>
-          )}
-          
-          {!scanning && scannedDevices.length === 0 && (
-            <View style={styles.sectionCard}>
-              <View style={styles.emptyStateContainer}>
-                <MaterialCommunityIcons name="bluetooth-off" size={40} color={COLORS.text.tertiary} />
-                <Text style={styles.emptyStateText}>No devices found</Text>
-                <Text style={styles.emptyStateSubtext}>Tap the scan button to search for devices</Text>
-              </View>
-            </View>
-          )}
+          </GlassCard>
         </View>
-        
-        {/* Connection Info Card */}
+
+        {/* Scan Devices Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Connection Info</Text>
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Status:</Text>
-              <Text style={[
-                styles.infoValue, 
-                deviceConnectedId ? styles.connectedText : styles.disconnectedText
-              ]}>
-                {deviceConnectedId ? 'Connected' : 'Disconnected'}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Discover New Devices</Text>
+            <TouchableOpacity 
+              style={styles.scanButton}
+              onPress={scanDevices}
+              disabled={scanning}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#00d68f', '#00b076']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                borderRadius={24}
+              />
+              <MaterialCommunityIcons name="bluetooth-connect" size={20} color="#fff" />
+              <Text style={styles.scanButtonText}>
+                {scanning ? 'Scanning...' : 'Scan'}
               </Text>
-            </View>
-            {deviceConnectedId && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Device ID:</Text>
-                <Text style={styles.infoValue}>{deviceConnectedId}</Text>
-              </View>
-            )}
-            {connectionError && (
-              <View style={styles.errorContainer}>
-                <MaterialCommunityIcons name="alert-circle" size={18} color="#FF5252" />
-                <Text style={styles.errorText}>{connectionError}</Text>
-              </View>
-            )}
+              {scanning && <ActivityIndicator color="#fff" style={{ marginLeft: 8 }} />}
+            </TouchableOpacity>
           </View>
+          
+          <GlassCard style={styles.sectionCard}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+              style={styles.cardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+            />
+            <View style={styles.cardInner}>
+              {scanning ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={THEME.primary} />
+                  <Text style={styles.loadingText}>Scanning for devices...</Text>
+                </View>
+              ) : scannedDevices.length > 0 ? (
+                <FlatList
+                  data={scannedDevices}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderScannedDevice}
+                  scrollEnabled={false}
+                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+                />
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                    style={styles.emptyStateIcon}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    borderRadius={30}
+                  >
+                    <MaterialCommunityIcons name="bluetooth-transfer" size={36} color={THEME.text.tertiary} />
+                  </LinearGradient>
+                  <Text style={styles.emptyStateText}>No devices found</Text>
+                  <Text style={styles.emptyStateSubtext}>Tap the Scan button to search for nearby mouthguard devices</Text>
+                </View>
+              )}
+            </View>
+          </GlassCard>
         </View>
+
+        {/* Athletes Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Athletes & Assignments</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => router.push('/athletes')}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#00d68f', '#00b076']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                borderRadius={24}
+              />
+              <MaterialCommunityIcons name="account-plus" size={20} color="#fff" />
+              <Text style={styles.scanButtonText}>Add Athlete</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <GlassCard style={styles.sectionCard}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+              style={styles.cardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+            />
+            <View style={styles.cardInner}>
+              {athletes.length > 0 ? (
+                <FlatList
+                  data={athletes}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderAthlete}
+                  scrollEnabled={false}
+                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+                />
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                    style={styles.emptyStateIcon}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    borderRadius={30}
+                  >
+                    <MaterialCommunityIcons name="account-group" size={36} color={THEME.text.tertiary} />
+                  </LinearGradient>
+                  <Text style={styles.emptyStateText}>No athletes found</Text>
+                  <Text style={styles.emptyStateSubtext}>Add athletes to start assigning devices</Text>
+                </View>
+              )}
+            </View>
+          </GlassCard>
+        </View>
+
+        {connectionError && (
+          <View style={styles.errorContainer}>
+            <MaterialCommunityIcons name="alert-circle" size={20} color={THEME.error} />
+            <Text style={styles.errorText}>{connectionError}</Text>
+          </View>
+        )}
+        
+        {/* Bottom tab spacer */}
+        <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaProvider>
   );
 }
 
+// Helper functions
+const getBatteryIcon = (level) => {
+  if (level === undefined) return 'battery-unknown';
+  if (level <= 10) return 'battery-10';
+  if (level <= 20) return 'battery-20';
+  if (level <= 30) return 'battery-30';
+  if (level <= 40) return 'battery-40';
+  if (level <= 50) return 'battery-50';
+  if (level <= 60) return 'battery-60';
+  if (level <= 70) return 'battery-70';
+  if (level <= 80) return 'battery-80';
+  if (level <= 90) return 'battery-90';
+  return 'battery';
+};
+
+const getBatteryColor = (level) => {
+  if (level === undefined) return '#999999';
+  if (level <= 20) return '#ff3b30'; // Red
+  if (level <= 40) return '#ff9500'; // Orange
+  return '#34c759'; // Green
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background, // Beige background
   },
   contentContainer: {
     paddingBottom: 32,
-  },
-  header: {
     paddingHorizontal: 16,
+  },
+  // Premium header styling
+  header: {
+    height: 140,
+    position: 'relative',
+    marginBottom: 20,
+  },
+  headerGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  headerContent: {
+    flex: 1,
     paddingTop: 16,
-    paddingBottom: 8,
-    marginTop: 30
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '700',
-    color: COLORS.text.primary,
-    letterSpacing: 0.35,
+    color: THEME.text.primary,
+    letterSpacing: 0.5,
   },
   section: {
     marginBottom: 24,
-    paddingHorizontal: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.text.primary,
+    color: THEME.text.primary,
     marginBottom: 12,
+    letterSpacing: 0.3,
+  },
+  // Glass card styles
+  glassCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderColor: THEME.card.border,
+    borderWidth: 1,
+    shadowColor: THEME.card.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  glassCardFallback: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: THEME.cardBackground,
+    borderColor: THEME.card.border,
+    borderWidth: 1,
+    shadowColor: THEME.card.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cardGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  cardInner: {
+    padding: 16,
   },
   sectionCard: {
-    backgroundColor: COLORS.cardBackground,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: 'hidden',
+    position: 'relative',
   },
   deviceItem: {
     flexDirection: 'row',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
     alignItems: 'center',
-    padding: 16,
+    backgroundColor: 'transparent',
   },
-  deviceSeparator: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginLeft: 56,
-  },
-  deviceIconContainer: {
+  deviceIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 230, 118, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 176, 118, 0.2)',
   },
   deviceInfo: {
     flex: 1,
   },
   deviceName: {
     fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.text.primary,
+    fontWeight: '600',
+    color: THEME.text.primary,
     marginBottom: 4,
+    letterSpacing: 0.2,
   },
   deviceStatus: {
     fontSize: 14,
-    color: COLORS.text.secondary,
-  },
-  scanButton: {
-    marginBottom: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  scanButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-  },
-  scanButtonText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  scanningIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  scanningText: {
-    marginLeft: 8,
-    color: COLORS.text.secondary,
-    fontSize: 14,
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    marginTop: 12,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  infoCard: {
-    backgroundColor: COLORS.cardBackground,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
-    padding: 16,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  infoLabel: {
-    width: 100,
-    fontSize: 14,
-    color: COLORS.text.secondary,
-  },
-  infoValue: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.text.primary,
+    marginBottom: 4,
+    letterSpacing: 0.2,
   },
   connectedText: {
-    color: COLORS.primary,
+    color: THEME.success,
     fontWeight: '500',
   },
   disconnectedText: {
-    color: '#FF5252',
-    fontWeight: '500',
+    color: THEME.text.tertiary,
   },
-  errorContainer: {
+  newDeviceLabel: {
+    color: THEME.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  batteryContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 82, 82, 0.1)',
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  batteryText: {
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  athleteText: {
+    fontSize: 12,
+    color: THEME.primary,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  deviceActions: {
+    flexDirection: 'row',
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+    shadowColor: THEME.card.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  loadingButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
+  deviceSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: THEME.divider,
+    marginHorizontal: 4,
+  },
+  // Premium scan button
+  scanButton: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addButton: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  scanButtonText: {
+    color: THEME.text.onPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  emptyStateContainer: {
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyStateText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: THEME.text.primary,
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  emptyStateSubtext: {
+    fontSize: 15,
+    color: THEME.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: '80%',
+  },
+  loadingContainer: {
+    padding: 32,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: THEME.text.secondary,
+    fontSize: 15,
+    letterSpacing: 0.2,
+  },
+  errorContainer: {
+    backgroundColor: 'rgba(255, 50, 50, 0.08)',
     padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.2)',
   },
   errorText: {
-    color: '#FF5252',
+    color: THEME.error,
     fontSize: 14,
     marginLeft: 8,
+    flex: 1,
+  },
+  athleteItem: {
+    flexDirection: 'row',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  athleteInfo: {
+    flex: 1,
+  },
+  athleteName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: THEME.text.primary,
+    marginBottom: 4,
+    letterSpacing: 0.2,
+  },
+  textDisabled: {
+    color: THEME.text.tertiary,
+  },
+  availableText: {
+    color: THEME.primary,
+    fontSize: 12,
+  },
+  athleteItemDisabled: {
+    opacity: 0.7,
   }
 });

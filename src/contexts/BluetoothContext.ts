@@ -7,42 +7,98 @@ import { parseRawTimestamp } from "../utils/functions";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Storage key for device UUIDs
-const DEVICE_UUIDS_STORAGE_KEY = "CANOVA_DEVICE_UUIDS";
+const DEVICE_UUIDS_STORAGE_KEY = "MOUTHGUARD_DEVICE_UUIDS";
+
+// Define UUIDs for mouthguard services
+const SERVICE_UUIDS = {
+  BATTERY: '0x180F',
+  IMU: 'c8553001-5a23-4b2e-b161-b22252abb885', // Custom UUID for IMU
+  ACCELEROMETER: 'c8553002-5a23-4b2e-b161-b22252abb885', // Custom UUID for accelerometer
+  TEMPERATURE: 'c8553003-5a23-4b2e-b161-b22252abb885', // Custom UUID for temperature
+  FORCE: 'c8553004-5a23-4b2e-b161-b22252abb885', // Custom UUID for force sensor
+  HEART_RATE: '0x180D' // Standard UUID for heart rate
+};
+
+// Define UUIDs for characteristics
+const CHARACTERISTIC_UUIDS = {
+  BATTERY_LEVEL: '0x2A19',
+  IMU_1: 'c8553101-5a23-4b2e-b161-b22252abb885',
+  IMU_2: 'c8553102-5a23-4b2e-b161-b22252abb885',
+  ACCEL_1: 'c8553201-5a23-4b2e-b161-b22252abb885',
+  ACCEL_2: 'c8553202-5a23-4b2e-b161-b22252abb885',
+  TEMP_1: 'c8553301-5a23-4b2e-b161-b22252abb885',
+  TEMP_2: 'c8553302-5a23-4b2e-b161-b22252abb885',
+  FORCE_1: 'c8553401-5a23-4b2e-b161-b22252abb885',
+  FORCE_2: 'c8553402-5a23-4b2e-b161-b22252abb885',
+  HEART_RATE_MEASUREMENT: '0x2A37'
+};
 
 // Interface for state restoration event based on react-native-ble-plx implementation
 interface StateRestoredEvent {
     connectedPeripherals: Device[];
 }
 
+// Updated to support multiple sensor data
+type SensorData = {
+  timestamp: number;
+  values: number[];
+};
+
+// Updated to handle multiple service/characteristic pairs
 type ConnectedDevice = {
     device: Device;
-    serviceUUID: string;
-    characteristicUUID: string
+    services: {
+      [key: string]: {
+        uuid: string;
+        characteristics: {
+          [key: string]: string;
+        }
+      }
+    }
 }
 
 type StoredDeviceUUIDs = {
     [deviceId: string]: {
-        serviceUUID: string;
-        characteristicUUID: string;
+        services: {
+          [serviceName: string]: {
+            uuid: string;
+            characteristics: {
+              [characteristicName: string]: string;
+            }
+          }
+        }
     }
 }
 
+// Callbacks for different sensor types
+export interface SensorCallbacks {
+  onImuData?: (deviceId: string, sensorId: number, data: SensorData) => void;
+  onAccelerometerData?: (deviceId: string, sensorId: number, data: SensorData) => void;
+  onTemperatureData?: (deviceId: string, sensorId: number, data: SensorData) => void;
+  onForceData?: (deviceId: string, sensorId: number, data: SensorData) => void;
+  onHeartRateData?: (deviceId: string, heartRate: number) => void;
+  onBatteryLevel?: (deviceId: string, level: number) => void;
+}
+
+// Create a context with a default undefined value
+export const BluetoothContext = createContext<BluetoothHandler | undefined>(undefined);
+
 export class BluetoothHandler {
     private manager: BleManager;
-    private connectedDevice: ConnectedDevice | null;
-    private onDataCallback: ((rawTimestamp: string, timestamp: string, duration: number) => void) | null = null;
+    private connectedDevices: Map<string, ConnectedDevice>; // Support multiple devices
+    private callbacks: SensorCallbacks = {};
     private isRestoringState: boolean = false;
 
     constructor() {
         console.log('[BluetoothHandler] Initializing BleManager with state restoration');
         this.manager = new BleManager({
             // Unique identifier for state restoration
-            restoreStateIdentifier: "CanovaAppBluetoothRestoreID",
+            restoreStateIdentifier: "MouthguardAppBluetoothRestoreID",
 
             // Function called when state is restored
             restoreStateFunction: this.handleStateRestoration.bind(this)
         });
-        this.connectedDevice = null;
+        this.connectedDevices = new Map();
     }
 
     /**
@@ -82,30 +138,24 @@ export class BluetoothHandler {
                     
                     // Check if we have stored UUIDs for this device
                     if (storedUUIDs && storedUUIDs[peripheral.id]) {
-                        const { serviceUUID, characteristicUUID } = storedUUIDs[peripheral.id];
+                        const deviceServices = storedUUIDs[peripheral.id].services;
                         
-                        if (!serviceUUID || !characteristicUUID) {
-                            console.warn(`[BluetoothHandler] Incomplete UUIDs for device ${peripheral.id}`);
+                        if (!deviceServices) {
+                            console.warn(`[BluetoothHandler] No service UUIDs for device ${peripheral.id}`);
                             continue;
                         }
                         
-                        console.log(`[BluetoothHandler] Found stored UUIDs for ${peripheral.id}: ${serviceUUID}, ${characteristicUUID}`);
+                        // Create connected device object to store
+                        const connectedDevice: ConnectedDevice = {
+                            device: peripheral,
+                            services: deviceServices
+                        };
                         
-                        try {
-                            // Set up the connectedDevice state
-                            this.connectedDevice = {
-                                device: peripheral,
-                                serviceUUID,
-                                characteristicUUID
-                            };
-                            
-                            // Re-establish the characteristic monitoring
-                            this.streamOnConnectedDevice();
-                            console.log(`[BluetoothHandler] Successfully re-attached monitor for ${peripheral.id}`);
-                        } catch (monitorError) {
-                            console.error(`[BluetoothHandler] Error re-attaching monitor for ${peripheral.id}:`, monitorError);
-                            // Continue with the next peripheral rather than trying to reconnect to avoid potential cascading errors
-                        }
+                        // Add to connected devices map
+                        this.connectedDevices.set(peripheral.id, connectedDevice);
+                        
+                        // Re-establish characteristic monitoring for all services/characteristics
+                        this.setupMonitoringForDevice(peripheral.id);
                     } else {
                         console.warn(`[BluetoothHandler] No stored UUIDs found for device ${peripheral.id}`);
                     }
@@ -146,13 +196,13 @@ export class BluetoothHandler {
     /**
      * Store service and characteristic UUIDs for a device
      */
-    private async storeDeviceUUIDs(deviceId: string, serviceUUID: string, characteristicUUID: string): Promise<void> {
+    private async storeDeviceUUIDs(deviceId: string, services: ConnectedDevice['services']): Promise<void> {
         try {
             // Get existing stored UUIDs
             const existingUUIDs = await this.getStoredUUIDs() || {};
             
             // Add or update the UUIDs for this device
-            existingUUIDs[deviceId] = { serviceUUID, characteristicUUID };
+            existingUUIDs[deviceId] = { services };
             
             // Store the updated UUIDs
             const jsonValue = JSON.stringify(existingUUIDs);
@@ -164,175 +214,260 @@ export class BluetoothHandler {
         }
     }
 
-    // Update the expected callback signature
-    public setOnDataCallback(callback: (rawTimestamp: string, timestamp: string, duration: number) => void): void {
-        this.onDataCallback = callback;
+    // Set callbacks for sensor data
+    public setSensorCallbacks(callbacks: SensorCallbacks): void {
+        this.callbacks = { ...this.callbacks, ...callbacks };
     }
 
     public async connectToDevice(deviceId: string) {
-        if (this.connectedDevice !== null) {
-            // If we already have a connected device, we should:
-            // 1. Check if it's the same device - if so, just return
-            // 2. If it's a different device, disconnect from the current one first
-            if (this.connectedDevice.device.id === deviceId) {
-                console.log("Already connected to this device");
-                return;
-            }
-            
-            console.log("Disconnecting from current device before connecting to new one");
-            this.disconnectFromDevice(this.connectedDevice.device);
-            this.connectedDevice = null;
-        }
-        
         try {
+            console.log(`[BluetoothHandler] Connecting to device ${deviceId}`);
             const deviceConnection: Device = await this.manager.connectToDevice(deviceId);
             await deviceConnection.discoverAllServicesAndCharacteristics();
+            
             const services = await deviceConnection.services();
-            if (services.length !== 1) {
-                throw Error("Bad number of services");
-            }
-
-            const service = services[0];
-            const characteristics = await service.characteristics();
-            if (characteristics.length !== 1) {
-                throw Error("Bad number of characteristics");
-            }
-            const characteristic = characteristics[0];
+            console.log(`[BluetoothHandler] Discovered ${services.length} services`);
             
-            // Store the discovered UUIDs for state restoration
-            await this.storeDeviceUUIDs(deviceId, service.uuid, characteristic.uuid);
-            
-            this.connectedDevice = {
+            // Initialize empty structure for service/characteristic UUIDs
+            const connectedDevice: ConnectedDevice = {
                 device: deviceConnection,
-                serviceUUID: service.uuid,
-                characteristicUUID: characteristic.uuid
+                services: {}
             };
             
-            console.log(`[BluetoothHandler] Connected to device ${deviceId}, Service: ${service.uuid}, Characteristic: ${characteristic.uuid}`);
-
+            for (const service of services) {
+                console.log(`[BluetoothHandler] Processing service: ${service.uuid}`);
+                const characteristics = await service.characteristics();
+                
+                // Initialize empty characteristics mapping
+                connectedDevice.services[service.uuid] = {
+                    uuid: service.uuid,
+                    characteristics: {}
+                };
+                
+                for (const characteristic of characteristics) {
+                    console.log(`[BluetoothHandler] - Characteristic: ${characteristic.uuid}`);
+                    connectedDevice.services[service.uuid].characteristics[characteristic.uuid] = characteristic.uuid;
+                }
+            }
+            
+            // Store the device in our map
+            this.connectedDevices.set(deviceId, connectedDevice);
+            
+            // Store UUIDs for later restoration
+            await this.storeDeviceUUIDs(deviceId, connectedDevice.services);
+            
+            // Set up monitoring for all characteristics
+            this.setupMonitoringForDevice(deviceId);
+            
+            console.log(`[BluetoothHandler] Successfully connected to device ${deviceId}`);
+            
+            return true;
         } catch (error) {
-            console.error('Error discovering services/characteristics:', error);
-            throw error; // Re-throw to allow caller to handle the error
+            console.error(`[BluetoothHandler] Error connecting to device ${deviceId}:`, error);
+            throw error;
         } finally {
             this.manager.stopDeviceScan();
         }
     }
 
-    public disconnectFromDevice(connectedDevice: Device) {
-        if (connectedDevice) {
-            this.manager.cancelDeviceConnection(connectedDevice.id);
-            if (this.connectedDevice?.device.id === connectedDevice.id) {
-                this.connectedDevice = null;
-            }
+    private setupMonitoringForDevice(deviceId: string) {
+        const device = this.connectedDevices.get(deviceId);
+        if (!device) {
+            console.error(`[BluetoothHandler] Device ${deviceId} not found for monitoring setup`);
+            return;
+        }
+        
+        console.log(`[BluetoothHandler] Setting up monitoring for device ${deviceId}`);
+        
+        // For each service
+        Object.entries(device.services).forEach(([serviceUuid, service]) => {
+            // For each characteristic in the service
+            Object.entries(service.characteristics).forEach(([characteristicUuid, _]) => {
+                try {
+                    console.log(`[BluetoothHandler] - Monitoring ${serviceUuid}/${characteristicUuid}`);
+                    
+                    // Set up monitoring for this characteristic
+                    device.device.monitorCharacteristicForService(
+                        serviceUuid,
+                        characteristicUuid,
+                        (error, characteristic) => this.handleCharacteristicUpdate(
+                            deviceId, serviceUuid, characteristicUuid, error, characteristic
+                        )
+                    );
+                } catch (error) {
+                    console.error(`[BluetoothHandler] Error setting up monitoring for ${serviceUuid}/${characteristicUuid}:`, error);
+                }
+            });
+        });
+        
+        console.log(`[BluetoothHandler] Monitoring setup complete for device ${deviceId}`);
+    }
+
+    public disconnectFromDevice(deviceId: string) {
+        const device = this.connectedDevices.get(deviceId)?.device;
+        if (device) {
+            this.manager.cancelDeviceConnection(deviceId);
+            this.connectedDevices.delete(deviceId);
+            console.log(`[BluetoothHandler] Disconnected from device ${deviceId}`);
+        } else {
+            console.warn(`[BluetoothHandler] Attempted to disconnect from unknown device ${deviceId}`);
         }
     }
 
-    /**
-     * This function starts listening for data on the connected device
-     */
-    public streamOnConnectedDevice() {
-        if (this.connectedDevice === null) {
-            console.error("[BluetoothHandler] Tried to stream with no device connected");
-            return; // Just return instead of throwing error when in restoration
-        } 
+    private handleCharacteristicUpdate(
+        deviceId: string, 
+        serviceUuid: string, 
+        characteristicUuid: string,
+        error: BleError | null, 
+        characteristic: Characteristic | null
+    ) {
+        if (error) {
+            console.error(`[BluetoothHandler] Error from ${serviceUuid}/${characteristicUuid}:`, error);
+            return;
+        }
+        
+        if (!characteristic?.value) {
+            console.warn(`[BluetoothHandler] No data received from ${serviceUuid}/${characteristicUuid}`);
+            return;
+        }
         
         try {
-            // Only try to sync timestamp if not in state restoration
-            if (!this.isRestoringState) {
-                try {
-                    this.sendCurrentTimestamp();
-                } catch (syncError) {
-                    console.error("[BluetoothHandler] Error syncing timestamp:", syncError);
-                    // Continue with monitoring even if timestamp sync fails
+            const buffer = Buffer.from(characteristic.value, 'base64');
+            
+            // Process based on service/characteristic
+            if (serviceUuid === SERVICE_UUIDS.BATTERY && characteristicUuid === CHARACTERISTIC_UUIDS.BATTERY_LEVEL) {
+                // Handle battery level
+                const level = buffer.readUInt8(0);
+                console.log(`[BluetoothHandler] Battery level: ${level}%`);
+                if (this.callbacks.onBatteryLevel) {
+                    this.callbacks.onBatteryLevel(deviceId, level);
+                }
+            } 
+            else if (serviceUuid === SERVICE_UUIDS.HEART_RATE && characteristicUuid === CHARACTERISTIC_UUIDS.HEART_RATE_MEASUREMENT) {
+                // Handle heart rate
+                // Format according to GATT specification for Heart Rate Measurement
+                const flags = buffer.readUInt8(0);
+                const heartRate = (flags & 0x1) === 0 ? buffer.readUInt8(1) : buffer.readUInt16LE(1);
+                console.log(`[BluetoothHandler] Heart rate: ${heartRate} BPM`);
+                if (this.callbacks.onHeartRateData) {
+                    this.callbacks.onHeartRateData(deviceId, heartRate);
+                }
+            } 
+            else if (serviceUuid === SERVICE_UUIDS.IMU) {
+                // Handle IMU data
+                const sensorId = characteristicUuid === CHARACTERISTIC_UUIDS.IMU_1 ? 1 : 2;
+                const timestamp = buffer.readUInt32LE(0);
+                const x = buffer.readInt16LE(4);
+                const y = buffer.readInt16LE(6);
+                const z = buffer.readInt16LE(8);
+                console.log(`[BluetoothHandler] IMU ${sensorId} data: t=${timestamp}, x=${x}, y=${y}, z=${z}`);
+                if (this.callbacks.onImuData) {
+                    this.callbacks.onImuData(deviceId, sensorId, {
+                        timestamp,
+                        values: [x, y, z]
+                    });
+                }
+            } 
+            else if (serviceUuid === SERVICE_UUIDS.ACCELEROMETER) {
+                // Handle accelerometer data
+                const sensorId = characteristicUuid === CHARACTERISTIC_UUIDS.ACCEL_1 ? 1 : 2;
+                const timestamp = buffer.readUInt32LE(0);
+                const x = buffer.readInt16LE(4);
+                const y = buffer.readInt16LE(6);
+                const z = buffer.readInt16LE(8);
+                console.log(`[BluetoothHandler] Accelerometer ${sensorId} data: t=${timestamp}, x=${x}, y=${y}, z=${z}`);
+                if (this.callbacks.onAccelerometerData) {
+                    this.callbacks.onAccelerometerData(deviceId, sensorId, {
+                        timestamp,
+                        values: [x, y, z]
+                    });
+                }
+            } 
+            else if (serviceUuid === SERVICE_UUIDS.TEMPERATURE) {
+                // Handle temperature data
+                const sensorId = characteristicUuid === CHARACTERISTIC_UUIDS.TEMP_1 ? 1 : 2;
+                const timestamp = buffer.readUInt32LE(0);
+                const temperature = buffer.readInt16LE(4); // Temperature in 0.01 degree units
+                console.log(`[BluetoothHandler] Temperature ${sensorId} data: t=${timestamp}, temp=${temperature/100}°C`);
+                if (this.callbacks.onTemperatureData) {
+                    this.callbacks.onTemperatureData(deviceId, sensorId, {
+                        timestamp,
+                        values: [temperature]
+                    });
+                }
+            } 
+            else if (serviceUuid === SERVICE_UUIDS.FORCE) {
+                // Handle force sensor data
+                const sensorId = characteristicUuid === CHARACTERISTIC_UUIDS.FORCE_1 ? 1 : 2;
+                const timestamp = buffer.readUInt32LE(0);
+                const force = buffer.readUInt8(4); // Force as 8-bit value
+                console.log(`[BluetoothHandler] Force ${sensorId} data: t=${timestamp}, force=${force}`);
+                if (this.callbacks.onForceData) {
+                    this.callbacks.onForceData(deviceId, sensorId, {
+                        timestamp,
+                        values: [force]
+                    });
                 }
             }
-            
-            // Set up monitoring
-            console.log(`[BluetoothHandler] Setting up monitoring for ${this.connectedDevice.serviceUUID}, ${this.connectedDevice.characteristicUUID}`);
-            this.connectedDevice.device.monitorCharacteristicForService(
-                this.connectedDevice.serviceUUID,
-                this.connectedDevice.characteristicUUID,
-                this.handleBluetoothConnection.bind(this)
-            );
-            console.log(`[BluetoothHandler] Monitoring set up successfully`);
         } catch (error) {
-            console.error("[BluetoothHandler] Error starting stream:", error);
-            // Don't rethrow to avoid crashing the app during background restoration
-        }
-    }
-
-    /* 
-     * This function encapsulates all logic relating to listening to on the bluetooth conneciton
-     */
-    private handleBluetoothConnection(error: BleError | null, characteristic: Characteristic | null) {
-        if (error) {
-          console.log("Stream error:", error);
-          return; // Return void instead of -1
-        } else if (!characteristic?.value) {
-          console.log("No data was received");
-          return; // Return void instead of -1
-        }
-
-        try {
-            const rawData: string[] = base64.decode(characteristic.value).split(';');
-            // Ensure we handle cases where split might not produce enough parts
-            if (rawData.length < 2) {
-                console.error("Received malformed data:", rawData);
-                return;
-            }
-            const rawTimestamp: string = rawData[0]; //Tuesday, March 25 2025 21:40:12
-            const duration: number = parseFloat(rawData[1])*1000; // 0.17
-            
-            if (isNaN(duration) || duration <= 0) {
-                console.error(`[BluetoothContext] Invalid duration value: ${rawData[1]}`);
-                return;
-            }
-            
-            console.log(`[BluetoothContext] Raw timestamp received: ${rawTimestamp}`);
-            const timestamp: string = parseRawTimestamp(rawTimestamp);
-            console.log(`[BluetoothContext] Parsed ISO timestamp: ${timestamp}`);
-            
-            // Instead of directly calling databaseManager, use the callback
-            if (this.onDataCallback) {
-                // Pass rawTimestamp along with parsed timestamp and duration
-                this.onDataCallback(rawTimestamp, timestamp, duration);
-            } else {
-                console.error("No data callback set to handle bong hit data");
-                // Fallback alert if no callback is set
-                Alert.alert(`(No Callback) Timestamp: ${rawTimestamp}\n Duration: ${duration}ms`);
-            }
-        } catch (error) {
-            console.error('[BluetoothContext] Error processing Bluetooth data:', error);
-            Alert.alert('Error', 'Failed to process data from device');
+            console.error(`[BluetoothHandler] Error processing data from ${serviceUuid}/${characteristicUuid}:`, error);
         }
     }
 
     /**
-     * This function generates the current timestamp which will be used to sync the Trak+ to an accurate timestamp on connection.
+     * Sync time with all connected mouthguard devices
      */
-    private async sendCurrentTimestamp() {
-        if (!this.connectedDevice) {
-            console.error("[BluetoothHandler] Tried to send timestamp to device, but connection not found");
+    public async syncTimeWithAllDevices(): Promise<void> {
+        for (const [deviceId, _] of this.connectedDevices) {
+            await this.syncTimeWithDevice(deviceId);
+        }
+    }
+
+    /**
+     * Sync time with a specific mouthguard device
+     */
+    private async syncTimeWithDevice(deviceId: string): Promise<boolean> {
+        const device = this.connectedDevices.get(deviceId);
+        if (!device) {
+            console.error(`[BluetoothHandler] Device ${deviceId} not found for time sync`);
             return false;
         }
         
         try {
+            // Calculate current timestamp and timezone offset
             const timestamp = Math.floor(Date.now() / 1000); // Seconds, not milliseconds
-            const gmtOffset = new Date().getTimezoneOffset() * 60;  // Offset in seconds (e.g., GMT-5 -> -18000)
+            const gmtOffset = new Date().getTimezoneOffset() * 60;  // Offset in seconds
             const base64Timestamp = base64.encode(`${timestamp},${gmtOffset}`);
-
-            // Write data to the characteristic
+            
+            // Find the time sync characteristic (choose one that's appropriate)
+            // We'll use IMU service for time sync as a convention
+            const imuService = Object.entries(device.services).find(([uuid, _]) => uuid === SERVICE_UUIDS.IMU);
+            
+            if (!imuService) {
+                console.error(`[BluetoothHandler] IMU service not found for time sync`);
+                return false;
+            }
+            
+            const [serviceUuid, service] = imuService;
+            const characteristicUuid = Object.keys(service.characteristics)[0]; // Use first characteristic
+            
+            if (!characteristicUuid) {
+                console.error(`[BluetoothHandler] No characteristic found for time sync`);
+                return false;
+            }
+            
+            // Write the timestamp
             await this.manager.writeCharacteristicWithResponseForDevice(
-                this.connectedDevice.device.id,
-                this.connectedDevice.serviceUUID,
-                this.connectedDevice.characteristicUUID,
+                deviceId,
+                serviceUuid,
+                characteristicUuid,
                 base64Timestamp
             );
-      
-            console.log(`[BluetoothHandler] Sent: Timestamp ${timestamp}, GMT Offset ${gmtOffset}`);
+            
+            console.log(`[BluetoothHandler] Time sync sent to device ${deviceId}: ${timestamp}, GMT offset ${gmtOffset}`);
             return true;
         } catch (error) {
-            console.error('[BluetoothHandler] Error sending data:', error);
+            console.error(`[BluetoothHandler] Error syncing time with device ${deviceId}:`, error);
             return false;
         }
     }
@@ -341,14 +476,19 @@ export class BluetoothHandler {
         return this.manager;
     }
 
-    public getConnectedDevice(): Device | undefined {
-        return this.connectedDevice?.device;
+    public getConnectedDevices(): Map<string, Device> {
+        // Return just the Device objects, not the full ConnectedDevice
+        const devices = new Map<string, Device>();
+        for (const [deviceId, connectedDevice] of this.connectedDevices) {
+            devices.set(deviceId, connectedDevice.device);
+        }
+        return devices;
     }
 
     /*
      * Requests bluetooth permissions, accounting for platform differences
      */
-    private async requestPermissions() {
+    public async requestPermissions() {
         if (Platform.OS === "android") {
             if ((ExpoDevice.platformApiLevel ?? -1) < 31) {
                 // Android version below 31
@@ -377,16 +517,16 @@ export class BluetoothHandler {
         const bluetoothScanPermission = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
             {
-                title: "Location Permission",
-                message: "Bluetooth Low Energy requires Location",
+                title: "Bluetooth Scan Permission",
+                message: "Required to discover mouthguard devices",
                 buttonPositive: "OK",
             }
         );
         const bluetoothConnectPermission = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
             {
-                title: "Location Permission",
-                message: "Bluetooth Low Energy requires Location",
+                title: "Bluetooth Connect Permission",
+                message: "Required to connect to mouthguard devices",
                 buttonPositive: "OK",
             }
         );
@@ -406,5 +546,3 @@ export class BluetoothHandler {
         );
     }
 }
-
-export const BluetoothContext = createContext<BluetoothHandler | undefined>(undefined);

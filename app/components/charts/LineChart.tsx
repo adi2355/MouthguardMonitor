@@ -2,34 +2,47 @@ import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { LineChart as RNLineChart } from 'react-native-chart-kit';
 import { COLORS } from '../../../src/constants';
+import { ChartData } from '../../../src/types';
 
 interface LineChartProps {
-  data: number[];
-  labels: string[];
-  color?: string;
+  data: ChartData | {
+    labels: string[];
+    datasets: {
+      data: number[];
+      color: (opacity?: number) => string;
+      strokeWidth: number;
+    }[];
+    legend?: string[];
+  };
   width?: number;
   height?: number;
   alwaysShowZero?: boolean;
+  chartConfig?: any;
+  bezier?: boolean;
+  style?: any;
 }
 
 const screenWidth = Dimensions.get('window').width;
 
 const LineChart: React.FC<LineChartProps> = ({
   data,
-  labels,
-  color = COLORS.primary,
   width = screenWidth - 64,
   height = 220,
-  alwaysShowZero = true
+  alwaysShowZero = true,
+  chartConfig,
+  bezier = true,
+  style
 }) => {
-  // Check if we have data to display (any data points)
-  const hasAnyData = data && data.length > 0;
+  // Check if we have any datasets
+  const hasDatasets = data.datasets && data.datasets.length > 0;
   
-  // Check if we have any non-zero values
-  const hasNonZeroData = hasAnyData && data.some(val => val > 0);
+  // Check if we have any non-empty datasets
+  const hasNonEmptyDatasets = hasDatasets && data.datasets.some(dataset => 
+    dataset.data && dataset.data.length > 0 && dataset.data.some(val => val > 0)
+  );
   
   // If no data at all, display "No data available" message
-  if (!hasAnyData) {
+  if (!hasDatasets || !hasNonEmptyDatasets) {
     return (
       <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={styles.noDataText}>No data available</Text>
@@ -37,32 +50,21 @@ const LineChart: React.FC<LineChartProps> = ({
     );
   }
   
-  // If all values are zero and we don't want to show zero charts
-  if (!hasNonZeroData && !alwaysShowZero) {
-    return (
-      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={styles.noDataText}>No data available for this time period</Text>
-      </View>
-    );
-  }
-  
-  // Validate data to prevent NaN values
-  const validatedData = data.map(val => (isNaN(val) ? 0 : val));
-  
-  const chartConfig = {
+  // Generate default chart config if not provided
+  const defaultChartConfig = chartConfig || {
     backgroundColor: 'transparent',
     backgroundGradientFrom: 'transparent',
     backgroundGradientTo: 'transparent',
-    decimalPlaces: 0,
+    decimalPlaces: 1,
     color: (opacity = 1) => `rgba(0, 230, 118, ${opacity})`,
     labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.7})`,
     style: {
       borderRadius: 16
     },
     propsForDots: {
-      r: '5',
-      strokeWidth: '2',
-      stroke: color
+      r: '3',
+      strokeWidth: '1',
+      stroke: COLORS.primary
     },
     propsForBackgroundLines: {
       strokeDasharray: '5, 5',
@@ -74,24 +76,21 @@ const LineChart: React.FC<LineChartProps> = ({
     }
   };
 
+  // Combine styles
+  const combinedStyle = {
+    ...styles.chart,
+    ...(style || {})
+  };
+
   return (
     <View style={styles.container}>
       <RNLineChart
-        data={{
-          labels,
-          datasets: [
-            {
-              data: validatedData,
-              color: (opacity = 1) => color ? `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}` : `rgba(0, 230, 118, ${opacity})`,
-              strokeWidth: 2
-            }
-          ]
-        }}
+        data={data}
         width={width}
         height={height}
-        chartConfig={chartConfig}
-        bezier
-        style={styles.chart}
+        chartConfig={defaultChartConfig}
+        bezier={bezier}
+        style={combinedStyle}
         withInnerLines={true}
         withOuterLines={false}
         withHorizontalLabels={true}
@@ -99,14 +98,31 @@ const LineChart: React.FC<LineChartProps> = ({
         withDots={true}
         segments={5}
         fromZero={true}
+        // Display legend if provided
+        renderDotContent={
+          data.legend ? ({x, y, index, indexData, dataset}) => {
+            // Only show for the first dataset point
+            if (dataset.index === 0) {
+              return (
+                <View key={index} style={{
+                  position: 'absolute',
+                  top: height - 20,
+                  left: x - 12,
+                  backgroundColor: 'transparent'
+                }}>
+                  <Text style={{
+                    color: COLORS.text.secondary,
+                    fontSize: 9
+                  }}>
+                    {data.labels[index]}
+                  </Text>
+                </View>
+              );
+            }
+            return null;
+          } : undefined
+        }
       />
-      
-      {/* Show an overlay message when all values are zero but we're still showing the chart */}
-      {!hasNonZeroData && alwaysShowZero && (
-        <View style={styles.zeroDataOverlay}>
-          <Text style={styles.zeroDataText}>No activity recorded</Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -124,26 +140,6 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     fontSize: 16,
     textAlign: 'center',
-  },
-  zeroDataOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 16,
-  },
-  zeroDataText: {
-    color: COLORS.text.secondary,
-    fontSize: 14,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
   }
 });
 

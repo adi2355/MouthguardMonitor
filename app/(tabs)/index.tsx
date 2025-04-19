@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -7,44 +7,121 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
-  RefreshControl
+  RefreshControl,
+  Platform,
 } from 'react-native';
-import { useBongHitsRepository } from '@/src/providers/AppProvider';
-import { BongHitStats, Datapoint } from '@/src/types';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '@/src/constants';
 import { useRouter } from 'expo-router';
+import { 
+  COLORS, 
+  SAMPLE_ATHLETES, 
+  SAMPLE_IMPACT_EVENTS, 
+  SAMPLE_SENSOR_READINGS,
+  playerData,
+} from '@/src/constants';
+import { useBluetoothService, useDeviceService } from '@/src/providers/AppProvider';
+import { LiveDataPoint, SavedDevice, DeviceStatus } from '@/src/types';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import LineChart from '../../app/components/charts/LineChart';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
-// Add missing color constants
-const EXTENDED_COLORS = {
-  ...COLORS,
-  inactive: '#555555', // Gray color for inactive bars
-  error: '#FF3B30'    // Red color for the recording button when active
+// Sample data remains the same
+const SAMPLE_DEVICES = [
+  {
+    id: 'mouthguard_A',
+    name: 'Mouthguard A',
+    connected: true,
+    batteryLevel: 85,
+    athlete: SAMPLE_ATHLETES.find(a => a.deviceId === 'mouthguard_A')
+  },
+  {
+    id: 'mouthguard_B',
+    name: 'Mouthguard B',
+    connected: true,
+    batteryLevel: 72,
+    athlete: SAMPLE_ATHLETES.find(a => a.deviceId === 'mouthguard_B')
+  }
+];
+
+// Get some sample accelerometer data for charting
+const accelerometerData = SAMPLE_SENSOR_READINGS
+  .find(group => group.table === 'accelerometer_data')?.data || [];
+
+// Custom theme colors for beige theme
+const THEME = {
+  background: '#f2efe4', // Beige background matching bottom bar
+  cardBackground: '#ffffff',
+  primary: '#00b076', // Green primary color
+  text: {
+    primary: '#333333',
+    secondary: '#666666',
+    tertiary: '#999999',
+  },
+  divider: 'rgba(0,0,0,0.08)',
+  card: {
+    shadow: 'rgba(0,0,0,0.12)',
+    border: 'rgba(0,0,0,0.05)',
+  },
+  error: COLORS.error,
+  warning: COLORS.warning,
 };
 
-export default function HomeScreen() {
+// Premium Glass Card component with proper TypeScript types
+const GlassCard: React.FC<{style?: any, children: React.ReactNode, intensity?: number}> = 
+  ({ style, children, intensity = 15 }) => {
+    return Platform.OS === 'ios' ? (
+      <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
+        {children}
+      </BlurView>
+    ) : (
+      <View style={[styles.glassCardFallback, style]}>
+        {children}
+      </View>
+    );
+  };
+
+export default function Dashboard() {
   const router = useRouter();
-  const bongHitsRepository = useBongHitsRepository();
+  const bluetoothService = useBluetoothService();
+  const deviceService = useDeviceService();
   
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
+  // Session State
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<BongHitStats | null>(null);
-  const [weeklyData, setWeeklyData] = useState<Datapoint[] | null>(null);
-  const [currentWeekAverage, setCurrentWeekAverage] = useState<number>(0);
   
-  // Timer interval for recording
+  // Loading & Refreshing State
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Data State 
+  const [connectedDevices, setConnectedDevices] = useState<DeviceStatus[]>([]);
+  const [recentImpacts, setRecentImpacts] = useState(SAMPLE_IMPACT_EVENTS);
+  const [deviceHistory, setDeviceHistory] = useState<SavedDevice[]>([]); 
+  
+  // Live Data State
+  const [currentAcceleration, setCurrentAcceleration] = useState<number | null>(null);
+  const [currentHeartRate, setCurrentHeartRate] = useState<number | null>(null);
+  const [maxHeartRateSession, setMaxHeartRateSession] = useState<number | null>(null);
+  
+  // Create a ref to track the latest connectedDevices state without triggering effect reruns
+  const connectedDevicesRef = useRef<DeviceStatus[]>([]);
+  
+  // Update the ref whenever connectedDevices changes
   useEffect(() => {
-    let timerInterval: NodeJS.Timeout | null = null;
+    connectedDevicesRef.current = connectedDevices;
+  }, [connectedDevices]);
+  
+  // Timer interval for session timing remains the same
+  useEffect(() => {
+    let timerInterval = null;
     
-    if (isRecording && recordingStartTime) {
+    if (isSessionActive && sessionStartTime) {
       timerInterval = setInterval(() => {
         const now = new Date();
-        const elapsed = now.getTime() - recordingStartTime.getTime();
+        const elapsed = now.getTime() - sessionStartTime.getTime();
         setElapsedTime(elapsed);
-      }, 100);
+      }, 1000);
     }
     
     return () => {
@@ -52,446 +129,581 @@ export default function HomeScreen() {
         clearInterval(timerInterval);
       }
     };
-  }, [isRecording, recordingStartTime]);
+  }, [isSessionActive, sessionStartTime]);
   
-  // Load data function
+  // Load data function with real data
   const loadData = useCallback(async () => {
+    console.log("[Dashboard] Loading data...");
+    setLoading(true);
     try {
-      console.log("[HomeScreen] Loading data...");
-      setLoading(true);
-      
-      // Get stats from the past 7 days
-      const stats = await bongHitsRepository.getBongHitStats(7);
-      setStats(stats);
-      
-      // Get hits per day for the past week
-      const hitsPerDayResponse = await bongHitsRepository.getHitsPerDay(7);
-      if (hitsPerDayResponse.success) {
-        setWeeklyData(hitsPerDayResponse.data ?? null);
-      }
-      
-      // Fetch average hits for the current calendar week
-      const currentWeekAvgResponse = await bongHitsRepository.getAverageHitsForCurrentWeek();
-      if (currentWeekAvgResponse.success) {
-        setCurrentWeekAverage(currentWeekAvgResponse.data ?? 0);
-      }
-      
-      console.log("[HomeScreen] Data loaded successfully");
+      // Fetch device statuses from bluetooth service
+      const initialStatuses = bluetoothService.getDeviceStatuses();
+      setConnectedDevices(initialStatuses.filter(d => d.connected));
+
+      // Fetch saved device history
+      const saved = await deviceService.getSavedDevices();
+      // Sort by last connected time (most recent first) and take top 5
+      const sortedHistory = saved
+        .filter(d => d.lastConnected)
+        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
+        .slice(0, 5);
+      setDeviceHistory(sortedHistory);
+
+      // For now, keep sample impacts until we implement the repository
+      // const impacts = await sensorDataRepository.getRecentImpacts(5);
+      // setRecentImpacts(impacts);
+
+      console.log("[Dashboard] Initial data loaded");
     } catch (error) {
-      console.error('Error loading data:', error);
-      Alert.alert('Error', 'Failed to load bong hit data');
+      console.error('Error loading dashboard data:', error);
+      Alert.alert('Error', 'Failed to load dashboard data');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [bongHitsRepository]);
-  
-  // Load initial data
+  }, [bluetoothService, deviceService]);
+
+  // Modify the useEffect for Bluetooth subscriptions to remove connectedDevices dependency
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-  
+    loadData(); // Initial load
+
+    // Subscribe to device status updates
+    const statusSubscription = bluetoothService.subscribeToDeviceStatusUpdates(deviceStatus => {
+      // Update the list of connected devices
+      setConnectedDevices(prev => {
+        const existingIndex = prev.findIndex(d => d.id === deviceStatus.id);
+        if (deviceStatus.connected) {
+          if (existingIndex > -1) {
+            // Update existing
+            const updated = [...prev];
+            updated[existingIndex] = deviceStatus;
+            return updated;
+          } else {
+            // Add new connected device
+            return [...prev, deviceStatus];
+          }
+        } else {
+          // Remove disconnected device
+          return prev.filter(d => d.id !== deviceStatus.id);
+        }
+      });
+    });
+
+    // Subscribe to live sensor data
+    const sensorSubscription = bluetoothService.subscribeSensorData((deviceId, dataPoint: LiveDataPoint) => {
+      // Use the ref instead of the state to check if device is connected
+      const deviceIsConnected = connectedDevicesRef.current.some(d => d.id === deviceId);
+      if (!deviceIsConnected) return;
+
+      if (dataPoint.type === 'accelerometer') {
+        const magnitude = dataPoint.values[3]; // Assuming magnitude is the 4th value
+        setCurrentAcceleration(magnitude);
+      } else if (dataPoint.type === 'heartRate') {
+        const hr = dataPoint.values[0];
+        setCurrentHeartRate(hr);
+        // Update session max HR if needed
+        if (isSessionActive) {
+          setMaxHeartRateSession(prevMax => (hr > (prevMax ?? 0) ? hr : prevMax));
+        }
+      }
+    });
+
+    return () => {
+      statusSubscription.remove();
+      sensorSubscription.remove();
+    };
+  }, [bluetoothService, loadData, isSessionActive]);
+
   // Handle refresh
   const onRefresh = useCallback(() => {
-    console.log("[HomeScreen] Refresh triggered");
+    console.log("[Dashboard] Refresh triggered");
     setRefreshing(true);
     loadData();
   }, [loadData]);
   
-  const handleStartRecording = () => {
-    setIsRecording(true);
-    setRecordingStartTime(new Date());
+  // Session control functions remain the same
+  const handleStartSession = () => {
+    setIsSessionActive(true);
+    setSessionStartTime(new Date());
     setElapsedTime(0);
+    setMaxHeartRateSession(null); // Reset max HR for new session
+    Alert.alert('Session Started', 'Monitoring session has begun. All connected devices will record data.');
   };
   
-  const handleStopRecording = async () => {
-    if (!isRecording || !recordingStartTime) return;
+  const handleStopSession = async () => {
+    if (!isSessionActive || !sessionStartTime) return;
     
     const endTime = new Date();
-    const duration = endTime.getTime() - recordingStartTime.getTime();
-    setIsRecording(false);
+    const duration = endTime.getTime() - sessionStartTime.getTime();
+    setIsSessionActive(false);
     
     try {
-      // Record the bong hit
-      await bongHitsRepository.recordBongHit(
-        recordingStartTime.toISOString(),
-        duration
-      );
-      
-      // Refresh data
-      await loadData();
+      // Simulate saving session
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       Alert.alert(
-        'Bong Hit Recorded',
+        'Session Ended',
         `Duration: ${formatDuration(duration)}`,
-        [{ text: 'OK' }]
+        [{ text: 'View Report', onPress: () => router.push('/(tabs)/reports') }, { text: 'OK' }]
       );
     } catch (error) {
-      console.error('Error recording bong hit:', error);
-      Alert.alert('Error', 'Failed to record bong hit');
+      console.error('Error ending session:', error);
+      Alert.alert('Error', 'Failed to end session');
     }
   };
   
-  const formatDuration = (ms: number): string => {
+  const formatDuration = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    const milliseconds = ms % 1000;
     
-    // Format: mm:ss.ms (e.g., 01:23.4)
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${Math.floor(milliseconds / 100)}`;
+    // Format: hh:mm:ss
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
   
-  const renderWeeklyData = () => {
-    if (!weeklyData) return null;
-    
-    const maxValue = Math.max(...weeklyData.map(item => item.y), 1); // Ensure non-zero denominator
-    const barHeight = 100; // Max height for bars in pixels
-    
-    return (
-      <View style={styles.chartContainer}>
-        <Text style={styles.chartTitle}>Hits - Last 7 Days</Text>
-        <View style={styles.chartContent}>
-          {weeklyData.map((item, index) => (
-            <View key={index} style={styles.barContainer}>
-              <Text style={styles.barValue}>{item.y}</Text>
-              <View 
-                style={[
-                  styles.bar, 
-                  { 
-                    height: (item.y / maxValue) * barHeight,
-                    backgroundColor: item.y > 0 ? EXTENDED_COLORS.primary : EXTENDED_COLORS.inactive
-                  }
-                ]} 
-              />
-              <Text style={styles.barLabel}>{item.x}</Text>
-            </View>
-          ))}
-        </View>
-        <TouchableOpacity 
-          style={styles.viewMoreButton}
-          onPress={() => router.push('/dataOverviews/weeklyOverview')}
-        >
-          <Text style={styles.viewMoreText}>View Details</Text>
-          <Ionicons name="chevron-forward" size={16} color={EXTENDED_COLORS.primary} />
-        </TouchableOpacity>
-      </View>
-    );
+  // Extract data for the accelerometer magnitude chart
+  const magnitudeData = accelerometerData.map(d => {
+    // Handle different sensor data types
+    if ('x' in d && 'y' in d && 'z' in d) {
+      const x = d.x || 0;
+      const y = d.y || 0;
+      const z = d.z || 0;
+      return Math.sqrt(x*x + y*y + z*z);
+    }
+    return 0;
+  });
+  const magnitudeLabels = accelerometerData.map((_, i) => `${i}`);
+
+  // Prepare data for athletes summary
+  const totalAthletes = SAMPLE_ATHLETES.length;
+  const assignedAthletes = SAMPLE_ATHLETES.filter(a => a.deviceId).length;
+  const unassignedAthletes = totalAthletes - assignedAthletes;
+
+  const formatTimestamp = (ts: number | undefined): string => {
+    if (!ts) return 'Never';
+    const date = new Date(ts);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
-  
+
+  // --- Data from constants.ts ---
+  const { name, sessions, isDeviceConnected } = playerData;
+  // Get data for the latest session to display summaries
+  const latestSession = sessions.length > 0 ? sessions[0] : null;
+  const sessionStats = latestSession?.stats;
+  const concussionRisk = sessionStats?.concussionRisk;
+
+  // --- Navigation Handler for Tiles ---
+  const handleTilePress = (focusSection: string) => {
+    router.push({
+      pathname: '/reportsDetailed', // Navigate to the NEW reports screen
+      params: { focus: focusSection } // Optional: pass parameter
+    });
+  };
+
+  const navigateToLogs = () => {
+    // Fix navigation path to avoid conflicts
+    router.push('/screens/logs');
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView 
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContent}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[EXTENDED_COLORS.primary]}
-            tintColor={EXTENDED_COLORS.primary}
+            tintColor={THEME.primary}
+            colors={[THEME.primary]}
+            progressBackgroundColor="rgba(0,0,0,0.05)"
           />
         }
       >
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Canova</Text>
-        </View>
-        
-        <View style={styles.recordContainer}>
-          <View style={styles.timerContainer}>
-            {isRecording ? (
-              <Text style={styles.timerText}>
-                {formatDuration(elapsedTime)}
-              </Text>
-            ) : (
-              <Text style={styles.recordPrompt}>
-                Record Your Bong Hit
-              </Text>
-            )}
+          <LinearGradient
+            colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)', 'transparent']}
+            style={styles.headerGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>{name}</Text>
+            <TouchableOpacity 
+              style={styles.profileContainer} 
+              onPress={() => router.push('/(tabs)/settings')}
+            >
+              <MaterialCommunityIcons 
+                name="account-circle-outline" 
+                size={28} 
+                color={THEME.primary} 
+              />
+            </TouchableOpacity>
           </View>
-          
-          <TouchableOpacity
-            style={[
-              styles.recordButton,
-              isRecording ? styles.recordingButton : {}
-            ]}
-            onPress={isRecording ? handleStopRecording : handleStartRecording}
-          >
-            <Ionicons
-              name={isRecording ? "stop" : "flame"}
-              size={40}
-              color="white"
-            />
-          </TouchableOpacity>
         </View>
-        
-        {loading && !refreshing ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={EXTENDED_COLORS.primary} />
-            <Text style={styles.loadingText}>Loading data...</Text>
+
+        {/* --- Alert Banner (Conditional) --- */}
+        {concussionRisk === 'High' && (
+          <View style={styles.alertBanner}>
+            <MaterialCommunityIcons name="alert-decagram" size={24} color="#fff" style={styles.alertIcon} />
+            <Text style={styles.alertText}>High Concussion Risk Detected</Text>
           </View>
-        ) : (
-          <>
-            {/* Current Week Average Card */}
-            <View style={styles.statCardLarge}>
-              <Text style={styles.statLabelLarge}>Avg Hits/Day (This Week)</Text>
-              <Text style={styles.statValueLarge}>{Math.round(currentWeekAverage)}</Text>
-            </View>
-            
-            {stats && (
-              <View style={styles.statsContainer}>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Avg Duration (Last 7d)</Text>
-                  <Text style={styles.statValue}>
-                    {formatDuration(stats.averageDuration)}
-                  </Text>
-                </View>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Longest Hit (Last 7d)</Text>
-                  <Text style={styles.statValue}>
-                    {formatDuration(stats.longestHit)}
-                  </Text>
-                </View>
-              </View>
-            )}
-            
-            {renderWeeklyData()}
-            
-            <View style={styles.actionsContainer}>
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => router.push('/dataOverviews/bongHitLogs')}
-              >
-                <Ionicons name="list" size={24} color={EXTENDED_COLORS.text.primary} />
-                <Text style={styles.actionButtonText}>View Logs</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => router.push('/dataOverviews/dailyAverageOverview')}
-              >
-                <Ionicons name="stats-chart" size={24} color={EXTENDED_COLORS.text.primary} />
-                <Text style={styles.actionButtonText}>Analytics</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: '#2196F3' }]}
-                onPress={() => router.push('/screens/TestDataScreen')}
-              >
-                <Ionicons name="bug" size={24} color={EXTENDED_COLORS.text.primary} />
-                <Text style={styles.actionButtonText}>Test Data</Text>
-              </TouchableOpacity>
-            </View>
-          </>
         )}
+
+        {/* --- Session Control (Keep this GlassCard) --- */}
+        <GlassCard style={styles.card}>
+          <View style={styles.sessionHeader}>
+            <View>
+              <Text style={styles.sessionTitle}>
+                {isSessionActive ? 'Session in Progress' : 'Start New Session'}
+              </Text>
+              {isSessionActive && sessionStartTime && (
+                <Text style={styles.sessionTime}>
+                  Duration: {formatDuration(elapsedTime)}
+                </Text>
+              )}
+            </View>
+            <View style={styles.sessionControls}>
+              {isSessionActive ? (
+                <TouchableOpacity
+                  style={[styles.sessionButton, styles.stopButton]}
+                  onPress={handleStopSession}
+                >
+                  <MaterialCommunityIcons name="stop-circle" size={20} color="#fff" />
+                  <Text style={styles.sessionButtonText}>End</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.sessionButton, styles.startButton]}
+                  onPress={handleStartSession}
+                >
+                  <LinearGradient
+                    colors={['#00d68f', '#00b076']}
+                    style={StyleSheet.absoluteFill}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  />
+                  <MaterialCommunityIcons name="play-circle" size={20} color="#fff" />
+                  <Text style={styles.sessionButtonText}>Start</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </GlassCard>
+
+        {/* --- NEW: Summary Tiles Card --- */}
+        <GlassCard style={styles.card}>
+          <View style={styles.summaryTilesContainer}>
+            {/* Heart Rate Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={() => handleTilePress('heartRate')}>
+              <MaterialCommunityIcons name="heart-pulse" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>{sessionStats?.heartRate?.avg ?? '--'} bpm</Text>
+              <Text style={styles.summaryTileLabel}>Avg Heart Rate</Text>
+            </TouchableOpacity>
+
+            {/* Temperature Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={() => handleTilePress('temperature')}>
+              <MaterialCommunityIcons name="thermometer" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>{sessionStats?.temperature ?? '--'} °F</Text>
+              <Text style={styles.summaryTileLabel}>Avg Temp</Text>
+            </TouchableOpacity>
+
+            {/* Acceleration Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={() => handleTilePress('acceleration')}>
+              <MaterialCommunityIcons name="run-fast" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>{sessionStats?.acceleration ?? '--'} mph</Text>
+              <Text style={styles.summaryTileLabel}>Avg Accel</Text>
+            </TouchableOpacity>
+          </View>
+        </GlassCard>
+        
+        {/* --- Data Logs & Analytics Card --- */}
+        <GlassCard style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Data & Analytics</Text>
+          </View>
+          <View style={styles.summaryTilesContainer}>
+            {/* Data Logs Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={navigateToLogs}>
+              <MaterialCommunityIcons name="chart-line" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>Logs</Text>
+              <Text style={styles.summaryTileLabel}>View Data</Text>
+            </TouchableOpacity>
+            
+            {/* Test Data Generator Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={() => router.push('/screens/TestDataScreen')}>
+              <MaterialCommunityIcons name="database-plus" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>Test Data</Text>
+              <Text style={styles.summaryTileLabel}>Insert Data</Text>
+            </TouchableOpacity>
+            
+            {/* Reports Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={() => router.push('/(tabs)/reportsDetailed')}>
+              <MaterialCommunityIcons name="chart-timeline-variant" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>Reports</Text>
+              <Text style={styles.summaryTileLabel}>Analytics</Text>
+            </TouchableOpacity>
+            
+            {/* Settings Tile */}
+            <TouchableOpacity style={styles.summaryTile} onPress={() => router.push('/(tabs)/settings')}>
+              <MaterialCommunityIcons name="cog-outline" size={32} color={THEME.primary} />
+              <Text style={styles.summaryTileValue}>Settings</Text>
+              <Text style={styles.summaryTileLabel}>Configure</Text>
+            </TouchableOpacity>
+          </View>
+        </GlassCard>
+
+        {/* Bottom tab spacer */}
+        <View style={{ height: 80 }} /> {/* Increased height to accommodate footer */}
+
       </ScrollView>
+
+      {/* --- Connection Status Footer --- */}
+      <View style={styles.connectionStatusFooter}>
+        <Text style={styles.connectionStatusText}>
+          {isDeviceConnected ? 'Device Connected' : 'No Device Connected'}
+        </Text>
+      </View>
     </View>
   );
 }
 
+// Helper functions remain similar with updated colors
+const getSeverityColor = (severity: string) => {
+  switch (severity.toLowerCase()) {
+    case 'severe':
+      return '#ff3b30'; // Red
+    case 'moderate':
+      return '#ff9500'; // Orange
+    case 'mild':
+      return '#00b076'; // Green
+    default:
+      return '#00b076'; // Green
+  }
+};
+
+const getBatteryIcon = (level: number) => {
+  if (level === undefined) return 'battery-unknown';
+  if (level <= 10) return 'battery-10';
+  if (level <= 20) return 'battery-20';
+  if (level <= 30) return 'battery-30';
+  if (level <= 40) return 'battery-40';
+  if (level <= 50) return 'battery-50';
+  if (level <= 60) return 'battery-60';
+  if (level <= 70) return 'battery-70';
+  if (level <= 80) return 'battery-80';
+  if (level <= 90) return 'battery-90';
+  return 'battery';
+};
+
+const getBatteryColor = (level: number) => {
+  if (level === undefined) return '#999999';
+  if (level <= 20) return '#ff3b30'; // Red
+  if (level <= 40) return '#ff9500'; // Orange
+  return '#34c759'; // Green
+};
+
+const formatTime = (timestamp: number) => {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: EXTENDED_COLORS.background,
+    backgroundColor: THEME.background,
   },
-  scrollContainer: {
+  scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40, // Ensure space at the bottom
+  content: {
+    paddingBottom: 32,
   },
   header: {
-    marginBottom: 24,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: EXTENDED_COLORS.text.primary,
-  },
-  recordContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  timerContainer: {
-    alignItems: 'center',
+    height: 140,
+    position: 'relative',
     marginBottom: 20,
-    minHeight: 60, // Ensure space for text
-    justifyContent: 'center',
   },
-  timerText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: EXTENDED_COLORS.text.primary,
+  headerGradient: {
+    ...StyleSheet.absoluteFillObject,
   },
-  recordPrompt: {
-    fontSize: 20,
-    color: EXTENDED_COLORS.text.secondary,
-    marginBottom: 8,
-  },
-  recordButton: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: EXTENDED_COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: EXTENDED_COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  recordingButton: {
-    backgroundColor: EXTENDED_COLORS.error,
-    shadowColor: EXTENDED_COLORS.error,
-  },
-  loadingContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    color: EXTENDED_COLORS.text.secondary,
-  },
-  statCardLarge: {
-    backgroundColor: EXTENDED_COLORS.cardBackground,
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  statLabelLarge: {
-    fontSize: 16,
-    color: EXTENDED_COLORS.text.secondary,
-    marginBottom: 8,
-  },
-  statValueLarge: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: EXTENDED_COLORS.primary,
-  },
-  statsContainer: {
+  headerContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: EXTENDED_COLORS.cardBackground,
-    borderRadius: 8,
-    padding: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: THEME.text.primary,
+    letterSpacing: 0.5,
+    flex: 1,
+  },
+  profileContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,176,118,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: 'rgba(0,176,118,0.2)',
+    marginLeft: 16,
   },
-  statLabel: {
-    fontSize: 14,
-    color: EXTENDED_COLORS.text.secondary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: EXTENDED_COLORS.text.primary,
-  },
-  chartContainer: {
-    backgroundColor: EXTENDED_COLORS.cardBackground,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
+  alertBanner: {
+    backgroundColor: THEME.error,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: EXTENDED_COLORS.text.primary,
+  alertIcon: {
+    marginRight: 10,
+  },
+  alertText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  card: {
+    marginHorizontal: 16,
     marginBottom: 16,
   },
-  chartContent: {
+  sessionHeader: {
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 140,
-    marginBottom: 8,
-  },
-  barContainer: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'flex-end',
   },
-  bar: {
-    width: '60%',
-    borderRadius: 4,
-    marginBottom: 8,
-    minHeight: 2, // Ensure even 0-value bars are visible
-  },
-  barLabel: {
-    fontSize: 12,
-    color: EXTENDED_COLORS.text.secondary,
-  },
-  barValue: {
-    fontSize: 12,
-    color: EXTENDED_COLORS.text.secondary,
+  sessionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: THEME.text.primary,
     marginBottom: 4,
   },
-  viewMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    padding: 8,
-  },
-  viewMoreText: {
+  sessionTime: {
     fontSize: 14,
-    color: EXTENDED_COLORS.primary,
-    marginRight: 4,
-    fontWeight: '600',
+    color: THEME.text.secondary,
   },
-  actionsContainer: {
+  sessionControls: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
   },
-  actionButton: {
-    flex: 1,
-    backgroundColor: EXTENDED_COLORS.cardBackground,
-    borderRadius: 8,
-    padding: 16,
+  sessionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minWidth: 80,
+    justifyContent: 'center',
   },
-  actionButtonText: {
-    marginTop: 8,
+  startButton: {
+    position: 'relative',
+  },
+  stopButton: {
+    backgroundColor: THEME.error,
+  },
+  sessionButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 4,
     fontSize: 14,
-    color: EXTENDED_COLORS.text.primary,
+  },
+  summaryTilesContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 16,
+  },
+  summaryTile: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 10,
+    marginHorizontal: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    minHeight: 120,
+    justifyContent: 'center',
+  },
+  summaryTileValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: THEME.text.primary,
+    marginVertical: 8,
+  },
+  summaryTileLabel: {
+    fontSize: 13,
+    color: THEME.text.secondary,
     textAlign: 'center',
-  }
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.divider,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: THEME.text.primary,
+  },
+  connectionStatusFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  connectionStatusText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  glassCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderColor: THEME.card.border,
+    borderWidth: 1,
+    shadowColor: THEME.card.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  glassCardFallback: {
+    borderRadius: 16,
+    backgroundColor: THEME.cardBackground,
+    borderColor: THEME.card.border,
+    borderWidth: 1,
+    shadowColor: THEME.card.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
 });
