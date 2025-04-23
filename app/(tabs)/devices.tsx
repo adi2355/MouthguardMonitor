@@ -41,7 +41,11 @@ const THEME = {
 };
 
 // Premium Glass Card component
-const GlassCard = ({ style, children, intensity = 15 }) => {
+const GlassCard = ({ style, children, intensity = 15 }: { 
+  style?: any; 
+  children: React.ReactNode; 
+  intensity?: number 
+}) => {
   return Platform.OS === 'ios' ? (
     <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
       {children}
@@ -58,16 +62,16 @@ export default function Devices() {
   const bluetoothService = useBluetoothService();
   const athleteRepository = useAthleteRepository();
   
-  const [savedDevices, setSavedDevices] = useState([]);
-  const [scannedDevices, setScannedDevices] = useState([]);
+  const [savedDevices, setSavedDevices] = useState<DeviceStatus[]>([]);
+  const [scannedDevices, setScannedDevices] = useState<{id: string, name: string}[]>([]);
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connectionInProgress, setConnectionInProgress] = useState(false);
-  const [connectionError, setConnectionError] = useState(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [athleteListVisible, setAthleteListVisible] = useState(false);
-  const [athletes, setAthletes] = useState([]);
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
   
   // Load devices and status
   const loadDevices = useCallback(async () => {
@@ -102,15 +106,36 @@ export default function Devices() {
   
   // Subscribe to device status updates
   useEffect(() => {
-    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates(deviceStatuses => {
-      setSavedDevices(deviceStatuses);
+    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates((status: DeviceStatus) => {
+      // Use a function to update based on previous state
+      setSavedDevices(prevStatuses => {
+        // Check if this status is already in our list
+        const statusIndex = prevStatuses.findIndex(s => s.id === status.id);
+        
+        if (statusIndex >= 0) {
+          // Update existing status
+          return prevStatuses.map(s => 
+            s.id === status.id ? status : s
+          );
+        } else {
+          // Add new status
+          return [...prevStatuses, status];
+        }
+      });
     });
     
-    return () => unsubscribe();
+    // Call the remove method on the unsubscribe object instead of treating it as a function
+    return () => {
+      if (unsubscribe && typeof unsubscribe.remove === 'function') {
+        unsubscribe.remove();
+      } else {
+        console.warn("[Devices] Cleanup function received invalid unsubscribe object:", unsubscribe);
+      }
+    };
   }, [bluetoothService]);
   
   // Connect to a device
-  const connectToDevice = async (deviceId, deviceName) => {
+  const connectToDevice = async (deviceId: string, deviceName: string) => {
     try {
       setConnectionInProgress(true);
       setConnectionError(null);
@@ -129,7 +154,7 @@ export default function Devices() {
   };
   
   // Disconnect from a device
-  const disconnectDevice = async (deviceId) => {
+  const disconnectDevice = async (deviceId: string) => {
     try {
       await bluetoothService.disconnectFromDevice(deviceId);
       
@@ -146,8 +171,17 @@ export default function Devices() {
       setScanning(true);
       setScannedDevices([]);
       
-      const foundDevices = await bluetoothService.scanForDevices();
-      setScannedDevices(foundDevices);
+      await bluetoothService.scanForDevices((device) => {
+        setScannedDevices(prevDevices => {
+          const deviceMap = new Map(prevDevices.map(d => [d.id, d]));
+          if (!deviceMap.has(device.id) && device.name) {
+            deviceMap.set(device.id, { id: device.id, name: device.name });
+            return Array.from(deviceMap.values());
+          }
+          return prevDevices;
+        });
+      });
+      
     } catch (error) {
       console.error('Error scanning for devices:', error);
       Alert.alert('Scan Error', 'Failed to scan for devices. Please check Bluetooth permissions and try again.');
@@ -157,13 +191,13 @@ export default function Devices() {
   };
   
   // Open the athlete assignment modal
-  const openAssignDeviceModal = (deviceId) => {
+  const openAssignDeviceModal = (deviceId: string) => {
     setSelectedDeviceId(deviceId);
     setAthleteListVisible(true);
   };
   
   // Assign device to athlete
-  const assignDeviceToAthlete = async (athleteId) => {
+  const assignDeviceToAthlete = async (athleteId: string) => {
     if (!selectedDeviceId) return;
     
     try {
@@ -184,7 +218,7 @@ export default function Devices() {
   };
   
   // Renders saved device
-  const renderDevice = ({ item }) => {
+  const renderDevice = ({ item }: { item: DeviceStatus }) => {
     const isConnected = item.connected;
     
     return (
@@ -194,10 +228,9 @@ export default function Devices() {
       >
         <LinearGradient
           colors={[isConnected ? 'rgba(0,176,118,0.15)' : 'rgba(0,0,0,0.08)', isConnected ? 'rgba(0,176,118,0.05)' : 'rgba(0,0,0,0.02)']}
-          style={styles.deviceIcon}
+          style={[styles.deviceIcon, { borderRadius: 20 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          borderRadius={20}
         >
           <MaterialCommunityIcons 
             name="tooth-outline" 
@@ -264,7 +297,7 @@ export default function Devices() {
   };
   
   // Renders scanned device
-  const renderScannedDevice = ({ item }) => {
+  const renderScannedDevice = ({ item }: { item: any }) => {
     // Check if this device is already saved
     const isAlreadySaved = savedDevices.some(device => device.id === item.id);
     
@@ -274,11 +307,19 @@ export default function Devices() {
         activeOpacity={0.7}
       >
         <LinearGradient
-          colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)']}
-          style={styles.deviceIcon}
+          colors={['#4c669f', '#3b5998']}
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: 25,
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginRight: 10,
+            borderWidth: 2,
+            borderColor: 'white',
+          }}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          borderRadius={20}
+          end={{ x: 1, y: 0 }}
         >
           <MaterialCommunityIcons 
             name="bluetooth-connect" 
@@ -307,7 +348,7 @@ export default function Devices() {
   };
   
   // Renders athlete for assignment
-  const renderAthlete = ({ item }) => {
+  const renderAthlete = ({ item }: { item: Athlete }) => {
     const hasDevice = item.deviceId !== undefined && item.deviceId !== null;
     
     return (
@@ -319,10 +360,9 @@ export default function Devices() {
       >
         <LinearGradient
           colors={[hasDevice ? 'rgba(0,0,0,0.05)' : 'rgba(0,176,118,0.15)', hasDevice ? 'rgba(0,0,0,0.02)' : 'rgba(0,176,118,0.05)']}
-          style={styles.deviceIcon}
+          style={[styles.deviceIcon, { borderRadius: 20 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          borderRadius={20}
         >
           <MaterialCommunityIcons 
             name="account" 
@@ -394,10 +434,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -432,10 +471,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -459,10 +497,9 @@ export default function Devices() {
             >
               <LinearGradient
                 colors={['#00d68f', '#00b076']}
-                style={StyleSheet.absoluteFill}
+                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                borderRadius={24}
               />
               <MaterialCommunityIcons name="bluetooth-connect" size={20} color="#fff" />
               <Text style={styles.scanButtonText}>
@@ -497,10 +534,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="bluetooth-transfer" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -518,15 +554,14 @@ export default function Devices() {
             <Text style={styles.sectionTitle}>Athletes & Assignments</Text>
             <TouchableOpacity 
               style={styles.addButton}
-              onPress={() => router.push('/athletes')}
+              onPress={() => router.push('/(tabs)/athletes')}
               activeOpacity={0.8}
             >
               <LinearGradient
                 colors={['#00d68f', '#00b076']}
-                style={StyleSheet.absoluteFill}
+                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                borderRadius={24}
               />
               <MaterialCommunityIcons name="account-plus" size={20} color="#fff" />
               <Text style={styles.scanButtonText}>Add Athlete</Text>
@@ -553,10 +588,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="account-group" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -583,7 +617,7 @@ export default function Devices() {
 }
 
 // Helper functions
-const getBatteryIcon = (level) => {
+const getBatteryIcon = (level: number | undefined) => {
   if (level === undefined) return 'battery-unknown';
   if (level <= 10) return 'battery-10';
   if (level <= 20) return 'battery-20';
@@ -597,7 +631,7 @@ const getBatteryIcon = (level) => {
   return 'battery';
 };
 
-const getBatteryColor = (level) => {
+const getBatteryColor = (level: number | undefined) => {
   if (level === undefined) return '#999999';
   if (level <= 20) return '#ff3b30'; // Red
   if (level <= 40) return '#ff9500'; // Orange

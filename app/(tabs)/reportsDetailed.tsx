@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ViewStyle, ActivityIndicator, Dimensions, Platform, Animated } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
 import { useSensorDataRepository } from '@/src/providers/AppProvider';
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
 import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types';
+import { debounce } from 'lodash';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
@@ -157,12 +158,16 @@ export default function ReportsDetailedScreen() {
         sensorDataRepository.getSensorData(deviceId, 'htm_packets', startTime, endTime),
       ]);
 
-      // --- Store Raw Data ---
+      // --- Store Raw Data (only when necessary for rendering) ---
+      // We only need impacts for the direction visualization which requires the raw data
       setImpacts(fetchedImpacts);
-      setMotionPackets(fetchedMotion);
-      setFsrPackets(fetchedFsr);
-      setHrmPackets(fetchedHrm);
-      setHtmPackets(fetchedHtm);
+      
+      // These are only used for processing and can be passed directly to processAndSetChartData
+      // without storing in state
+      // setMotionPackets(fetchedMotion);
+      // setFsrPackets(fetchedFsr);
+      // setHrmPackets(fetchedHrm);
+      // setHtmPackets(fetchedHtm);
 
       console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
 
@@ -339,8 +344,10 @@ export default function ReportsDetailedScreen() {
 
     // 2. Process Impact Timeline Data
     const sortedImpacts = [...impactData].sort((a, b) => a.timestamp - b.timestamp);
-    const timelineLabels = sortedImpacts.map((_, i) => i.toString());
-    const timelineValues = sortedImpacts.map(i => i.magnitude);
+    // Apply subsampling for better performance
+    const subsampledImpacts = subsampleData(sortedImpacts);
+    const timelineLabels = subsampledImpacts.map((_, i) => i.toString());
+    const timelineValues = subsampledImpacts.map(i => i.magnitude);
     setImpactTimelineData({
       labels: timelineLabels,
       datasets: [{ 
@@ -381,11 +388,15 @@ export default function ReportsDetailedScreen() {
       cumulativeG += impact.magnitude; // Simple sum for now
       return cumulativeG;
     });
-    const chieLabels = sortedImpacts.map((_, i) => i.toString());
+    
+    // Then subsample the results for display
+    const subsampledChieValues = subsampleData(chieValues);
+    const chieLabels = Array.from({ length: subsampledChieValues.length }, (_, i) => i.toString());
+    
     setChieData({
       labels: chieLabels,
       datasets: [{ 
-        data: chieValues, 
+        data: subsampledChieValues, 
         color: () => 'rgba(0, 122, 255, 1)', 
         strokeWidth: 2,
         index: 0
@@ -410,48 +421,18 @@ export default function ReportsDetailedScreen() {
     console.log('[ReportsDetailed] Data processing complete.');
   };
 
-  // Helper function for bite force chart data
-  const processBiteForceChart = (fsrData) => {
-    const validFsrData = fsrData.filter(p => 
-        (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
-        (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
-    );
+  // Helper function to subsample large datasets
+  const subsampleData = (data, maxPoints = 100) => {
+    if (!data || data.length <= maxPoints) return data;
     
-    if (validFsrData.length === 0) {
-      setBiteForceData({
-        labels: [],
-        datasets: [
-          {
-            data: [],
-            color: () => 'rgba(0, 176, 118, 1)',
-            strokeWidth: 2
-          },
-          {
-            data: [],
-            color: () => 'rgba(0, 122, 255, 1)',
-            strokeWidth: 2
-          }
-        ],
-        legend: ['Left', 'Right']
-      });
-      return;
+    const step = Math.ceil(data.length / maxPoints);
+    const result = [];
+    
+    for (let i = 0; i < data.length; i += step) {
+      result.push(data[i]);
     }
     
-    const sortedFsr = [...validFsrData].sort((a, b) => a.timestamp - b.timestamp);
-    const biteLabels = sortedFsr.map((_, i) => i.toString());
-    const leftBiteValues = sortedFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
-    const rightBiteValues = sortedFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
-    
-    const chartData = {
-      labels: biteLabels,
-      datasets: [
-        { data: leftBiteValues, color: () => 'rgba(0, 176, 118, 1)', strokeWidth: 2, index: 0 },
-        { data: rightBiteValues, color: () => 'rgba(0, 122, 255, 1)', strokeWidth: 2, index: 1 }
-      ],
-      legend: ['Left', 'Right']
-    };
-    
-    setBiteForceData(chartData);
+    return result;
   };
 
   // Helper for HR chart
@@ -473,9 +454,12 @@ export default function ReportsDetailedScreen() {
       return;
     }
     
+    // Sort and subsample for better performance
     const sortedHrm = [...validHrmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
-    const hrLabels = sortedHrm.map((_, i) => i.toString());
-    const hrValues = sortedHrm.map(p => p.heartRate);
+    const subsampledHrm = subsampleData(sortedHrm);
+    
+    const hrLabels = subsampledHrm.map((_, i) => i.toString());
+    const hrValues = subsampledHrm.map(p => p.heartRate);
     
     const chartData = {
       labels: hrLabels,
@@ -506,9 +490,12 @@ export default function ReportsDetailedScreen() {
       return;
     }
     
+    // Sort and subsample for better performance
     const sortedHtm = [...validHtmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
-    const tempLabels = sortedHtm.map((_, i) => i.toString());
-    const tempValues = sortedHtm.map(p => p.temperature);
+    const subsampledHtm = subsampleData(sortedHtm);
+    
+    const tempLabels = subsampledHtm.map((_, i) => i.toString());
+    const tempValues = subsampledHtm.map(p => p.temperature);
     
     const chartData = {
       labels: tempLabels,
@@ -523,18 +510,82 @@ export default function ReportsDetailedScreen() {
     setTempChartData(chartData);
   };
 
+  // Helper function for bite force chart data
+  const processBiteForceChart = (fsrData) => {
+    const validFsrData = fsrData.filter(p => 
+        (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
+        (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
+    );
+    
+    if (validFsrData.length === 0) {
+      setBiteForceData({
+        labels: [],
+        datasets: [
+          {
+            data: [],
+            color: () => 'rgba(0, 176, 118, 1)',
+            strokeWidth: 2
+          },
+          {
+            data: [],
+            color: () => 'rgba(0, 122, 255, 1)',
+            strokeWidth: 2
+          }
+        ],
+        legend: ['Left', 'Right']
+      });
+      return;
+    }
+    
+    // Sort and subsample for better performance
+    const sortedFsr = [...validFsrData].sort((a, b) => a.timestamp - b.timestamp);
+    const subsampledFsr = subsampleData(sortedFsr);
+    
+    const biteLabels = subsampledFsr.map((_, i) => i.toString());
+    const leftBiteValues = subsampledFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
+    const rightBiteValues = subsampledFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
+    
+    const chartData = {
+      labels: biteLabels,
+      datasets: [
+        { data: leftBiteValues, color: () => 'rgba(0, 176, 118, 1)', strokeWidth: 2, index: 0 },
+        { data: rightBiteValues, color: () => 'rgba(0, 122, 255, 1)', strokeWidth: 2, index: 1 }
+      ],
+      legend: ['Left', 'Right']
+    };
+    
+    setBiteForceData(chartData);
+  };
+
   // Fetch data on initial mount
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Subscribe to data changes
+  // Create a ref to hold the latest fetchData function
+  const fetchDataRef = useRef(fetchData);
+  
+  // Update the ref whenever fetchData changes
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+  
+  // Create a debounced version of fetchData ONLY for the listener
+  const debouncedFetchData = useRef(
+    debounce(() => {
+      console.log('[ReportsDetailed] Debounced fetch triggered...');
+      // Call the latest fetchData function from the ref
+      fetchDataRef.current();
+    }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
+  ).current;
+
+  // Subscribe to data changes (using the debounced fetch)
   useEffect(() => {
     const handleDataChange = (eventData) => {
       // Re-fetch data if the change affects the current device
       if (eventData.deviceId === deviceId) {
-        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), re-fetching...`);
-        fetchData();
+        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), queueing debounced fetch...`);
+        debouncedFetchData(); // Call the debounced function
       }
     };
 
@@ -543,8 +594,9 @@ export default function ReportsDetailedScreen() {
     // Cleanup subscription on unmount
     return () => {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+      debouncedFetchData.cancel(); // Cancel any pending debounced calls
     };
-  }, [deviceId, fetchData]);
+  }, [deviceId, debouncedFetchData]); // Add debouncedFetchData to dependencies
 
   // Show loading indicator
   if (loading) {
@@ -571,7 +623,11 @@ export default function ReportsDetailedScreen() {
   }
 
   // Show message if no data
-  if (!sessionStats && !impacts.length && !fsrPackets.length && !hrmPackets.length && !htmPackets.length) {
+  if (!sessionStats && 
+      !impactTimelineData?.datasets?.[0]?.data?.length && 
+      !biteForceData?.datasets?.[0]?.data?.length && 
+      !hrChartData?.datasets?.[0]?.data?.length && 
+      !tempChartData?.datasets?.[0]?.data?.length) {
     return (
       <View style={styles.emptyContainer}>
         <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
@@ -663,7 +719,7 @@ export default function ReportsDetailedScreen() {
                     emptyMessage="No heart rate data available"
                     width={Dimensions.get('window').width - 64}
                     height={120}
-                    bezier
+                    bezier={false}
                   />
                 )}
               </View>
@@ -695,7 +751,7 @@ export default function ReportsDetailedScreen() {
                     emptyMessage="No temperature data available"
                     width={Dimensions.get('window').width - 64}
                     height={120}
-                    bezier
+                    bezier={false}
                   />
                 )}
               </View>
@@ -740,7 +796,7 @@ export default function ReportsDetailedScreen() {
                     emptyMessage="No bite force data available"
                     width={Dimensions.get('window').width - 64}
                     height={120}
-                    bezier
+                    bezier={false}
                   />
                 )}
               </View>

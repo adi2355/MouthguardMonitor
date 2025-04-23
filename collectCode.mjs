@@ -10,7 +10,7 @@ const DEFAULT_CONFIG = {
   'android',
   'assets',
   'data',
-  'ios',
+  
   'node_modules',
   'static',
   'templates',

@@ -11073,6 +11073,17 @@ if __name__ == "__main__":
     main()
 
 ================================================================================
+File: ios/Podfile.properties.json
+================================================================================
+
+{
+  "expo.jsEngine": "hermes",
+  "EX_DEV_CLIENT_NETWORK_INSPECTOR": "true",
+  "newArchEnabled": "true"
+}
+
+
+================================================================================
 File: package.json
 ================================================================================
 
@@ -11413,6 +11424,46 @@ async function resetApp() {
 
 resetApp();
 
+
+================================================================================
+File: src/bleConstants.ts
+================================================================================
+
+// BLE UUID Constants matching Arduino code
+
+// Service UUIDs
+export const UUID_SERVICE_HRM = "a329162e-bf3d-4f73-9a1a-bb8ccfe142e7";
+export const UUID_SERVICE_HTM = "d2a95330-d754-4a5b-bb74-b1b09bef98f5";
+export const UUID_SERVICE_IMU = "5f07ce79-170a-4c45-b8ca-eae29004e45f";
+export const UUID_SERVICE_FSR = "56f38df0-e65b-4190-a3da-9f941c9d1763";
+
+// Characteristic UUIDs
+export const UUID_CHARACTERISTIC_HRMC = "0a21fc6f-6edb-4086-9460-0eccb35150fb"; // HRM Data
+export const UUID_CHARACTERISTIC_HTMC = "6896072b-24ce-4982-ac6a-899fa7183069"; // HTM Data
+export const UUID_CHARACTERISTIC_IMUC = "d2e9a9c2-a94b-42cb-b11d-b76549e7a164"; // IMU Data
+export const UUID_CHARACTERISTIC_BITE_FORCE = "f86a2066-5203-4bed-b090-ac0b89e68d81"; // FSR Data
+
+// Standard service/characteristic UUIDs
+export const UUID_SERVICE_BATTERY = "180f"; // Standard Battery Service
+export const UUID_CHARACTERISTIC_BATTERY_LEVEL = "2a19"; // Standard Battery Level
+
+// Group for easier access
+export const MOUTHGUARD_UUIDS = {
+  services: {
+    hrm: UUID_SERVICE_HRM,
+    htm: UUID_SERVICE_HTM,
+    imu: UUID_SERVICE_IMU,
+    fsr: UUID_SERVICE_FSR,
+    battery: UUID_SERVICE_BATTERY,
+  },
+  characteristics: {
+    hrmData: UUID_CHARACTERISTIC_HRMC,
+    htmData: UUID_CHARACTERISTIC_HTMC,
+    imuData: UUID_CHARACTERISTIC_IMUC,
+    fsrData: UUID_CHARACTERISTIC_BITE_FORCE,
+    batteryLevel: UUID_CHARACTERISTIC_BATTERY_LEVEL,
+  }
+}; 
 
 ================================================================================
 File: src/constants.ts
@@ -13252,8 +13303,8 @@ export async function up(db: SQLiteDatabase): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       device_id TEXT NOT NULL,
       device_timestamp INTEGER NOT NULL, -- Store the uint32_t directly
-      left_bite INTEGER NOT NULL,
-      right_bite INTEGER NOT NULL,
+      left_bite REAL NOT NULL, -- Changed to REAL to store unscaled force values
+      right_bite REAL NOT NULL, -- Changed to REAL to store unscaled force values
       app_timestamp INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_fsr_device_time ON fsr_packets(device_id, device_timestamp);
@@ -14025,7 +14076,7 @@ File: src/repositories/SensorDataRepository.ts
 
 import { SQLiteDatabase } from 'expo-sqlite';
 import { dataChangeEmitter, dbEvents } from '../utils/EventEmitter';
-import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent } from '../types';
+import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, AccelerometerData, TemperatureData, HeartRateData } from '../types';
 
 /**
  * Repository for managing sensor data from mouthguard devices
@@ -14065,13 +14116,7 @@ export class SensorDataRepository {
    * Record accelerometer data from a device
    */
   public async recordAccelerometerData(
-    deviceId: string,
-    sensorId: number,
-    timestamp: number,
-    x: number,
-    y: number,
-    z: number,
-    magnitude: number
+    data: AccelerometerData
   ): Promise<void> {
     const now = Date.now();
     const thresholdG = 80; // Example threshold
@@ -14082,12 +14127,16 @@ export class SensorDataRepository {
         await this.db.runAsync(
           `INSERT INTO accelerometer_data (device_id, sensor_id, timestamp, x, y, z, magnitude, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [deviceId, sensorId, timestamp, x, y, z, magnitude, now]
+          [data.deviceId, data.sensorId, data.timestamp, data.x, data.y, data.z, data.magnitude, data.createdAt || now]
         );
 
         // Check if this is a potential concussion event (high-g impact)
-        if (magnitude > thresholdG) {
-          await this.recordImpactEventInternal(deviceId, undefined, timestamp, magnitude, x, y, z, now); // Use internal helper
+        if (data.magnitude > thresholdG) {
+          await this.recordImpactEventInternal(
+            data.deviceId, undefined, data.timestamp, 
+            data.magnitude, data.x, data.y, data.z, 
+            data.createdAt || now
+          ); // Use internal helper
         }
       } catch (error) {
         console.error('Error inserting accelerometer data or impact event:', error);
@@ -14100,17 +14149,14 @@ export class SensorDataRepository {
    * Record temperature data from a device
    */
   public async recordTemperatureData(
-    deviceId: string,
-    sensorId: number,
-    timestamp: number,
-    temperature: number
+    data: TemperatureData
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
         `INSERT INTO temperature_data (device_id, sensor_id, timestamp, temperature, created_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [deviceId, sensorId, timestamp, temperature, now]
+        [data.deviceId, data.sensorId, data.timestamp, data.temperature, data.createdAt || now]
       );
     } catch (error) {
       console.error('Error inserting temperature data:', error);
@@ -14144,16 +14190,14 @@ export class SensorDataRepository {
    * Record heart rate data from a device
    */
   public async recordHeartRateData(
-    deviceId: string,
-    timestamp: number,
-    heartRate: number
+    data: HeartRateData
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
         `INSERT INTO heart_rate_data (device_id, timestamp, heart_rate, created_at)
          VALUES (?, ?, ?, ?)`,
-        [deviceId, timestamp, heartRate, now]
+        [data.deviceId, data.timestamp, data.heartRate, data.createdAt || now]
       );
     } catch (error) {
       console.error('Error inserting heart rate data:', error);
@@ -14212,148 +14256,116 @@ export class SensorDataRepository {
     const appTimestamp = Date.now();
     console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
 
-    // **Decision Point:** Are accel16 or accel200 the primary source for impact detection?
-    // Let's assume accel200 is the high-G sensor for impacts.
-    const highGAccel = packet.accel200;
-    const thresholdG = 80; // Example threshold
-
-    // You'll need to convert raw accel200 values to Gs based on sensor sensitivity
-    // Placeholder conversion - REPLACE WITH ACTUAL CALCULATION
-    const SENSITIVITY_200G = 16384 / 200; // Example: If 16-bit covers +/- 200g range (adjust!)
-    const gForceX = highGAccel[0] / SENSITIVITY_200G;
-    const gForceY = highGAccel[1] / SENSITIVITY_200G;
-    const gForceZ = highGAccel[2] / SENSITIVITY_200G;
+    // Calculate G-forces for impact detection
+    const SENSITIVITY_200G = 16384 / 200; // Example conversion factor - adjust based on actual sensor
+    const gForceX = packet.accel200[0] / SENSITIVITY_200G;
+    const gForceY = packet.accel200[1] / SENSITIVITY_200G;
+    const gForceZ = packet.accel200[2] / SENSITIVITY_200G;
     const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
 
-    let insertedId = -1;
-    await this.db.withTransactionAsync(async () => {
-      try {
-        const result = await this.db.runAsync(
-          `INSERT INTO motion_packets (
-            device_id, device_timestamp,
-            gyro_x, gyro_y, gyro_z,
-            accel16_x, accel16_y, accel16_z,
-            accel200_x, accel200_y, accel200_z,
-            mag_x, mag_y, mag_z,
-            bite_l, bite_r, app_timestamp
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            deviceId, packet.timestamp, // No longer dividing by 1000 - using milliseconds directly
-            packet.gyro[0], packet.gyro[1], packet.gyro[2],
-            packet.accel16[0], packet.accel16[1], packet.accel16[2],
-            packet.accel200[0], packet.accel200[1], packet.accel200[2], // Store raw 200g values
-            packet.mag[0], packet.mag[1], packet.mag[2],
-            packet.bite_l, packet.bite_r, appTimestamp
-          ]
-        );
+    // Insert the raw packet data
+    const result = await this.db.runAsync(
+      `INSERT INTO motion_packets (
+        device_id, device_timestamp,
+        gyro_x, gyro_y, gyro_z,
+        accel16_x, accel16_y, accel16_z,
+        accel200_x, accel200_y, accel200_z,
+        mag_x, mag_y, mag_z,
+        bite_l, bite_r, app_timestamp
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        deviceId, packet.timestamp, // Device timestamp
+        packet.gyro[0], packet.gyro[1], packet.gyro[2],
+        packet.accel16[0], packet.accel16[1], packet.accel16[2],
+        packet.accel200[0], packet.accel200[1], packet.accel200[2],
+        packet.mag[0], packet.mag[1], packet.mag[2],
+        packet.bite_l, packet.bite_r, appTimestamp // App timestamp
+      ]
+    );
 
-        insertedId = result.lastInsertRowId;
+    // Check for potential impact event
+    const thresholdG = 80; // 80G threshold for potential concussion
+    if (magnitude > thresholdG) {
+      await this.recordImpactEventInternal(
+        deviceId, undefined, packet.timestamp, 
+        magnitude, gForceX, gForceY, gForceZ,
+        appTimestamp
+      );
+    }
 
-        // If magnitude exceeds threshold, record an impact event using calculated Gs
-        if (magnitude > thresholdG) {
-          // Determine severity based on calculated magnitude
-          const severity =
-            magnitude > 120 ? 'critical' :
-            magnitude > 100 ? 'severe' :
-            magnitude > 80 ? 'moderate' : 'low'; // Severity based on G-force
-
-          // TODO: Get athleteId associated with deviceId if possible
-          const athleteId = undefined; // Placeholder
-
-          await this.recordImpactEventInternal(
-            deviceId,
-            athleteId,
-            packet.timestamp, // Using milliseconds directly
-            magnitude, // Calculated magnitude
-            gForceX, gForceY, gForceZ, // Calculated G-forces
-            appTimestamp, // When recorded by app
-            severity
-            // Add durationMs, location, notes if available/calculable
-          );
-        }
-
-        console.log(`[SensorDataRepo] Motion Packet recorded, ID: ${result.lastInsertRowId}`);
-        dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
-      } catch (error) {
-        console.error('[SensorDataRepo] Error inserting Motion Packet or Impact Event:', error);
-        throw error; // Re-throw to ensure transaction rollback
-      }
-    });
-
-    return insertedId;
+    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+    return result.lastInsertRowId;
   }
 
   /**
-   * Record a raw FSR Packet
+   * Record a raw FSR (bite force) Packet
    */
   public async recordFSRPacket(deviceId: string, packet: FSRPacket): Promise<number> {
     const appTimestamp = Date.now();
     console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
-    try {
-      const result = await this.db.runAsync(
-        `INSERT INTO fsr_packets (
-          device_id, device_timestamp, left_bite, right_bite, app_timestamp
-        ) VALUES (?, ?, ?, ?, ?)`,
-        [
-          deviceId, packet.timestamp, // No longer dividing by 1000 - using milliseconds directly
-          packet.left_bite, packet.right_bite, appTimestamp
-        ]
-      );
-      console.log(`[SensorDataRepo] FSR Packet recorded, ID: ${result.lastInsertRowId}`);
-      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
-      return result.lastInsertRowId;
-    } catch (error) {
-      console.error('[SensorDataRepo] Error inserting FSR Packet:', error);
-      throw error;
-    }
+    
+    // Insert the FSR packet data (storing unscaled forces)
+    const result = await this.db.runAsync(
+      `INSERT INTO fsr_packets (
+        device_id, device_timestamp, left_bite, right_bite, app_timestamp
+      ) VALUES (?, ?, ?, ?, ?)`,
+      [
+        deviceId, packet.timestamp, // Device timestamp
+        packet.left_bite, // Already unscaled in BluetoothService
+        packet.right_bite, // Already unscaled in BluetoothService  
+        appTimestamp
+      ]
+    );
+
+    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
+    return result.lastInsertRowId;
   }
 
   /**
-   * Record a raw HRM Packet
+   * Record a Heart Rate Measurement Packet
    */
   public async recordHRMPacket(deviceId: string, packet: HRMPacket): Promise<number> {
-    const appTimestamp = packet.appTimestamp || Date.now(); // Use provided or current time
-    console.log(`[SensorDataRepo] Recording HRM Packet for ${deviceId} at ${appTimestamp}`);
-    try {
-      const result = await this.db.runAsync(
-        `INSERT INTO hrm_packets (
-          device_id, flags, heart_rate, app_timestamp
-        ) VALUES (?, ?, ?, ?)`,
-        [
-          deviceId, packet.flags, packet.heartRate, appTimestamp
-        ]
-      );
-      console.log(`[SensorDataRepo] HRM Packet recorded, ID: ${result.lastInsertRowId}`);
-      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
-      return result.lastInsertRowId;
-    } catch (error) {
-      console.error('[SensorDataRepo] Error inserting HRM Packet:', error);
-      throw error;
-    }
+    console.log(`[SensorDataRepo] Recording HRM Packet for ${deviceId}, HR: ${packet.heartRate}`);
+    
+    // Insert the HRM packet data
+    const result = await this.db.runAsync(
+      `INSERT INTO hrm_packets (
+        device_id, flags, heart_rate, app_timestamp
+      ) VALUES (?, ?, ?, ?)`,
+      [
+        deviceId, 
+        packet.flags,
+        packet.heartRate,
+        packet.appTimestamp
+      ]
+    );
+
+    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
+    return result.lastInsertRowId;
   }
 
   /**
-   * Record a raw HTM Packet
+   * Record a Health Thermometer Measurement Packet
    */
   public async recordHTMPacket(deviceId: string, packet: HTMPacket): Promise<number> {
-    const appTimestamp = packet.appTimestamp || Date.now(); // Use provided or current time
-    console.log(`[SensorDataRepo] Recording HTM Packet for ${deviceId} at ${appTimestamp}`);
-    try {
-      const result = await this.db.runAsync(
-        `INSERT INTO htm_packets (
-          device_id, flags, temperature, type, app_timestamp
-        ) VALUES (?, ?, ?, ?, ?)`,
-        [
-          deviceId, packet.flags, packet.temperature, packet.type ?? null, appTimestamp
-        ]
-      );
-      console.log(`[SensorDataRepo] HTM Packet recorded, ID: ${result.lastInsertRowId}`);
-      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
-      return result.lastInsertRowId;
-    } catch (error) {
-      console.error('[SensorDataRepo] Error inserting HTM Packet:', error);
-      throw error;
-    }
+    console.log(`[SensorDataRepo] Recording HTM Packet for ${deviceId}, Temp: ${packet.temperature}`);
+    
+    // Insert the HTM packet data
+    const result = await this.db.runAsync(
+      `INSERT INTO htm_packets (
+        device_id, flags, temperature, type, app_timestamp
+      ) VALUES (?, ?, ?, ?, ?)`,
+      [
+        deviceId, 
+        packet.flags,
+        packet.temperature, // Already unscaled in BluetoothService
+        packet.type ?? null,
+        packet.appTimestamp
+      ]
+    );
+
+    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
+    return result.lastInsertRowId;
   }
 
   /**
@@ -14521,6 +14533,40 @@ export class SensorDataRepository {
         throw error; // Ensure transaction rollback
       }
     });
+  }
+
+  /**
+   * Record an impact event
+   */
+  public async recordImpactEvent(
+    event: Omit<ImpactEvent, 'id' | 'processed'> // Expect an object
+  ): Promise<number> { // Return the inserted ID
+    console.warn(`SensorDataRepository: Recording potential impact event: ${event.magnitude.toFixed(1)}g`);
+    const result = await this.db.runAsync(
+      `INSERT INTO impact_events (device_id, athlete_id, timestamp, magnitude, x, y, z, duration_ms, location, processed, severity, notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        event.deviceId,
+        event.athleteId ?? null,
+        event.timestamp,
+        event.magnitude,
+        event.x, event.y, event.z,
+        event.durationMs ?? null,
+        event.location ?? null,
+        0, // processed = false
+        event.severity ?? null,
+        event.notes ?? null,
+        event.createdAt // Use createdAt from the event object
+      ]
+    );
+    // Emit concussion detected event
+    dataChangeEmitter.emit(dbEvents.CONCUSSION_DETECTED, {
+      deviceId: event.deviceId,
+      timestamp: event.timestamp,
+      magnitude: event.magnitude,
+      athleteId: event.athleteId // Pass athleteId if available
+    });
+    return result.lastInsertRowId; // Return the ID
   }
 } 
 
@@ -14711,13 +14757,15 @@ import { Alert, PermissionsAndroid, Platform, AppState } from "react-native";
 import * as ExpoDevice from "expo-device";
 import { BleError, BleManager, Characteristic, Device } from 'react-native-ble-plx';
 import base64 from "react-native-base64";
+import { Buffer } from 'buffer'; // Import Buffer for binary data parsing
 import { BluetoothHandler, SensorCallbacks } from "../contexts/BluetoothContext";
 import { DeviceService } from "./DeviceService";
-import { SensorDataRepository } from "../services/repositories/SensorDataRepository";
+import { SensorDataRepository } from "../repositories/SensorDataRepository";
 import { AthleteRepository } from "../repositories/AthleteRepository";
-import { DeviceStatus, LiveDataPoint, Session } from "../types";
+import { DeviceStatus, LiveDataPoint, Session, MotionPacket, FSRPacket, HRMPacket, HTMPacket, ConcussionAlert } from "../types";
 import { dataChangeEmitter, dbEvents } from "../utils/EventEmitter";
 import { v4 as uuidv4 } from 'uuid';
+import { MOUTHGUARD_UUIDS } from '../bleConstants'; // Import the new UUIDs
 
 // Event key for device status updates
 const DEVICE_STATUS_UPDATE_EVENT = 'deviceStatusUpdate';
@@ -14749,6 +14797,8 @@ export class BluetoothService {
   private athleteRepository: AthleteRepository;
   private deviceStatusMap: Map<string, DeviceStatus> = new Map();
   private currentSession: Session | null = null;
+  private manager: BleManager; // BLE manager instance
+  private connectedDevices: Map<string, Device> = new Map(); // Store Device directly
 
   /**
    * Constructor
@@ -14767,6 +14817,7 @@ export class BluetoothService {
     this.deviceService = deviceService;
     this.sensorDataRepository = sensorDataRepository;
     this.athleteRepository = athleteRepository;
+    this.manager = new BleManager();
     
     // Set up the callbacks to handle data from bluetooth
     this.setupSensorCallbacks();
@@ -15004,7 +15055,6 @@ export class BluetoothService {
             timestamp: data.timestamp,
             magnitude,
             x, y, z,
-            processed: false,
             severity: severity as any,
             createdAt: Date.now()
           });
@@ -15275,45 +15325,46 @@ export class BluetoothService {
    */
   public async connectToDevice(deviceId: string): Promise<void> {
     try {
-      // First, update status to connecting (UI feedback)
-      const initialStatus: DeviceStatus = {
-        id: deviceId,
-        name: 'Unknown Device',
-        connected: false,
-        lastSeen: Date.now()
-      };
-      this.deviceStatusMap.set(deviceId, initialStatus);
-      dataChangeEmitter.emit(DEVICE_STATUS_UPDATE_EVENT, initialStatus);
+      console.log(`[BluetoothService] Connecting to device: ${deviceId}`);
+      
+      // Check if already connected
+      if (this.connectedDevices.has(deviceId)) {
+        console.log(`[BluetoothService] Device ${deviceId} already connected`);
+        this.updateDeviceStatus(deviceId, true);
+        return;
+      }
       
       // Attempt connection
-      await this.bluetoothHandler.connectToDevice(deviceId);
+      const device = await this.manager.connectToDevice(deviceId);
+      console.log(`[BluetoothService] Connected to device: ${deviceId}`);
       
-      // Get all connected devices
-      const connectedDevices = this.bluetoothHandler.getConnectedDevices();
-      const device = connectedDevices.get(deviceId);
+      // Store in connected devices map
+      this.connectedDevices.set(deviceId, device);
       
-      if (device) {
-        // Save the device to persistent storage
+      // Update device status
+      this.updateDeviceStatus(deviceId, true);
+
+      // Discover services and characteristics
+      console.log(`[BluetoothService] Discovering services for device: ${deviceId}`);
+      await device.discoverAllServicesAndCharacteristics();
+      console.log(`[BluetoothService] Services discovered for device: ${deviceId}`);
+      
+      // Setup monitoring for relevant characteristics
+      this.setupMonitoringForDevice(deviceId);
+      
+      // Update saved device with lastConnected
+      const savedDevices = await this.deviceService.getSavedDevices();
+      const savedDevice = savedDevices.find(d => d.id === deviceId);
+      
+      if (savedDevice) {
+        await this.deviceService.updateDeviceLastConnected(deviceId);
+      } else {
+        // Save the actual Device object
         await this.deviceService.saveDevice(device);
-        console.log(`[BluetoothService] Device ${deviceId} saved to storage`);
-        
-        // Update device status
-        await this.updateDeviceStatus(deviceId, true);
       }
+      
     } catch (error) {
-      console.error('[BluetoothService] Error connecting to device:', error);
-      
-      // Update status to reflect connection failure
-      if (this.deviceStatusMap.has(deviceId)) {
-        const failedStatus = {
-          ...this.deviceStatusMap.get(deviceId)!,
-          connected: false,
-          lastSeen: Date.now()
-        };
-        this.deviceStatusMap.set(deviceId, failedStatus);
-        dataChangeEmitter.emit(DEVICE_STATUS_UPDATE_EVENT, failedStatus);
-      }
-      
+      console.error(`[BluetoothService] Error connecting to device ${deviceId}:`, error);
       throw error;
     }
   }
@@ -15394,17 +15445,8 @@ export class BluetoothService {
    * @returns Map of connected devices
    */
   public getConnectedDevices(): Map<string, Device> {
-    const connectedDevices = new Map<string, Device>();
-    
-    // Get devices from BluetoothHandler
-    const devices = this.bluetoothHandler.getConnectedDevices();
-    
-    // Convert to Map<string, Device>
-    devices.forEach((connectedDevice, deviceId) => {
-      connectedDevices.set(deviceId, connectedDevice.device);
-    });
-    
-    return connectedDevices;
+    // Return a copy of the connected devices map
+    return new Map(this.connectedDevices);
   }
 
   /**
@@ -15419,62 +15461,6 @@ export class BluetoothService {
    */
   public getDeviceStatuses(): DeviceStatus[] {
     return Array.from(this.deviceStatusMap.values());
-  }
-
-  /**
-   * Scan for devices that match our criteria
-   * This returns a promise that resolves with found devices
-   */
-  public async scanForDevices(): Promise<Array<{id: string, name: string}>> {
-    return new Promise((resolve, reject) => {
-      const discoveredDevices: Array<{id: string, name: string}> = [];
-      const deviceMap = new Map<string, {id: string, name: string}>();
-      
-      try {
-        this.bluetoothHandler.getBLEManager().startDeviceScan(
-          null, // Scan for all services
-          { allowDuplicates: false }, // Don't allow duplicates
-          (error, device) => {
-            if (error) {
-              // Stop scanning on error
-              this.bluetoothHandler.getBLEManager().stopDeviceScan();
-              reject(error);
-              return;
-            }
-            
-            if (device && device.name) {
-              // Check if the device is potentially a mouthguard
-              // This is a placeholder - you would implement logic to filter
-              // based on name prefix, signal strength, or service advertisement
-              if (
-                device.name.toLowerCase().includes('mouthguard') || 
-                device.name.toLowerCase().includes('guard') ||
-                device.name.toLowerCase().includes('mg')
-              ) {
-                const deviceInfo = {
-                  id: device.id,
-                  name: device.name
-                };
-                
-                // Use a map to deduplicate
-                deviceMap.set(device.id, deviceInfo);
-              }
-            }
-          }
-        );
-        
-        // Stop scanning after 5 seconds
-        setTimeout(() => {
-          this.bluetoothHandler.getBLEManager().stopDeviceScan();
-          // Convert map to array
-          resolve(Array.from(deviceMap.values()));
-        }, 5000);
-        
-      } catch (error) {
-        this.bluetoothHandler.getBLEManager().stopDeviceScan();
-        reject(error);
-      }
-    });
   }
 
   /**
@@ -15569,6 +15555,193 @@ export class BluetoothService {
     } catch (error) {
       console.error('[BluetoothService] Error stopping session:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Setup monitoring for BLE characteristics for a connected device
+   */
+  private setupMonitoringForDevice(deviceId: string) {
+    const device = this.connectedDevices.get(deviceId);
+    if (!device) {
+        console.error(`[BluetoothService] Device ${deviceId} not found for monitoring setup`);
+        return;
+    }
+
+    console.log(`[BluetoothService] Setting up monitoring for device ${deviceId}`);
+
+    // Characteristics to monitor
+    const characteristicsToMonitor = [
+        { service: MOUTHGUARD_UUIDS.services.hrm, characteristic: MOUTHGUARD_UUIDS.characteristics.hrmData },
+        { service: MOUTHGUARD_UUIDS.services.htm, characteristic: MOUTHGUARD_UUIDS.characteristics.htmData },
+        { service: MOUTHGUARD_UUIDS.services.imu, characteristic: MOUTHGUARD_UUIDS.characteristics.imuData },
+        { service: MOUTHGUARD_UUIDS.services.fsr, characteristic: MOUTHGUARD_UUIDS.characteristics.fsrData },
+        // Add battery if needed
+        { service: MOUTHGUARD_UUIDS.services.battery, characteristic: MOUTHGUARD_UUIDS.characteristics.batteryLevel },
+    ];
+
+    characteristicsToMonitor.forEach(({ service, characteristic }) => {
+        try {
+            console.log(`[BluetoothService] - Monitoring ${service}/${characteristic}`);
+            device.monitorCharacteristicForService(
+                service,
+                characteristic,
+                (error, char) => this.handleCharacteristicUpdate(
+                    deviceId, service, characteristic, error, char
+                )
+            );
+        } catch (error) {
+            console.error(`[BluetoothService] Error setting up monitoring for ${service}/${characteristic}:`, error);
+        }
+    });
+
+    console.log(`[BluetoothService] Monitoring setup complete for device ${deviceId}`);
+  }
+
+  /**
+   * Parse and handle incoming BLE characteristic updates from the device
+   */
+  private handleCharacteristicUpdate(
+    deviceId: string,
+    serviceUuid: string,
+    characteristicUuid: string,
+    error: BleError | null,
+    characteristic: Characteristic | null
+  ) {
+    if (error) {
+        // Handle connection errors, log them, potentially update device status
+        console.error(`[BluetoothService] Error monitoring ${characteristicUuid}:`, error.message);
+        if (error.errorCode === 201 || error.errorCode === 205) { // Device disconnected codes
+             this.updateDeviceStatus(deviceId, false); // Update status to disconnected
+             this.connectedDevices.delete(deviceId);
+        }
+        return;
+    }
+
+    if (!characteristic?.value) {
+        console.warn(`[BluetoothService] No data received from ${characteristicUuid}`);
+        return;
+    }
+
+    try {
+        // Decode Base64 value to a Buffer
+        const buffer = Buffer.from(characteristic.value, 'base64');
+        const appTimestamp = Date.now(); // Timestamp when app received data
+
+        // --- PARSING LOGIC BASED ON CHARACTERISTIC UUID ---
+
+        // --- HRM Data ---
+        if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.hrmData.toLowerCase()) {
+            if (buffer.length >= 5) { // Expected size: 1 byte HR + 4 bytes timestamp
+                const hrmPacket: HRMPacket = {
+                    heartRate: buffer.readUInt8(0),
+                    // Assuming device_timestamp is uint32_t LE at offset 1
+                    deviceTimestamp: buffer.readUInt32LE(1),
+                    flags: 0, // Flags aren't in your custom struct, set default or derive if needed
+                    appTimestamp: appTimestamp
+                };
+                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}`);
+                this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
+                dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'heartRate', deviceId, timestamp: appTimestamp, values: [hrmPacket.heartRate] } as LiveDataPoint);
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
+            } else {
+                 console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes`);
+            }
+        }
+
+        // --- HTM Data ---
+        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.htmData.toLowerCase()) {
+             if (buffer.length >= 6) { // Expected size: 2 bytes temp + 4 bytes timestamp
+                // Read temperature (int16_t, scaled by 100)
+                const rawTempValue = buffer.readInt16LE(0);
+                const temperatureCelsius = rawTempValue / 100.0; // Reverse the scaling
+                const deviceTimestamp = buffer.readUInt32LE(2);
+
+                const htmPacket: HTMPacket = {
+                     temperature: temperatureCelsius, // Store the actual temperature
+                     timestamp: deviceTimestamp, // Use the timestamp property from the interface
+                     flags: 0, // Flags aren't in your custom struct
+                     appTimestamp: appTimestamp
+                };
+                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}`);
+                this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
+                dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'temperature', deviceId, timestamp: appTimestamp, values: [htmPacket.temperature] } as LiveDataPoint);
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
+            } else {
+                 console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes`);
+            }
+        }
+
+        // --- IMU Data ---
+        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
+            if (buffer.length >= 32) { // Expected size based on motion_packet struct
+                const motionPacket: MotionPacket = {
+                    gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)],
+                    accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)],
+                    accel200: [buffer.readInt16LE(12), buffer.readInt16LE(14), buffer.readInt16LE(16)],
+                    mag: [buffer.readInt16LE(18), buffer.readInt16LE(20), buffer.readInt16LE(22)],
+                    bite_l: buffer.readUInt16LE(24),
+                    bite_r: buffer.readUInt16LE(26),
+                    timestamp: buffer.readUInt32LE(28) // Device timestamp
+                };
+                console.log(`[BluetoothService] Parsed IMU: Gyro=${motionPacket.gyro[0]}, Acc16=${motionPacket.accel16[0]}, Acc200=${motionPacket.accel200[0]}, Mag=${motionPacket.mag[0]}, BiteL=${motionPacket.bite_l}, DevTS=${motionPacket.timestamp}`);
+                this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket); // Store raw packet
+                // Emit specific live data points as needed (e.g., high-G accel)
+                const SENSITIVITY_200G = 16384 / 200; // Example, adjust as needed
+                const gForceX = motionPacket.accel200[0] / SENSITIVITY_200G;
+                const gForceY = motionPacket.accel200[1] / SENSITIVITY_200G;
+                const gForceZ = motionPacket.accel200[2] / SENSITIVITY_200G;
+                const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
+                dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
+                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+            } else {
+                 console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes`);
+            }
+        }
+
+        // --- FSR (Bite Force) Data ---
+        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.fsrData.toLowerCase()) {
+            if (buffer.length >= 8) { // Expected size: 2 bytes left + 2 bytes right + 4 bytes timestamp
+                // Read bite forces (int16_t, scaled by 100)
+                const rawLeftBite = buffer.readInt16LE(0);
+                const rawRightBite = buffer.readInt16LE(2);
+                const leftBiteForce = rawLeftBite / 100.0;   // Reverse scaling
+                const rightBiteForce = rawRightBite / 100.0; // Reverse scaling
+                const deviceTimestamp = buffer.readUInt32LE(4);
+
+                const fsrPacket: FSRPacket = {
+                    left_bite: leftBiteForce,  // Store actual force
+                    right_bite: rightBiteForce, // Store actual force
+                    timestamp: deviceTimestamp // Device timestamp
+                };
+                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}`);
+                this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
+                dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'force', deviceId, timestamp: appTimestamp, values: [fsrPacket.left_bite, fsrPacket.right_bite] } as LiveDataPoint);
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
+            } else {
+                 console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes`);
+            }
+        }
+
+        // --- Battery Level ---
+         else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.batteryLevel.toLowerCase()) {
+            const level = buffer.readUInt8(0);
+            this.handleBatteryLevel(deviceId, level); // Use existing handler
+        }
+
+        // --- Add other characteristic handling if needed ---
+
+        else {
+            // Optional: Log data from characteristics you don't explicitly handle
+            // console.log(`[BluetoothService] Data from unhandled characteristic ${characteristicUuid}: ${buffer.toString('hex')}`);
+        }
+
+         // Update last seen timestamp after successful processing
+        this.updateDeviceLastSeen(deviceId);
+
+    } catch (parseError) {
+        console.error(`[BluetoothService] Error parsing data from ${characteristicUuid}:`, parseError);
+        console.error(`[BluetoothService] Raw Base64 Data: ${characteristic.value}`);
     }
   }
 } 
@@ -15795,6 +15968,34 @@ export class DeviceService {
     } catch (error) {
       console.error('[DeviceService] Error clearing devices:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Update the last connected timestamp for a device
+   * @param deviceId ID of the device to update
+   */
+  public async updateDeviceLastConnected(deviceId: string): Promise<void> {
+    try {
+      const devices = await this.getSavedDevices();
+      const deviceIndex = devices.findIndex(d => d.id === deviceId);
+
+      if (deviceIndex !== -1) {
+        // Update the lastConnected timestamp
+        devices[deviceIndex] = {
+          ...devices[deviceIndex],
+          lastConnected: Date.now() // Set to current time
+        };
+
+        // Save updated list back to storage
+        await this.storageService.setValue(SAVED_DEVICES_KEY, devices);
+        console.log(`[DeviceService] Updated lastConnected for device ${deviceId}`);
+      } else {
+        console.warn(`[DeviceService] Device ${deviceId} not found when trying to update lastConnected`);
+      }
+    } catch (error) {
+      console.error('[DeviceService] Error updating device lastConnected:', error);
+      // Don't throw, maybe log or handle differently
     }
   }
 } 
@@ -16264,6 +16465,7 @@ export interface ConcussionAlert {
     severity: 'low' | 'moderate' | 'severe' | 'critical';
     acknowledged: boolean;
     notes?: string;
+    alertType?: 'impact' | 'temperature' | 'heartRate';
 }
 
 // Stats summaries
