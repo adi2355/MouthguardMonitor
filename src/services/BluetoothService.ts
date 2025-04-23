@@ -709,6 +709,101 @@ export class BluetoothService {
   }
 
   /**
+   * Subscribe to sensor data updates
+   * @param callback Called when new sensor data is received
+   * @returns Subscription object with remove method
+   */
+  public subscribeSensorData(
+    callback: (deviceId: string, dataPoint: LiveDataPoint) => void
+  ): SensorDataSubscription {
+    const handler = (deviceId: string, dataPoint: LiveDataPoint) => {
+      callback(deviceId, dataPoint);
+    };
+    
+    dataChangeEmitter.on(SENSOR_DATA_EVENT, handler);
+    
+    return {
+      remove: () => {
+        dataChangeEmitter.off(SENSOR_DATA_EVENT, handler);
+      }
+    };
+  }
+
+  /**
+   * Start a monitoring session
+   * Creates a new session in the database
+   */
+  public async startSession(): Promise<string> {
+    if (this.currentSession) {
+      throw new Error('A session is already active. Stop it before starting a new one.');
+    }
+    
+    try {
+      // Create session ID
+      const sessionId = `session_${uuidv4()}`;
+      const now = Date.now();
+      
+      // Create session object
+      this.currentSession = {
+        id: sessionId,
+        name: `Session ${new Date(now).toLocaleString()}`,
+        startTime: now,
+        createdAt: now
+      };
+      
+      // Save session to database
+      // TODO: Implement SessionRepository and save session
+      console.log(`[BluetoothService] Started session ${sessionId}`);
+      
+      // Get all connected devices with athletes
+      const connectedDevices = Array.from(this.deviceStatusMap.values())
+        .filter(device => device.connected && device.athleteInfo);
+      
+      // Record session-athlete associations
+      for (const device of connectedDevices) {
+        if (device.athleteInfo) {
+          // TODO: Save session-athlete relationship in database
+          console.log(`[BluetoothService] Added athlete ${device.athleteInfo.id} to session ${sessionId}`);
+        }
+      }
+      
+      return sessionId;
+    } catch (error) {
+      console.error('[BluetoothService] Error starting session:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop the current monitoring session
+   */
+  public async stopSession(): Promise<void> {
+    if (!this.currentSession) {
+      throw new Error('No active session to stop.');
+    }
+    
+    try {
+      const now = Date.now();
+      
+      // Update session with end time
+      this.currentSession.endTime = now;
+      
+      // Save updated session to database
+      // TODO: Implement SessionRepository and update session
+      console.log(`[BluetoothService] Stopped session ${this.currentSession.id}`);
+      
+      // Update session-athlete records with end time
+      // TODO: Implement SessionAthleteRepository and update records
+      
+      // Clear current session
+      this.currentSession = null;
+    } catch (error) {
+      console.error('[BluetoothService] Error stopping session:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Setup monitoring for BLE characteristics for a connected device
    */
   private setupMonitoringForDevice(deviceId: string) {
