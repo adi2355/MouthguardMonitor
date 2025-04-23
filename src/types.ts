@@ -219,6 +219,7 @@ export interface ConcussionAlert {
     severity: 'low' | 'moderate' | 'severe' | 'critical';
     acknowledged: boolean;
     notes?: string;
+    alertType?: 'impact' | 'temperature' | 'heartRate';
 }
 
 // Stats summaries

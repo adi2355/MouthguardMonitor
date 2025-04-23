@@ -45,8 +45,8 @@ export async function up(db: SQLiteDatabase): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       device_id TEXT NOT NULL,
       device_timestamp INTEGER NOT NULL, -- Store the uint32_t directly
-      left_bite INTEGER NOT NULL,
-      right_bite INTEGER NOT NULL,
+      left_bite REAL NOT NULL, -- Changed to REAL to store unscaled force values
+      right_bite REAL NOT NULL, -- Changed to REAL to store unscaled force values
       app_timestamp INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_fsr_device_time ON fsr_packets(device_id, device_timestamp);

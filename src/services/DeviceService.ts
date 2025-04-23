@@ -218,4 +218,32 @@ export class DeviceService {
       throw error;
     }
   }
+
+  /**
+   * Update the last connected timestamp for a device
+   * @param deviceId ID of the device to update
+   */
+  public async updateDeviceLastConnected(deviceId: string): Promise<void> {
+    try {
+      const devices = await this.getSavedDevices();
+      const deviceIndex = devices.findIndex(d => d.id === deviceId);
+
+      if (deviceIndex !== -1) {
+        // Update the lastConnected timestamp
+        devices[deviceIndex] = {
+          ...devices[deviceIndex],
+          lastConnected: Date.now() // Set to current time
+        };
+
+        // Save updated list back to storage
+        await this.storageService.setValue(SAVED_DEVICES_KEY, devices);
+        console.log(`[DeviceService] Updated lastConnected for device ${deviceId}`);
+      } else {
+        console.warn(`[DeviceService] Device ${deviceId} not found when trying to update lastConnected`);
+      }
+    } catch (error) {
+      console.error('[DeviceService] Error updating device lastConnected:', error);
+      // Don't throw, maybe log or handle differently
+    }
+  }
 } 

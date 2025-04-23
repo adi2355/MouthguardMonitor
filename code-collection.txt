@@ -155,25 +155,43 @@ export default function RootLayout() {
       }
       
       try {
-        console.log("[RootLayout] Starting app reset...");
-        setAppState('resetting');
+        console.log("[RootLayout] Checking reset status...");
+        setAppState('checking-reset');
         
-        // Always clear the RESET_PERFORMED flag to force a new reset
-        await AsyncStorage.removeItem('RESET_PERFORMED');
+        // Use a specific version-keyed reset flag to control app resets
+        const RESET_PERFORMED_KEY = 'APP_RESET_V1_PERFORMED';
+        const resetPerformed = await AsyncStorage.getItem(RESET_PERFORMED_KEY);
         
-        // Perform the actual reset
-        const resetResult = await clearAppData();
-        console.log("[RootLayout] Reset completed with result:", resetResult);
-        
-        setDidReset(true);
-        setAppState('reset-complete');
-        console.log("[RootLayout] App reset completed successfully");
+        if (!resetPerformed) {
+          // Only reset if not done before
+          console.log("[RootLayout] Reset not performed yet, starting app reset...");
+          setAppState('resetting');
+          
+          // Perform the actual reset
+          const resetResult = await clearAppData();
+          console.log("[RootLayout] Reset completed with result:", resetResult);
+          
+          if (resetResult) {
+            // Mark reset as performed only if successful
+            await AsyncStorage.setItem(RESET_PERFORMED_KEY, 'true');
+            console.log("[RootLayout] App data cleared and reset marked as performed.");
+          }
+          
+          setDidReset(true);
+          setAppState('reset-complete');
+          console.log("[RootLayout] App reset completed successfully");
+        } else {
+          // Reset already performed, skip
+          console.log("[RootLayout] Reset already performed, skipping reset process");
+          setDidReset(true);
+          setAppState('no-reset-needed');
+        }
       } catch (err) {
-        console.error('[RootLayout] Error during app reset:', err);
+        console.error('[RootLayout] Error during app reset check:', err);
         setAppState('reset-error');
         Alert.alert(
           'Reset Error',
-          'There was an error resetting the app. Try restarting the app.',
+          'There was an error checking app reset status. Try restarting the app.',
           [{ text: 'OK' }]
         );
         setDidReset(true); // Continue anyway to prevent blocking the app
@@ -3643,200 +3661,889 @@ const styles = StyleSheet.create({
 File: app/(tabs)/reportsDetailed.tsx
 ================================================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, ViewStyle } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ViewStyle, ActivityIndicator, Dimensions, Platform, Animated } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur'; // Import if using GlassCard
-import { playerData } from '@/src/constants'; // Import the simulated data
-import { COLORS } from '@/src/constants'; // Use your COLORS
+import { BlurView } from 'expo-blur';
+import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
+import { useSensorDataRepository } from '@/src/providers/AppProvider';
+import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
+import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types';
 
-// Re-use or adapt the GlassCard component from index.tsx or devices.tsx
-// If not using GlassCard, replace with styled View components.
-interface GlassCardProps {
-  style?: ViewStyle;
-  children: React.ReactNode;
-  intensity?: number;
-}
+// Import the chart components
+import LineChart from '../components/charts/LineChart';
+import BarChart from '../components/charts/BarChart';
 
-const GlassCard: React.FC<GlassCardProps> = ({ style, children, intensity = 15 }) => {
-  // Basic fallback View if BlurView/GlassCard isn't available/desired
-  return <View style={[styles.glassCardFallback, style]}>{children}</View>;
+// Safe wrapper for LineChart that ensures proper dataset format
+const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }) => {
+  // Determine if there is actual data to render
+  const hasActualData = data && 
+                       data.datasets && 
+                       data.datasets.some((ds) => ds.data && ds.data.length > 0 && 
+                                                 ds.data.some((val) => val !== null && val !== undefined));
+
+  // Don't render if no data structure at all
+  if (!data || !data.datasets) {
+    return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
+  }
+
+  // If datasets exist but are empty, show empty message
+  if (!hasActualData) {
+    return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
+  }
+
+  // Create a safe data structure with properly formatted datasets
+  const safeData = {
+    labels: data.labels || [],
+    datasets: data.datasets.map((dataset, index) => ({
+      data: dataset.data || [],
+      color: dataset.color || (() => 'rgba(0, 176, 118, 1)'),
+      strokeWidth: dataset.strokeWidth || 2,
+      index: index // Ensure index is set
+    })),
+    legend: data.legend || undefined
+  };
+
+  return (
+    <LineChart 
+      data={safeData}
+      withDots={false}
+      bezier={props.bezier !== undefined ? props.bezier : true}
+      chartConfig={{
+        backgroundColor: 'transparent',
+        backgroundGradientFrom: 'transparent',
+        backgroundGradientTo: 'transparent',
+        fillShadowGradientFrom: safeData.datasets[0].color(0.8),
+        fillShadowGradientTo: 'rgba(255, 255, 255, 0)',
+        decimalPlaces: 0,
+        color: (opacity = 1) => safeData.datasets[0].color(opacity),
+        labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+        propsForBackgroundLines: {
+          strokeDasharray: '4, 4',
+          strokeWidth: 0.5,
+          stroke: 'rgba(0, 0, 0, 0.05)',
+        },
+      }}
+      {...props} 
+    />
+  );
 };
 
-// Define the Theme based on your constants
-const THEME = {
-  background: COLORS.background,
-  cardBackground: COLORS.card,
-  primary: COLORS.primary,
-  text: {
-    primary: COLORS.textPrimary,
-    secondary: COLORS.textSecondary,
-    tertiary: COLORS.textTertiary,
-  },
-  divider: 'rgba(0,0,0,0.08)',
-  card: {
-    shadow: 'rgba(0,0,0,0.12)',
-    border: 'rgba(0,0,0,0.05)',
-  },
-  error: COLORS.error,
-  warning: COLORS.warning,
-  info: COLORS.info,
+// Enhanced GlassCard component with improved styling
+const GlassCard = ({ style, children, intensity = 15 }) => {
+  // Use BlurView on iOS for true glass effect, fallback for Android
+  if (Platform.OS === 'ios') {
+    return (
+      <View style={[styles.cardContainer, style]}>
+        <BlurView intensity={intensity} tint="light" style={styles.blurView}>
+          <View style={styles.cardContent}>
+            {children}
+          </View>
+        </BlurView>
+      </View>
+    );
+  }
+  
+  // Fallback for Android with enhanced styling
+  return (
+    <View style={[styles.cardContainer, styles.cardAndroid, style]}>
+      <View style={styles.cardContent}>
+        {children}
+      </View>
+    </View>
+  );
 };
-
 
 export default function ReportsDetailedScreen() {
-  // Assuming we show details for the latest session for now
-  // In a real app, you might get a session ID via params
-  const sessionToShow = playerData.sessions[0];
-  const stats = sessionToShow?.stats;
+  const sensorDataRepository = useSensorDataRepository(); // Get the repository
 
-  const getRiskStyle = (risk: string | undefined) => {
+  // Animation values
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+
+  // State for storing fetched data
+  const [impacts, setImpacts] = useState([]);
+  const [motionPackets, setMotionPackets] = useState([]);
+  const [fsrPackets, setFsrPackets] = useState([]);
+  const [hrmPackets, setHrmPackets] = useState([]);
+  const [htmPackets, setHtmPackets] = useState([]);
+
+  // State for aggregated stats
+  const [sessionStats, setSessionStats] = useState(null);
+  const [impactTimelineData, setImpactTimelineData] = useState(null);
+  const [severityDistData, setSeverityDistData] = useState(null);
+  const [chieData, setChieData] = useState(null);
+  const [directionData, setDirectionData] = useState(null);
+  const [biteForceData, setBiteForceData] = useState(null);
+  const [hrChartData, setHrChartData] = useState(null);
+  const [tempChartData, setTempChartData] = useState(null);
+
+  // Loading and error states
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Assume single device for now
+  const deviceId = DEVICE_ID_SIM;
+
+  const getRiskStyle = (risk) => {
     switch (risk?.toLowerCase()) {
-      case 'high': return styles.riskHigh;
-      case 'moderate': return styles.riskModerate;
-      default: return styles.riskLow;
+      case 'high': 
+      case 'critical': return { color: COLORS.error };
+      case 'moderate': return { color: COLORS.warning };
+      default: return { color: COLORS.primary };
     }
   };
 
-  const renderSessionHistoryItem = ({ item }: { item: typeof playerData.sessions[0] }) => (
-    <TouchableOpacity style={styles.historyItem}>
-       <View style={styles.historyIconContainer}>
-         <MaterialCommunityIcons name="history" size={20} color={THEME.primary} />
-       </View>
-       <View style={styles.historyInfo}>
-         <Text style={styles.historyTitle}>{item.type} - {item.sport}</Text>
-         <Text style={styles.historyDate}>{item.date} ({item.stats.duration})</Text>
-       </View>
-       <MaterialCommunityIcons name="chevron-right" size={20} color={THEME.text.tertiary} />
-    </TouchableOpacity>
-  );
+  const fetchData = useCallback(async () => {
+    console.log('[ReportsDetailed] Fetching data...');
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Define time range (e.g., last 24 hours, or all data for sim device)
+      const endTime = Date.now();
+      const startTime = 0; // Fetch all data for simplicity initially
+
+      // Fetch all relevant data types
+      const [
+        fetchedImpacts,
+        fetchedMotion,
+        fetchedFsr,
+        fetchedHrm,
+        fetchedHtm
+      ] = await Promise.all([
+        sensorDataRepository.getSensorData(deviceId, 'impact_events', startTime, endTime),
+        sensorDataRepository.getSensorData(deviceId, 'motion_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(deviceId, 'fsr_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(deviceId, 'hrm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(deviceId, 'htm_packets', startTime, endTime),
+      ]);
+
+      // --- Store Raw Data ---
+      setImpacts(fetchedImpacts);
+      setMotionPackets(fetchedMotion);
+      setFsrPackets(fetchedFsr);
+      setHrmPackets(fetchedHrm);
+      setHtmPackets(fetchedHtm);
+
+      console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
+
+      // --- Process Data for Charts and KPIs ---
+      processAndSetChartData(
+        fetchedImpacts,
+        fetchedFsr,
+        fetchedHrm,
+        fetchedHtm
+      );
+
+      // Animate cards in
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+
+    } catch (err) {
+      console.error('[ReportsDetailed] Error fetching data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load report data');
+      // Clear existing data on error
+      setImpacts([]);
+      setMotionPackets([]);
+      setFsrPackets([]);
+      setHrmPackets([]);
+      setHtmPackets([]);
+      setSessionStats(null);
+      setImpactTimelineData(null);
+      setSeverityDistData(null);
+      setChieData(null);
+      setDirectionData(null);
+      setBiteForceData(null);
+      setHrChartData(null);
+      setTempChartData(null);
+    } finally {
+      setLoading(false);
+      console.log('[ReportsDetailed] Fetching complete.');
+    }
+  }, [deviceId, sensorDataRepository]);
+
+  // --- Data Processing Function ---
+  const processAndSetChartData = (
+    impactData,
+    fsrData,
+    hrmData,
+    htmData
+  ) => {
+    console.log('[ReportsDetailed] Processing data...');
+    
+    if (!impactData || impactData.length === 0) {
+      console.log('[ReportsDetailed] No impact data.');
+      // Reset chart data if no impacts
+      setImpactTimelineData({
+        labels: [],
+        datasets: [{ 
+          data: [], 
+          color: () => 'rgba(0, 176, 118, 1)', 
+          strokeWidth: 2,
+          index: 0
+        }]
+      });
+      setSeverityDistData({
+        labels: [],
+        datasets: [{ 
+          data: [], 
+          color: () => 'rgba(0, 176, 118, 1)', 
+          strokeWidth: 2,
+          index: 0
+        }]
+      });
+      setChieData({
+        labels: [],
+        datasets: [{ 
+          data: [], 
+          color: () => 'rgba(0, 122, 255, 1)', 
+          strokeWidth: 2,
+          index: 0
+        }]
+      });
+      setDirectionData([]);
+      
+      // Process other data types if available
+      processBiteForceChart(fsrData);
+      processHrChart(hrmData);
+      processTempChart(htmData);
+      
+      // Calculate Avg HR
+      const validHrs = hrmData.map(p => {
+        const rawValue = p.heartRate;
+        const parsedValue = parseFloat(rawValue);
+        return !isNaN(parsedValue) ? parsedValue : null;
+      }).filter(hr => hr !== null);
+      
+      const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
+      const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
+
+      // Calculate Avg Temp
+      const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
+      const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
+
+      // Calculate Avg Bite Force
+      const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
+      const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
+      const allValidBites = [...validLeftBites, ...validRightBites];
+      const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
+
+      // Set basic session stats
+      const basicStats = {
+        totalImpacts: 0,
+        maxG: 0,
+        avgG: 0,
+        highImpacts: 0,
+        avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
+        maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
+        avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--', 
+        avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
+        concussionRisk: 'Low',
+        duration: "N/A", 
+        caloriesBurned: "N/A", 
+        acceleration: "N/A", 
+        biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
+      };
+      
+      setSessionStats(basicStats);
+      return;
+    }
+
+    // Impact data exists...
+    console.log('[ReportsDetailed] Processing WITH impact data.');
+    const magnitudes = impactData.map(i => i.magnitude);
+    const totalImpacts = impactData.length;
+    const maxG = magnitudes.length > 0 ? Math.max(...magnitudes) : 0;
+    const avgG = magnitudes.length > 0 ? magnitudes.reduce((a, b) => a + b, 0) / totalImpacts : 0;
+    const highImpacts = impactData.filter(i => i.magnitude >= 80).length;
+
+    // Calculate HR stats
+    const validHrs = hrmData.map(p => {
+      const rawValue = p.heartRate;
+      const parsedValue = parseFloat(rawValue);
+      return !isNaN(parsedValue) ? parsedValue : null;
+    }).filter(hr => hr !== null);
+    
+    const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
+    const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
+
+    // Calculate Avg Temp
+    const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
+    const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
+
+    // Calculate Avg Bite Force
+    const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
+    const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
+    const allValidBites = [...validLeftBites, ...validRightBites];
+    const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
+
+    const calculatedStats = {
+      totalImpacts,
+      maxG: maxG.toFixed(1),
+      avgG: avgG.toFixed(1),
+      highImpacts,
+      avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
+      maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
+      avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--',
+      avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
+      concussionRisk: highImpacts > 0 || maxG > 100 ? 'High' : (maxG > 80 ? 'Moderate' : 'Low'),
+      duration: "N/A",
+      caloriesBurned: "N/A",
+      acceleration: "N/A",
+      biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
+    };
+    
+    setSessionStats(calculatedStats);
+
+    // 2. Process Impact Timeline Data
+    const sortedImpacts = [...impactData].sort((a, b) => a.timestamp - b.timestamp);
+    const timelineLabels = sortedImpacts.map((_, i) => i.toString());
+    const timelineValues = sortedImpacts.map(i => i.magnitude);
+    setImpactTimelineData({
+      labels: timelineLabels,
+      datasets: [{ 
+        data: timelineValues, 
+        color: () => 'rgba(0, 176, 118, 1)', 
+        strokeWidth: 2,
+        index: 0
+      }]
+    });
+
+    // 3. Process Severity Distribution Data
+    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, Infinity];
+    const binCounts = Array(bins.length - 1).fill(0);
+    impactData.forEach(impact => {
+      for (let i = 0; i < bins.length - 1; i++) {
+        if (impact.magnitude >= bins[i] && impact.magnitude < bins[i+1]) {
+          binCounts[i]++;
+          break;
+        }
+      }
+    });
+    const severityLabels = bins.slice(0, -1).map((bin, i) => 
+      `${bin}-${bins[i+1] < Infinity ? bins[i+1]-1 : '+'}`
+    ); 
+    setSeverityDistData({
+      labels: severityLabels,
+      datasets: [{ 
+        data: binCounts, 
+        color: () => 'rgba(0, 176, 118, 1)', 
+        strokeWidth: 2,
+        index: 0
+      }]
+    });
+
+    // 4. Process CHIE Data
+    let cumulativeG = 0;
+    const chieValues = sortedImpacts.map(impact => {
+      cumulativeG += impact.magnitude; // Simple sum for now
+      return cumulativeG;
+    });
+    const chieLabels = sortedImpacts.map((_, i) => i.toString());
+    setChieData({
+      labels: chieLabels,
+      datasets: [{ 
+        data: chieValues, 
+        color: () => 'rgba(0, 122, 255, 1)', 
+        strokeWidth: 2,
+        index: 0
+      }]
+    });
+
+    // 5. Process Direction Data
+    const directions = impactData.map(impact => ({
+      x: impact.x,
+      y: impact.y,
+      magnitude: impact.magnitude
+    }));
+    setDirectionData(directions);
+
+    // 6. Process Bite Force Chart
+    processBiteForceChart(fsrData);
+    // 7. Process HR Chart
+    processHrChart(hrmData);
+    // 8. Process Temp Chart
+    processTempChart(htmData);
+
+    console.log('[ReportsDetailed] Data processing complete.');
+  };
+
+  // Helper function for bite force chart data
+  const processBiteForceChart = (fsrData) => {
+    const validFsrData = fsrData.filter(p => 
+        (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
+        (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
+    );
+    
+    if (validFsrData.length === 0) {
+      setBiteForceData({
+        labels: [],
+        datasets: [
+          {
+            data: [],
+            color: () => 'rgba(0, 176, 118, 1)',
+            strokeWidth: 2
+          },
+          {
+            data: [],
+            color: () => 'rgba(0, 122, 255, 1)',
+            strokeWidth: 2
+          }
+        ],
+        legend: ['Left', 'Right']
+      });
+      return;
+    }
+    
+    const sortedFsr = [...validFsrData].sort((a, b) => a.timestamp - b.timestamp);
+    const biteLabels = sortedFsr.map((_, i) => i.toString());
+    const leftBiteValues = sortedFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
+    const rightBiteValues = sortedFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
+    
+    const chartData = {
+      labels: biteLabels,
+      datasets: [
+        { data: leftBiteValues, color: () => 'rgba(0, 176, 118, 1)', strokeWidth: 2, index: 0 },
+        { data: rightBiteValues, color: () => 'rgba(0, 122, 255, 1)', strokeWidth: 2, index: 1 }
+      ],
+      legend: ['Left', 'Right']
+    };
+    
+    setBiteForceData(chartData);
+  };
+
+  // Helper for HR chart
+  const processHrChart = (hrmData) => {
+    const validHrmData = hrmData.map(p => {
+        const parsedValue = parseFloat(p.heartRate);
+        return { ...p, heartRate: !isNaN(parsedValue) ? parsedValue : null };
+    }).filter(p => p.heartRate !== null);
+
+    if (validHrmData.length === 0) {
+      setHrChartData({
+        labels: [],
+        datasets: [{
+          data: [],
+          color: () => 'rgba(255, 59, 48, 1)',
+          strokeWidth: 2
+        }]
+      });
+      return;
+    }
+    
+    const sortedHrm = [...validHrmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
+    const hrLabels = sortedHrm.map((_, i) => i.toString());
+    const hrValues = sortedHrm.map(p => p.heartRate);
+    
+    const chartData = {
+      labels: hrLabels,
+      datasets: [{ 
+        data: hrValues, 
+        color: () => 'rgba(255, 59, 48, 1)', 
+        strokeWidth: 2,
+        index: 0
+      }]
+    };
+    
+    setHrChartData(chartData);
+  };
+
+  // Helper for Temp chart
+  const processTempChart = (htmData) => {
+    const validHtmData = htmData.filter(p => typeof p.temperature === 'number' && !isNaN(p.temperature));
+
+    if (validHtmData.length === 0) {
+      setTempChartData({
+        labels: [],
+        datasets: [{
+          data: [],
+          color: () => 'rgba(255, 149, 0, 1)',
+          strokeWidth: 2
+        }]
+      });
+      return;
+    }
+    
+    const sortedHtm = [...validHtmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
+    const tempLabels = sortedHtm.map((_, i) => i.toString());
+    const tempValues = sortedHtm.map(p => p.temperature);
+    
+    const chartData = {
+      labels: tempLabels,
+      datasets: [{ 
+        data: tempValues, 
+        color: () => 'rgba(255, 149, 0, 1)', 
+        strokeWidth: 2,
+        index: 0
+      }]
+    };
+    
+    setTempChartData(chartData);
+  };
+
+  // Fetch data on initial mount
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Subscribe to data changes
+  useEffect(() => {
+    const handleDataChange = (eventData) => {
+      // Re-fetch data if the change affects the current device
+      if (eventData.deviceId === deviceId) {
+        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), re-fetching...`);
+        fetchData();
+      }
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    // Cleanup subscription on unmount
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, [deviceId, fetchData]);
+
+  // Show loading indicator
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading Report Data...</Text>
+      </View>
+    );
+  }
+
+  // Show error message
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.error} />
+        <Text style={styles.errorTitle}>Error Loading Report</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Show message if no data
+  if (!sessionStats && !impacts.length && !fsrPackets.length && !hrmPackets.length && !htmPackets.length) {
+    return (
+      <View style={styles.emptyContainer}>
+        <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
+        <Text style={styles.emptyText}>No Data Available</Text>
+        <Text style={styles.emptySubText}>Generate test data or connect a device to see reports.</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaProvider>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <LinearGradient
-            colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)', 'transparent']}
-            style={styles.headerGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Detailed Report</Text>
-            {/* Maybe add session selector here later */}
-          </View>
-        </View>
-
-        {/* Session Info Card */}
-        <GlassCard style={styles.card}>
-           <View style={styles.cardInner}>
-             <Text style={styles.cardTitle}>Session: {sessionToShow.type} ({sessionToShow.sport})</Text>
-             <Text style={styles.cardSubtitle}>Date: {sessionToShow.date}</Text>
-             <Text style={styles.cardSubtitle}>Duration: {stats?.duration}</Text>
-           </View>
-        </GlassCard>
-
-        {/* Metrics Grid/List */}
-        <View style={styles.metricsGrid}>
-          {/* Heart Rate */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull]}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="heart-pulse" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Heart Rate</Text>
-              <Text style={styles.metricValue}>{stats?.heartRate?.avg ?? '--'} bpm (Avg)</Text>
-              <Text style={styles.metricValueSub}>{stats?.heartRate?.max ?? '--'} bpm (Max)</Text>
-            </View>
-          </GlassCard>
-
-          {/* Temperature */}
-          <GlassCard style={styles.metricCard}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="thermometer" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Avg Temperature</Text>
-              <Text style={styles.metricValue}>{stats?.temperature ?? '--'} °F</Text>
-            </View>
-          </GlassCard>
-
-          {/* Acceleration */}
-          <GlassCard style={styles.metricCard}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="run-fast" size={28} color={THEME.primary} />
-              <Text style={styles.metricLabel}>Avg Acceleration</Text>
-              <Text style={styles.metricValue}>{stats?.acceleration ?? '--'} mph</Text>
-            </View>
-          </GlassCard>
-
-          {/* Calories Burned */}
-           <GlassCard style={styles.metricCard}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="fire" size={28} color={THEME.warning} />
-              <Text style={styles.metricLabel}>Calories Burned</Text>
-              <Text style={styles.metricValue}>{stats?.caloriesBurned ?? '--'} kcals</Text>
-            </View>
-          </GlassCard>
-
-          {/* Bite Force */}
-          <GlassCard style={styles.metricCard}>
-            <View style={styles.metricContent}>
-              <MaterialCommunityIcons name="tooth-outline" size={28} color={THEME.info} />
-              <Text style={styles.metricLabel}>Bite Force</Text>
-              <Text style={styles.metricValue}>{stats?.biteForce ?? '--'}</Text>
-              {/* Add unit if known */}
-            </View>
-          </GlassCard>
-
-          {/* Concussion Risk */}
-          <GlassCard style={[styles.metricCard, styles.metricCardFull]}>
-             <View style={styles.metricContent}>
-               <MaterialCommunityIcons name="shield-alert-outline" size={28} color={getRiskStyle(stats?.concussionRisk).color} />
-               <Text style={styles.metricLabel}>Concussion Risk</Text>
-               <Text style={[styles.metricValue, getRiskStyle(stats?.concussionRisk)]}>{stats?.concussionRisk ?? 'N/A'}</Text>
-             </View>
-          </GlassCard>
-        </View>
-
-
-        {/* Session History Card */}
-        <GlassCard style={styles.card}>
-          <View style={styles.cardInner}>
-            <Text style={styles.cardTitle}>Session History</Text>
-            <FlatList
-              data={playerData.sessions}
-              renderItem={renderSessionHistoryItem}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false} // Disable nested scroll
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Enhanced Header */}
+          <View style={styles.header}>
+            <LinearGradient
+              colors={['rgba(0,176,118,0.2)', 'rgba(0,176,118,0.05)', 'transparent']}
+              style={styles.headerGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
             />
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>Detailed Report</Text>
+            </View>
           </View>
-        </GlassCard>
 
-        {/* Bottom Spacer */}
-        <View style={{ height: 24 }} />
-      </ScrollView>
+          {/* Session Info Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}]}}>
+            <GlassCard style={styles.summaryCard}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>Session Report</Text>
+                <Text style={styles.deviceId}>({deviceId})</Text>
+              </View>
+              
+              <View style={styles.metricsRow}>
+                <View style={styles.metricColumn}>
+                  <Text style={styles.metricNumber}>{sessionStats?.totalImpacts ?? '0'}</Text>
+                  <Text style={styles.metricLabel}>Total Impacts</Text>
+                </View>
+                
+                <View style={styles.metricDivider} />
+                
+                <View style={styles.metricColumn}>
+                  <Text style={styles.metricNumber}>{sessionStats?.maxG ?? '0'}g</Text>
+                  <Text style={styles.metricLabel}>Max G-Force</Text>
+                </View>
+                
+                <View style={styles.metricDivider} />
+                
+                <View style={styles.metricColumn}>
+                  <Text style={styles.metricNumber}>{sessionStats?.highImpacts ?? '0'}</Text>
+                  <Text style={styles.metricLabel}>High Impacts</Text>
+                </View>
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Heart Rate Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
+                  <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Heart Rate</Text>
+              </View>
+              
+              <View style={styles.dataValueContainer}>
+                <Text style={styles.dataValue}>{sessionStats?.avgHr ?? '--'}</Text>
+                <Text style={styles.dataUnit}>bpm</Text>
+              </View>
+              
+              <Text style={styles.dataSubtext}>Avg: {sessionStats?.avgHr ?? '--'} bpm / Max: {sessionStats?.maxHr ?? '--'} bpm</Text>
+              
+              <View style={styles.chartContainer}>
+                {hrChartData && (
+                  <SafeLineChart
+                    data={hrChartData}
+                    emptyMessage="No heart rate data available"
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Temperature Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
+                  <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Avg Temperature</Text>
+              </View>
+              
+              <View style={styles.dataValueContainer}>
+                <Text style={styles.dataValue}>{sessionStats?.avgTemp ?? '--'}</Text>
+                <Text style={styles.dataUnit}>°F</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {tempChartData && (
+                  <SafeLineChart
+                    data={tempChartData}
+                    emptyMessage="No temperature data available"
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Bite Force Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                  <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Bite Force (Left/Right)</Text>
+              </View>
+              
+              <View style={styles.dataValueContainer}>
+                <Text style={styles.dataValue}>{sessionStats?.avgBite ?? '--'}</Text>
+                <Text style={styles.dataUnit}>(Avg)</Text>
+              </View>
+              
+              {biteForceData && biteForceData.datasets[0].data.length > 0 && (
+                <View style={styles.legendContainer}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 176, 118, 1)'}]} />
+                    <Text style={styles.legendText}>Left</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 122, 255, 1)'}]} />
+                    <Text style={styles.legendText}>Right</Text>
+                  </View>
+                </View>
+              )}
+              
+              <View style={styles.chartContainer}>
+                {biteForceData && (
+                  <SafeLineChart
+                    data={biteForceData}
+                    emptyMessage="No bite force data available"
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Concussion Risk Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={[styles.dataCard, styles.riskCard]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: `${getRiskStyle(sessionStats?.concussionRisk).color}15`}]}>
+                  <MaterialCommunityIcons 
+                    name="shield-alert-outline" 
+                    size={20} 
+                    color={getRiskStyle(sessionStats?.concussionRisk).color} 
+                  />
+                </View>
+                <Text style={styles.cardTitle}>Concussion Risk</Text>
+              </View>
+              
+              <View style={styles.riskValueContainer}>
+                <Text style={[styles.riskValue, getRiskStyle(sessionStats?.concussionRisk)]}>
+                  {sessionStats?.concussionRisk ?? 'Low'}
+                </Text>
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Impact Timeline Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                  <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={COLORS.primary} />
+                </View>
+                <Text style={styles.cardTitle}>Impact Timeline</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {impactTimelineData && impactTimelineData.datasets[0].data.length > 0 ? (
+                  <SafeLineChart
+                    data={impactTimelineData}
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier={false}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Severity Distribution Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                  <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
+                </View>
+                <Text style={styles.cardTitle}>Severity Distribution</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {severityDistData && severityDistData.datasets[0].data.length > 0 ? (
+                  <SafeLineChart
+                    data={severityDistData}
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier={false}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* CHIE Card - Refined */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                  <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {chieData && chieData.datasets[0].data.length > 0 ? (
+                  <SafeLineChart
+                    data={chieData}
+                    width={Dimensions.get('window').width - 64}
+                    height={120}
+                    bezier
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Bottom Spacer */}
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
-// Add extensive styling - Adapt styles from index.tsx, devices.tsx
+// Refined StyleSheet with Apple-like aesthetics
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
   container: {
     flex: 1,
-    backgroundColor: THEME.background,
+    backgroundColor: COLORS.background,
   },
   contentContainer: {
     paddingBottom: 32,
   },
   header: {
-    height: 140, // Keep consistent header size
+    height: 120,
     position: 'relative',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   headerGradient: {
     ...StyleSheet.absoluteFillObject,
@@ -3844,124 +4551,225 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 16, // Adjust as needed for safe area
-    justifyContent: 'center', // Center title for this screen
+    paddingTop: 16,
+    justifyContent: 'flex-end',
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 34,
     fontWeight: '700',
-    color: THEME.text.primary,
+    color: COLORS.textPrimary,
     letterSpacing: 0.5,
-    textAlign: 'center', // Center align
   },
-  card: { // Style for general cards
-    marginHorizontal: 16,
+  // Card container styling
+  cardContainer: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  cardContent: {
+    padding: 20,
+  },
+  blurView: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  cardAndroid: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.04)',
+  },
+  summaryCard: {
     marginBottom: 16,
   },
-  cardInner: {
-    padding: 16,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: THEME.text.primary,
+  dataCard: {
     marginBottom: 8,
   },
-  cardSubtitle: {
-      fontSize: 14,
-      color: THEME.text.secondary,
-      marginBottom: 4,
+  riskCard: {
+    minHeight: 120,
   },
-  metricsGrid: {
+  cardHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  metricCard: {
-    width: '48%', // Two columns layout
-    marginBottom: 16,
-    minHeight: 130, // Ensure cards have a minimum height
-  },
-  metricCardFull: {
-      width: '100%', // Span full width
-  },
-  metricContent: {
-    flex: 1, // Ensure content takes up space
     alignItems: 'center',
-    justifyContent: 'center', // Center content vertically and horizontally
-    padding: 12,
+    marginBottom: 16,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 176, 118, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  deviceId: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+    alignSelf: 'flex-end',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  metricColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+  },
+  metricNumber: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: 4,
   },
   metricLabel: {
-    fontSize: 14,
-    color: THEME.text.secondary,
-    marginTop: 8,
+    fontSize: 13,
+    color: COLORS.textSecondary,
     textAlign: 'center',
   },
-  metricValue: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: THEME.text.primary,
-    marginTop: 4,
-    textAlign: 'center',
+  dataValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
-   metricValueSub: {
-    fontSize: 14,
+  dataValue: {
+    fontSize: 40,
     fontWeight: '500',
-    color: THEME.text.secondary,
-    marginTop: 2,
-    textAlign: 'center',
+    color: COLORS.textPrimary,
   },
-  riskHigh: { color: THEME.error, fontWeight: 'bold' },
-  riskModerate: { color: THEME.warning, fontWeight: 'bold' },
-  riskLow: { color: THEME.primary, fontWeight: 'normal' }, // Or success color
-  historyItem: {
+  dataUnit: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    marginLeft: 4,
+  },
+  dataSubtext: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  chartContainer: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  riskValueContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  riskValue: {
+    fontSize: 32,
+    fontWeight: '600',
+  },
+  emptyChartText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    marginVertical: 30,
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: COLORS.textSecondary,
+    fontSize: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.error,
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
     paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
   },
-  historyIconContainer: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: 'rgba(0,176,118,0.1)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 12,
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
   },
-  historyInfo: {
-      flex: 1,
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    minHeight: 300,
   },
-  historyTitle:{
-      fontSize: 15,
-      fontWeight: '500',
-      color: THEME.text.primary,
-      marginBottom: 2,
+  emptyText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginTop: 16,
+    marginBottom: 8,
   },
-  historyDate:{
-      fontSize: 13,
-      color: THEME.text.secondary,
+  emptySubText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: THEME.divider,
-    marginVertical: 4,
-  },
-  // Fallback style for GlassCard if needed
-  glassCardFallback: {
-    borderRadius: 16,
-    backgroundColor: THEME.cardBackground,
-    borderColor: THEME.card.border,
-    borderWidth: 1,
-    shadowColor: THEME.card.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    // remove marginBottom if applying via parent style
-  },
-}); 
+});
 
 ================================================================================
 File: app/(tabs)/settings.tsx
@@ -4809,30 +5617,6 @@ const LineChart: React.FC<LineChartProps> = ({
         withDots={true}
         segments={5}
         fromZero={true}
-        // Display legend if provided
-        renderDotContent={
-          data.legend ? ({x, y, index, indexData, dataset}) => {
-            // Only show for the first dataset point
-            if (dataset.index === 0) {
-              return (
-                <View key={index} style={{
-                  position: 'absolute',
-                  top: height - 20,
-                  left: x - 12,
-                  backgroundColor: 'transparent'
-                }}>
-                  <Text style={{
-                    color: COLORS.text.secondary,
-                    fontSize: 9
-                  }}>
-                    {data.labels[index]}
-                  </Text>
-                </View>
-              );
-            }
-            return null;
-          } : undefined
-        }
       />
     </View>
   );
@@ -5993,33 +6777,32 @@ export default function LogsScreen() {
       }
       
       try {
-        const result = await db.getAllAsync(query);
+        // getAllAsync returns the array of rows directly
+        const resultRows = await db.getAllAsync<any>(query);
         
-        // Check if result exists and has rows
-        if (!result) {
-          console.log(`No results returned for ${type} logs`);
+        console.log(`[LogsScreen] Raw result for ${type}:`, JSON.stringify(resultRows).substring(0, 200) + '...'); // Log first part to avoid huge logs
+        console.log(`[LogsScreen] Result type: ${typeof resultRows}, is array: ${Array.isArray(resultRows)}, length: ${Array.isArray(resultRows) ? resultRows.length : 'N/A'}`);
+        
+        // Check if resultRows is an array and has items
+        if (Array.isArray(resultRows) && resultRows.length > 0) {
+          console.log(`[LogsScreen] Found ${resultRows.length} rows for ${type} logs.`);
+          return resultRows.map((row: any) => ({
+            id: row.id,
+            // Ensure timestamp exists, fallback if necessary
+            timestamp: row.timestamp ?? row.app_timestamp ?? row.device_timestamp ?? new Date().toISOString(),
+            type: row.type,
+            data: row.data // Assuming 'data' is correctly formed by the JSON_OBJECT function
+          }));
+        } else {
+          console.log(`[LogsScreen] No rows found or invalid result for ${type} logs.`);
           return [];
         }
-        
-        // Cast to any to work with the result
-        const rows = (result as any).rows;
-        if (!rows || !Array.isArray(rows)) {
-          console.log(`No rows property found in ${type} logs result`);
-          return [];
-        }
-        
-        return rows.map((row: any) => ({
-          id: row.id,
-          timestamp: row.timestamp,
-          type: row.type,
-          data: row.data
-        }));
       } catch (queryError) {
         console.error(`Error executing query for ${type} logs:`, queryError);
         return [];
       }
     } catch (err) {
-      console.error(`Error in query for ${type} logs:`, err);
+      console.error(`Error getting database for ${type} logs:`, err);
       throw err;
     }
   };
@@ -6070,14 +6853,38 @@ export default function LogsScreen() {
 
   const renderLogItem = (log: LogItem) => {
     const formattedData = formatLogData(log.data, log.type);
-    const logDate = new Date(log.timestamp);
+    
+    // Parse timestamp correctly based on format:
+    // If it's just a number that represents seconds, multiply by 1000
+    // Otherwise, assume it's already milliseconds
+    let timestampMs;
+    if (typeof log.timestamp === 'string') {
+      const parsedTimestamp = parseInt(log.timestamp, 10);
+      // Check if this looks like a seconds-based epoch (10 digits) or millisecond epoch (13 digits)
+      timestampMs = parsedTimestamp < 10000000000 
+        ? parsedTimestamp * 1000  // Convert seconds to milliseconds
+        : parsedTimestamp;        // Already milliseconds
+    } else {
+      timestampMs = log.timestamp;
+    }
+    
+    const logDate = new Date(timestampMs);
     const formattedTime = logDate.toLocaleTimeString();
     const formattedDate = logDate.toLocaleDateString();
     
+    // Check if this is a recent entry (within the last minute)
+    const isRecent = Date.now() - timestampMs < 60000; // 60 seconds
+    
     return (
-      <View key={`${log.type}_${log.id}`} style={styles.logItem}>
+      <View key={`${log.type}_${log.id}`} style={[
+        styles.logItem, 
+        isRecent && styles.recentLogItem
+      ]}>
         <View style={styles.logHeader}>
-          <Text style={styles.logType}>{log.type.toUpperCase()}</Text>
+          <Text style={styles.logType}>
+            {log.type.toUpperCase()}
+            {isRecent && " (NEW)"}
+          </Text>
           <Text style={styles.logTime}>{formattedDate} {formattedTime}</Text>
         </View>
         <Text style={styles.logData}>{formattedData}</Text>
@@ -6162,6 +6969,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 1.5,
     elevation: 2,
+  },
+  recentLogItem: {
+    backgroundColor: '#e6f7ff', // Light blue to highlight new entries
+    borderLeftWidth: 4,
+    borderLeftColor: '#0066cc',
   },
   logHeader: {
     flexDirection: 'row',
@@ -10663,7 +11475,6 @@ export const COLORS = {
 // --- NEW: Simulated Data based on Device Packets ---
 
 export const DEVICE_ID_SIM = "simulated_mouthguard_1";
-const currentDeviceTime = () => Math.floor(Date.now() / 1000); // Simulate uint32_t seconds epoch
 
 export const SIMULATED_MOTION_PACKET = {
   gyro: [10, -5, 2],          // Example raw values
@@ -10672,13 +11483,13 @@ export const SIMULATED_MOTION_PACKET = {
   mag: [300, -150, 500],      // Example raw values
   bite_l: 500,                // Example raw ADC value
   bite_r: 480,                // Example raw ADC value
-  timestamp: currentDeviceTime() - 10, // 10 seconds ago
+  timestamp: Date.now(), // Use milliseconds for testing clarity
 };
 
 export const SIMULATED_FSR_PACKET = {
   left_bite: 510,             // Example raw value
   right_bite: 495,            // Example raw value
-  timestamp: currentDeviceTime() - 5, // 5 seconds ago
+  timestamp: Date.now(), // Use milliseconds for testing clarity
 };
 
 // Simulating the raw byte format might be overly complex.
@@ -10686,33 +11497,33 @@ export const SIMULATED_FSR_PACKET = {
 export const SIMULATED_HRM_DATA = {
   flags: 0b00000110, // uint8, sensor contact supported and detected
   heartRate: 75,
-  appTimestamp: Date.now() - 2000, // 2 seconds ago
+  appTimestamp: Date.now(), // Using current time
 };
 
 export const SIMULATED_HTM_DATA = {
   flags: 0b00000101, // Fahrenheit, Temp type present, no timestamp
   temperature: 98.6, // Parsed value in Fahrenheit
   type: 6, // Mouth location
-  appTimestamp: Date.now() - 3000, // 3 seconds ago
+  appTimestamp: Date.now(), // Using current time
 };
 
 // You might want an array for bulk injection
 export const BULK_SIMULATED_MOTION = [
-  { ...SIMULATED_MOTION_PACKET, timestamp: currentDeviceTime() - 15 },
+  { ...SIMULATED_MOTION_PACKET, timestamp: Date.now() },
   {
     gyro: [15, -8, 5], accel16: [110, -55, 1030], accel200: [25, -15, 210], mag: [310, -155, 505],
-    bite_l: 550, bite_r: 530, timestamp: currentDeviceTime() - 14
+    bite_l: 550, bite_r: 530, timestamp: Date.now()
   },
   {
     gyro: [12, -7, 3], accel16: [105, -52, 1025], accel200: [22, -12, 205], mag: [305, -152, 502],
-    bite_l: 520, bite_r: 500, timestamp: currentDeviceTime() - 13
+    bite_l: 520, bite_r: 500, timestamp: Date.now()
   },
 ];
 
 export const BULK_SIMULATED_FSR = [
-  { ...SIMULATED_FSR_PACKET, timestamp: currentDeviceTime() - 8 },
-  { left_bite: 600, right_bite: 580, timestamp: currentDeviceTime() - 7 },
-  { left_bite: 550, right_bite: 540, timestamp: currentDeviceTime() - 6 },
+  { ...SIMULATED_FSR_PACKET, timestamp: Date.now() },
+  { left_bite: 600, right_bite: 580, timestamp: Date.now() },
+  { left_bite: 550, right_bite: 540, timestamp: Date.now() },
 ];
 
 // --- KEEP Player Data and Other Constants ---
@@ -13399,7 +14210,7 @@ export class SensorDataRepository {
    */
   public async recordMotionPacket(deviceId: string, packet: MotionPacket): Promise<number> {
     const appTimestamp = Date.now();
-    console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}`);
+    console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
 
     // **Decision Point:** Are accel16 or accel200 the primary source for impact detection?
     // Let's assume accel200 is the high-G sensor for impacts.
@@ -13427,7 +14238,7 @@ export class SensorDataRepository {
             bite_l, bite_r, app_timestamp
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            deviceId, packet.timestamp,
+            deviceId, packet.timestamp, // No longer dividing by 1000 - using milliseconds directly
             packet.gyro[0], packet.gyro[1], packet.gyro[2],
             packet.accel16[0], packet.accel16[1], packet.accel16[2],
             packet.accel200[0], packet.accel200[1], packet.accel200[2], // Store raw 200g values
@@ -13452,7 +14263,7 @@ export class SensorDataRepository {
           await this.recordImpactEventInternal(
             deviceId,
             athleteId,
-            packet.timestamp, // Use device timestamp
+            packet.timestamp, // Using milliseconds directly
             magnitude, // Calculated magnitude
             gForceX, gForceY, gForceZ, // Calculated G-forces
             appTimestamp, // When recorded by app
@@ -13477,14 +14288,15 @@ export class SensorDataRepository {
    */
   public async recordFSRPacket(deviceId: string, packet: FSRPacket): Promise<number> {
     const appTimestamp = Date.now();
-    console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}`);
+    console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
     try {
       const result = await this.db.runAsync(
         `INSERT INTO fsr_packets (
           device_id, device_timestamp, left_bite, right_bite, app_timestamp
         ) VALUES (?, ?, ?, ?, ?)`,
         [
-          deviceId, packet.timestamp, packet.left_bite, packet.right_bite, appTimestamp
+          deviceId, packet.timestamp, // No longer dividing by 1000 - using milliseconds directly
+          packet.left_bite, packet.right_bite, appTimestamp
         ]
       );
       console.log(`[SensorDataRepo] FSR Packet recorded, ID: ${result.lastInsertRowId}`);
@@ -13570,13 +14382,24 @@ export class SensorDataRepository {
                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
                ORDER BY timestamp ASC`;
     } else { // hrm_packets, htm_packets use app_timestamp
-      query = `SELECT * FROM ${sensorType}
-               WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
-               ORDER BY app_timestamp ASC`;
+      if (sensorType === 'hrm_packets') {
+         query = `SELECT id, device_id, flags, heart_rate AS heartRate, app_timestamp FROM ${sensorType}
+                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
+                  ORDER BY app_timestamp ASC`;
+      } else { // For htm_packets or any others falling here
+         query = `SELECT * FROM ${sensorType}
+                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
+                  ORDER BY app_timestamp ASC`;
+      }
     }
 
     try {
       const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]); // Use original ms timestamps for query
+      console.log(`[SensorDataRepo] Fetched ${sensorType} results:`, results ? results.length : 0); // Log fetched count
+      // Optional: Log first few results to verify structure
+      if (results && results.length > 0 && sensorType === 'hrm_packets') {
+          console.log(`[SensorDataRepo] First few HRM results structure:`, JSON.stringify(results.slice(0, 3)));
+      }
       return results ?? []; // Return empty array if results are null/undefined
     } catch (error) {
       console.error(`Error querying ${sensorType} data:`, error);
