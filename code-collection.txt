@@ -695,7 +695,11 @@ const THEME = {
 };
 
 // Premium Glass Card component
-const GlassCard = ({ style, children, intensity = 15 }) => {
+const GlassCard = ({ style, children, intensity = 15 }: { 
+  style?: any; 
+  children: React.ReactNode; 
+  intensity?: number 
+}) => {
   return Platform.OS === 'ios' ? (
     <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
       {children}
@@ -712,16 +716,16 @@ export default function Devices() {
   const bluetoothService = useBluetoothService();
   const athleteRepository = useAthleteRepository();
   
-  const [savedDevices, setSavedDevices] = useState([]);
-  const [scannedDevices, setScannedDevices] = useState([]);
+  const [savedDevices, setSavedDevices] = useState<DeviceStatus[]>([]);
+  const [scannedDevices, setScannedDevices] = useState<{id: string, name: string}[]>([]);
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connectionInProgress, setConnectionInProgress] = useState(false);
-  const [connectionError, setConnectionError] = useState(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [athleteListVisible, setAthleteListVisible] = useState(false);
-  const [athletes, setAthletes] = useState([]);
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
   
   // Load devices and status
   const loadDevices = useCallback(async () => {
@@ -756,15 +760,36 @@ export default function Devices() {
   
   // Subscribe to device status updates
   useEffect(() => {
-    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates(deviceStatuses => {
-      setSavedDevices(deviceStatuses);
+    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates((status: DeviceStatus) => {
+      // Use a function to update based on previous state
+      setSavedDevices(prevStatuses => {
+        // Check if this status is already in our list
+        const statusIndex = prevStatuses.findIndex(s => s.id === status.id);
+        
+        if (statusIndex >= 0) {
+          // Update existing status
+          return prevStatuses.map(s => 
+            s.id === status.id ? status : s
+          );
+        } else {
+          // Add new status
+          return [...prevStatuses, status];
+        }
+      });
     });
     
-    return () => unsubscribe();
+    // Call the remove method on the unsubscribe object instead of treating it as a function
+    return () => {
+      if (unsubscribe && typeof unsubscribe.remove === 'function') {
+        unsubscribe.remove();
+      } else {
+        console.warn("[Devices] Cleanup function received invalid unsubscribe object:", unsubscribe);
+      }
+    };
   }, [bluetoothService]);
   
   // Connect to a device
-  const connectToDevice = async (deviceId, deviceName) => {
+  const connectToDevice = async (deviceId: string, deviceName: string) => {
     try {
       setConnectionInProgress(true);
       setConnectionError(null);
@@ -783,7 +808,7 @@ export default function Devices() {
   };
   
   // Disconnect from a device
-  const disconnectDevice = async (deviceId) => {
+  const disconnectDevice = async (deviceId: string) => {
     try {
       await bluetoothService.disconnectFromDevice(deviceId);
       
@@ -800,8 +825,17 @@ export default function Devices() {
       setScanning(true);
       setScannedDevices([]);
       
-      const foundDevices = await bluetoothService.scanForDevices();
-      setScannedDevices(foundDevices);
+      await bluetoothService.scanForDevices((device) => {
+        setScannedDevices(prevDevices => {
+          const deviceMap = new Map(prevDevices.map(d => [d.id, d]));
+          if (!deviceMap.has(device.id) && device.name) {
+            deviceMap.set(device.id, { id: device.id, name: device.name });
+            return Array.from(deviceMap.values());
+          }
+          return prevDevices;
+        });
+      });
+      
     } catch (error) {
       console.error('Error scanning for devices:', error);
       Alert.alert('Scan Error', 'Failed to scan for devices. Please check Bluetooth permissions and try again.');
@@ -811,13 +845,13 @@ export default function Devices() {
   };
   
   // Open the athlete assignment modal
-  const openAssignDeviceModal = (deviceId) => {
+  const openAssignDeviceModal = (deviceId: string) => {
     setSelectedDeviceId(deviceId);
     setAthleteListVisible(true);
   };
   
   // Assign device to athlete
-  const assignDeviceToAthlete = async (athleteId) => {
+  const assignDeviceToAthlete = async (athleteId: string) => {
     if (!selectedDeviceId) return;
     
     try {
@@ -838,7 +872,7 @@ export default function Devices() {
   };
   
   // Renders saved device
-  const renderDevice = ({ item }) => {
+  const renderDevice = ({ item }: { item: DeviceStatus }) => {
     const isConnected = item.connected;
     
     return (
@@ -848,10 +882,9 @@ export default function Devices() {
       >
         <LinearGradient
           colors={[isConnected ? 'rgba(0,176,118,0.15)' : 'rgba(0,0,0,0.08)', isConnected ? 'rgba(0,176,118,0.05)' : 'rgba(0,0,0,0.02)']}
-          style={styles.deviceIcon}
+          style={[styles.deviceIcon, { borderRadius: 20 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          borderRadius={20}
         >
           <MaterialCommunityIcons 
             name="tooth-outline" 
@@ -918,7 +951,7 @@ export default function Devices() {
   };
   
   // Renders scanned device
-  const renderScannedDevice = ({ item }) => {
+  const renderScannedDevice = ({ item }: { item: any }) => {
     // Check if this device is already saved
     const isAlreadySaved = savedDevices.some(device => device.id === item.id);
     
@@ -928,11 +961,19 @@ export default function Devices() {
         activeOpacity={0.7}
       >
         <LinearGradient
-          colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)']}
-          style={styles.deviceIcon}
+          colors={['#4c669f', '#3b5998']}
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: 25,
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginRight: 10,
+            borderWidth: 2,
+            borderColor: 'white',
+          }}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          borderRadius={20}
+          end={{ x: 1, y: 0 }}
         >
           <MaterialCommunityIcons 
             name="bluetooth-connect" 
@@ -961,7 +1002,7 @@ export default function Devices() {
   };
   
   // Renders athlete for assignment
-  const renderAthlete = ({ item }) => {
+  const renderAthlete = ({ item }: { item: Athlete }) => {
     const hasDevice = item.deviceId !== undefined && item.deviceId !== null;
     
     return (
@@ -973,10 +1014,9 @@ export default function Devices() {
       >
         <LinearGradient
           colors={[hasDevice ? 'rgba(0,0,0,0.05)' : 'rgba(0,176,118,0.15)', hasDevice ? 'rgba(0,0,0,0.02)' : 'rgba(0,176,118,0.05)']}
-          style={styles.deviceIcon}
+          style={[styles.deviceIcon, { borderRadius: 20 }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          borderRadius={20}
         >
           <MaterialCommunityIcons 
             name="account" 
@@ -1048,10 +1088,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -1086,10 +1125,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -1113,10 +1151,9 @@ export default function Devices() {
             >
               <LinearGradient
                 colors={['#00d68f', '#00b076']}
-                style={StyleSheet.absoluteFill}
+                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                borderRadius={24}
               />
               <MaterialCommunityIcons name="bluetooth-connect" size={20} color="#fff" />
               <Text style={styles.scanButtonText}>
@@ -1151,10 +1188,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="bluetooth-transfer" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -1172,15 +1208,14 @@ export default function Devices() {
             <Text style={styles.sectionTitle}>Athletes & Assignments</Text>
             <TouchableOpacity 
               style={styles.addButton}
-              onPress={() => router.push('/athletes')}
+              onPress={() => router.push('/(tabs)/athletes')}
               activeOpacity={0.8}
             >
               <LinearGradient
                 colors={['#00d68f', '#00b076']}
-                style={StyleSheet.absoluteFill}
+                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                borderRadius={24}
               />
               <MaterialCommunityIcons name="account-plus" size={20} color="#fff" />
               <Text style={styles.scanButtonText}>Add Athlete</Text>
@@ -1207,10 +1242,9 @@ export default function Devices() {
                 <View style={styles.emptyStateContainer}>
                   <LinearGradient
                     colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={styles.emptyStateIcon}
+                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={30}
                   >
                     <MaterialCommunityIcons name="account-group" size={36} color={THEME.text.tertiary} />
                   </LinearGradient>
@@ -1237,7 +1271,7 @@ export default function Devices() {
 }
 
 // Helper functions
-const getBatteryIcon = (level) => {
+const getBatteryIcon = (level: number | undefined) => {
   if (level === undefined) return 'battery-unknown';
   if (level <= 10) return 'battery-10';
   if (level <= 20) return 'battery-20';
@@ -1251,7 +1285,7 @@ const getBatteryIcon = (level) => {
   return 'battery';
 };
 
-const getBatteryColor = (level) => {
+const getBatteryColor = (level: number | undefined) => {
   if (level === undefined) return '#999999';
   if (level <= 20) return '#ff3b30'; // Red
   if (level <= 40) return '#ff9500'; // Orange
@@ -2016,7 +2050,7 @@ export default function Dashboard() {
         </GlassCard>
 
         {/* Bottom tab spacer */}
-        <View style={{ height: 80 }} /> {/* Increased height to accommodate footer */}
+        <View style={{ height: 80 }}><Text style={{ display: 'none' }}>Spacer for footer</Text></View>
 
       </ScrollView>
 
@@ -3661,7 +3695,7 @@ const styles = StyleSheet.create({
 File: app/(tabs)/reportsDetailed.tsx
 ================================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ViewStyle, ActivityIndicator, Dimensions, Platform, Animated } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -3671,54 +3705,112 @@ import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
 import { useSensorDataRepository } from '@/src/providers/AppProvider';
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
 import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types';
+import { debounce } from 'lodash';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
 import BarChart from '../components/charts/BarChart';
 
-// Safe wrapper for LineChart that ensures proper dataset format
-const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }) => {
-  // Determine if there is actual data to render
-  const hasActualData = data && 
-                       data.datasets && 
-                       data.datasets.some((ds) => ds.data && ds.data.length > 0 && 
-                                                 ds.data.some((val) => val !== null && val !== undefined));
+// Import new data processing utilities
+import { 
+  processHrmForChart, 
+  processTempForChart, 
+  processFsrForChart, 
+  processMotionForChart, 
+  processImpactsForCharts 
+} from '@/src/utils/dataProcessing';
 
-  // Don't render if no data structure at all
-  if (!data || !data.datasets) {
+// Import our new visualization components
+import HeartRateTrendChart from '../components/charts/HeartRateTrendChart';
+import TemperatureStabilityGraph from '../components/charts/TemperatureStabilityGraph';
+import BiteForceDynamicsChart from '../components/charts/BiteForceDynamicsChart';
+import MotionOverviewGraph from '../components/charts/MotionOverviewGraph';
+import ConcussionRiskGauge from '../components/charts/ConcussionRiskGauge';
+import ImpactTimelineGraph from '../components/charts/ImpactTimelineGraph';
+import SeverityDistributionGraph from '../components/charts/SeverityDistributionGraph';
+import CumulativeExposureGraph from '../components/charts/CumulativeExposureGraph';
+
+// Safe wrapper for LineChart that ensures proper dataset format
+const SafeLineChart = ({ 
+  data, 
+  emptyMessage = "No data available", 
+  ...props 
+}: {
+  data: any; 
+  emptyMessage?: string;
+  [key: string]: any;
+}) => {
+  // First check if data exists at all
+  if (!data) {
     return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
   }
 
-  // If datasets exist but are empty, show empty message
+  // Check if datasets array exists and is valid
+  if (!data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
+  }
+
+  // Check if any dataset has actual data to display
+  const hasActualData = data.datasets.some((ds: any) => {
+    // Guard against undefined or null dataset
+    if (!ds) return false;
+    // Guard against missing data array
+    if (!ds.data || !Array.isArray(ds.data)) return false;
+    // Check if there's at least one valid data point
+    return ds.data.length > 0 && ds.data.some((val: any) => val !== null && val !== undefined);
+  });
+
+  // If no actual data was found, show empty message
   if (!hasActualData) {
     return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
   }
 
   // Create a safe data structure with properly formatted datasets
   const safeData = {
-    labels: data.labels || [],
-    datasets: data.datasets.map((dataset, index) => ({
-      data: dataset.data || [],
-      color: dataset.color || (() => 'rgba(0, 176, 118, 1)'),
-      strokeWidth: dataset.strokeWidth || 2,
-      index: index // Ensure index is set
-    })),
-    legend: data.legend || undefined
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map((dataset: any, index: number) => {
+      // Handle null/undefined dataset
+      if (!dataset) {
+        return {
+          data: [],
+          color: () => 'rgba(0, 176, 118, 1)',
+          strokeWidth: 2,
+          index
+        };
+      }
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data.map((val: any) => 
+          typeof val === 'number' && !isNaN(val) ? val : 0
+        ) : [],
+        color: typeof dataset.color === 'function' ? dataset.color : () => 'rgba(0, 176, 118, 1)',
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2,
+        index
+      };
+    }),
+    legend: data.legend
   };
+
+  // Extract only the supported props to avoid type errors
+  const { width, height, bezier, style, chartConfig } = props;
 
   return (
     <LineChart 
       data={safeData}
-      withDots={false}
-      bezier={props.bezier !== undefined ? props.bezier : true}
-      chartConfig={{
+      width={width}
+      height={height}
+      bezier={bezier}
+      style={style}
+      chartConfig={chartConfig || {
         backgroundColor: 'transparent',
         backgroundGradientFrom: 'transparent',
         backgroundGradientTo: 'transparent',
-        fillShadowGradientFrom: safeData.datasets[0].color(0.8),
+        fillShadowGradientFrom: typeof safeData.datasets[0]?.color === 'function' ? 
+          safeData.datasets[0].color(0.8) : 'rgba(0, 176, 118, 0.8)',
         fillShadowGradientTo: 'rgba(255, 255, 255, 0)',
         decimalPlaces: 0,
-        color: (opacity = 1) => safeData.datasets[0].color(opacity),
+        color: (opacity = 1) => typeof safeData.datasets[0]?.color === 'function' ? 
+          safeData.datasets[0].color(opacity) : `rgba(0, 176, 118, ${opacity})`,
         labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
         propsForBackgroundLines: {
           strokeDasharray: '4, 4',
@@ -3726,13 +3818,20 @@ const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }) =
           stroke: 'rgba(0, 0, 0, 0.05)',
         },
       }}
-      {...props} 
     />
   );
 };
 
 // Enhanced GlassCard component with improved styling
-const GlassCard = ({ style, children, intensity = 15 }) => {
+const GlassCard = ({ 
+  style, 
+  children, 
+  intensity = 15 
+}: {
+  style?: any;
+  children: React.ReactNode;
+  intensity?: number;
+}) => {
   // Use BlurView on iOS for true glass effect, fallback for Android
   if (Platform.OS === 'ios') {
     return (
@@ -3757,36 +3856,49 @@ const GlassCard = ({ style, children, intensity = 15 }) => {
 };
 
 export default function ReportsDetailedScreen() {
-  const sensorDataRepository = useSensorDataRepository(); // Get the repository
+  const sensorDataRepository = useSensorDataRepository();
 
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
-  // State for storing fetched data
-  const [impacts, setImpacts] = useState([]);
-  const [motionPackets, setMotionPackets] = useState([]);
-  const [fsrPackets, setFsrPackets] = useState([]);
-  const [hrmPackets, setHrmPackets] = useState([]);
-  const [htmPackets, setHtmPackets] = useState([]);
+  // State for raw data (only when needed for specialized visualization)
+  const [impacts, setImpacts] = useState<any[]>([]);
 
-  // State for aggregated stats
-  const [sessionStats, setSessionStats] = useState(null);
-  const [impactTimelineData, setImpactTimelineData] = useState(null);
-  const [severityDistData, setSeverityDistData] = useState(null);
-  const [chieData, setChieData] = useState(null);
-  const [directionData, setDirectionData] = useState(null);
-  const [biteForceData, setBiteForceData] = useState(null);
-  const [hrChartData, setHrChartData] = useState(null);
-  const [tempChartData, setTempChartData] = useState(null);
+  // State for processed chart data
+  const [hrmChartData, setHrmChartData] = useState<ChartData | null>(null);
+  const [tempChartData, setTempChartData] = useState<ChartData | null>(null);
+  const [biteForceChartData, setBiteForceChartData] = useState<ChartData | null>(null);
+  const [motionChartData, setMotionChartData] = useState<ChartData | null>(null);
+  const [impactTimelineData, setImpactTimelineData] = useState<ChartData | null>(null);
+  const [severityDistData, setSeverityDistData] = useState<{ labels: string[], data: number[] } | null>(null);
+  const [chieData, setChieData] = useState<ChartData | null>(null);
+  
+  // State for calculated session stats/KPIs
+  const [sessionStats, setSessionStats] = useState<{
+    avgHr?: number | null;
+    minHr?: number | null;
+    maxHr?: number | null;
+    avgTemp?: number | null;
+    maxTemp?: number | null;
+    currentTemp?: number | null;
+    avgBiteLeft?: number | null;
+    avgBiteRight?: number | null;
+    avgBiteTotal?: number | null;
+    maxBiteForce?: number | null;
+    peakAccel?: number | null;
+    totalImpacts?: number | null;
+    highImpacts?: number | null;
+    maxG?: number | null;
+    concussionRisk?: 'Low' | 'Moderate' | 'High' | 'Critical' | null;
+  } | null>(null);
 
   // Loading and error states
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Assume single device for now
   const deviceId = DEVICE_ID_SIM;
 
-  const getRiskStyle = (risk) => {
+  const getRiskStyle = (risk: any) => {
     switch (risk?.toLowerCase()) {
       case 'high': 
       case 'critical': return { color: COLORS.error };
@@ -3820,22 +3932,65 @@ export default function ReportsDetailedScreen() {
         sensorDataRepository.getSensorData(deviceId, 'htm_packets', startTime, endTime),
       ]);
 
-      // --- Store Raw Data ---
+      // Keep raw impact data for direction visualization if needed
       setImpacts(fetchedImpacts);
-      setMotionPackets(fetchedMotion);
-      setFsrPackets(fetchedFsr);
-      setHrmPackets(fetchedHrm);
-      setHtmPackets(fetchedHtm);
-
+      
       console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
 
-      // --- Process Data for Charts and KPIs ---
-      processAndSetChartData(
-        fetchedImpacts,
-        fetchedFsr,
-        fetchedHrm,
-        fetchedHtm
-      );
+      // --- Process data using utility functions ---
+      
+      // Process heart rate data
+      const hrmResults = processHrmForChart(fetchedHrm);
+      setHrmChartData(hrmResults.chartData);
+      
+      // Process temperature data
+      const tempResults = processTempForChart(fetchedHtm);
+      setTempChartData(tempResults.chartData);
+      
+      // Process bite force data
+      const fsrResults = processFsrForChart(fetchedFsr);
+      setBiteForceChartData(fsrResults.chartData);
+      
+      // Process motion data
+      const motionResults = processMotionForChart(fetchedMotion);
+      setMotionChartData(motionResults.accelMagnitudeChart);
+      
+      // Process impact data for various visualizations
+      const impactResults = processImpactsForCharts(fetchedImpacts);
+      setImpactTimelineData(impactResults.timelineChart);
+      setSeverityDistData(impactResults.severityDistribution);
+      setChieData(impactResults.cumulativeExposureChart);
+      
+      // Create a consolidated object with all stats, ensuring each property is defined
+      const finalStats = {
+        // Heart rate
+        avgHr: hrmResults.avgHr ?? null,
+        minHr: hrmResults.minHr ?? null,
+        maxHr: hrmResults.maxHr ?? null,
+        
+        // Temperature
+        avgTemp: tempResults.avgTemp ?? null,
+        maxTemp: tempResults.maxTemp ?? null,
+        currentTemp: tempResults.currentTemp ?? null,
+        
+        // Bite force
+        avgBiteLeft: fsrResults.avgLeft ?? null,
+        avgBiteRight: fsrResults.avgRight ?? null,
+        avgBiteTotal: fsrResults.avgTotal ?? null,
+        maxBiteForce: fsrResults.maxForce ?? null,
+        
+        // Motion
+        peakAccel: motionResults.peakAccel ?? null,
+        
+        // Impacts
+        totalImpacts: impactResults.totalImpacts ?? 0,
+        highImpacts: impactResults.highImpacts ?? 0,
+        maxG: impactResults.maxG ?? null,
+        concussionRisk: impactResults.concussionRisk ?? 'Low'
+      };
+      
+      // Update session stats with the consolidated object
+      setSessionStats(finalStats);
 
       // Animate cards in
       Animated.timing(fadeAnim, {
@@ -3847,357 +4002,52 @@ export default function ReportsDetailedScreen() {
     } catch (err) {
       console.error('[ReportsDetailed] Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load report data');
+      
       // Clear existing data on error
       setImpacts([]);
-      setMotionPackets([]);
-      setFsrPackets([]);
-      setHrmPackets([]);
-      setHtmPackets([]);
-      setSessionStats(null);
+      setHrmChartData(null);
+      setTempChartData(null);
+      setBiteForceChartData(null);
+      setMotionChartData(null);
       setImpactTimelineData(null);
       setSeverityDistData(null);
       setChieData(null);
-      setDirectionData(null);
-      setBiteForceData(null);
-      setHrChartData(null);
-      setTempChartData(null);
+      setSessionStats(null);
     } finally {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [deviceId, sensorDataRepository]);
-
-  // --- Data Processing Function ---
-  const processAndSetChartData = (
-    impactData,
-    fsrData,
-    hrmData,
-    htmData
-  ) => {
-    console.log('[ReportsDetailed] Processing data...');
-    
-    if (!impactData || impactData.length === 0) {
-      console.log('[ReportsDetailed] No impact data.');
-      // Reset chart data if no impacts
-      setImpactTimelineData({
-        labels: [],
-        datasets: [{ 
-          data: [], 
-          color: () => 'rgba(0, 176, 118, 1)', 
-          strokeWidth: 2,
-          index: 0
-        }]
-      });
-      setSeverityDistData({
-        labels: [],
-        datasets: [{ 
-          data: [], 
-          color: () => 'rgba(0, 176, 118, 1)', 
-          strokeWidth: 2,
-          index: 0
-        }]
-      });
-      setChieData({
-        labels: [],
-        datasets: [{ 
-          data: [], 
-          color: () => 'rgba(0, 122, 255, 1)', 
-          strokeWidth: 2,
-          index: 0
-        }]
-      });
-      setDirectionData([]);
-      
-      // Process other data types if available
-      processBiteForceChart(fsrData);
-      processHrChart(hrmData);
-      processTempChart(htmData);
-      
-      // Calculate Avg HR
-      const validHrs = hrmData.map(p => {
-        const rawValue = p.heartRate;
-        const parsedValue = parseFloat(rawValue);
-        return !isNaN(parsedValue) ? parsedValue : null;
-      }).filter(hr => hr !== null);
-      
-      const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
-      const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
-
-      // Calculate Avg Temp
-      const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
-      const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
-
-      // Calculate Avg Bite Force
-      const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
-      const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
-      const allValidBites = [...validLeftBites, ...validRightBites];
-      const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
-
-      // Set basic session stats
-      const basicStats = {
-        totalImpacts: 0,
-        maxG: 0,
-        avgG: 0,
-        highImpacts: 0,
-        avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
-        maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
-        avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--', 
-        avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-        concussionRisk: 'Low',
-        duration: "N/A", 
-        caloriesBurned: "N/A", 
-        acceleration: "N/A", 
-        biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-      };
-      
-      setSessionStats(basicStats);
-      return;
-    }
-
-    // Impact data exists...
-    console.log('[ReportsDetailed] Processing WITH impact data.');
-    const magnitudes = impactData.map(i => i.magnitude);
-    const totalImpacts = impactData.length;
-    const maxG = magnitudes.length > 0 ? Math.max(...magnitudes) : 0;
-    const avgG = magnitudes.length > 0 ? magnitudes.reduce((a, b) => a + b, 0) / totalImpacts : 0;
-    const highImpacts = impactData.filter(i => i.magnitude >= 80).length;
-
-    // Calculate HR stats
-    const validHrs = hrmData.map(p => {
-      const rawValue = p.heartRate;
-      const parsedValue = parseFloat(rawValue);
-      return !isNaN(parsedValue) ? parsedValue : null;
-    }).filter(hr => hr !== null);
-    
-    const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
-    const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
-
-    // Calculate Avg Temp
-    const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
-    const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
-
-    // Calculate Avg Bite Force
-    const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
-    const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
-    const allValidBites = [...validLeftBites, ...validRightBites];
-    const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
-
-    const calculatedStats = {
-      totalImpacts,
-      maxG: maxG.toFixed(1),
-      avgG: avgG.toFixed(1),
-      highImpacts,
-      avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
-      maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
-      avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--',
-      avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-      concussionRisk: highImpacts > 0 || maxG > 100 ? 'High' : (maxG > 80 ? 'Moderate' : 'Low'),
-      duration: "N/A",
-      caloriesBurned: "N/A",
-      acceleration: "N/A",
-      biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-    };
-    
-    setSessionStats(calculatedStats);
-
-    // 2. Process Impact Timeline Data
-    const sortedImpacts = [...impactData].sort((a, b) => a.timestamp - b.timestamp);
-    const timelineLabels = sortedImpacts.map((_, i) => i.toString());
-    const timelineValues = sortedImpacts.map(i => i.magnitude);
-    setImpactTimelineData({
-      labels: timelineLabels,
-      datasets: [{ 
-        data: timelineValues, 
-        color: () => 'rgba(0, 176, 118, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    });
-
-    // 3. Process Severity Distribution Data
-    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, Infinity];
-    const binCounts = Array(bins.length - 1).fill(0);
-    impactData.forEach(impact => {
-      for (let i = 0; i < bins.length - 1; i++) {
-        if (impact.magnitude >= bins[i] && impact.magnitude < bins[i+1]) {
-          binCounts[i]++;
-          break;
-        }
-      }
-    });
-    const severityLabels = bins.slice(0, -1).map((bin, i) => 
-      `${bin}-${bins[i+1] < Infinity ? bins[i+1]-1 : '+'}`
-    ); 
-    setSeverityDistData({
-      labels: severityLabels,
-      datasets: [{ 
-        data: binCounts, 
-        color: () => 'rgba(0, 176, 118, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    });
-
-    // 4. Process CHIE Data
-    let cumulativeG = 0;
-    const chieValues = sortedImpacts.map(impact => {
-      cumulativeG += impact.magnitude; // Simple sum for now
-      return cumulativeG;
-    });
-    const chieLabels = sortedImpacts.map((_, i) => i.toString());
-    setChieData({
-      labels: chieLabels,
-      datasets: [{ 
-        data: chieValues, 
-        color: () => 'rgba(0, 122, 255, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    });
-
-    // 5. Process Direction Data
-    const directions = impactData.map(impact => ({
-      x: impact.x,
-      y: impact.y,
-      magnitude: impact.magnitude
-    }));
-    setDirectionData(directions);
-
-    // 6. Process Bite Force Chart
-    processBiteForceChart(fsrData);
-    // 7. Process HR Chart
-    processHrChart(hrmData);
-    // 8. Process Temp Chart
-    processTempChart(htmData);
-
-    console.log('[ReportsDetailed] Data processing complete.');
-  };
-
-  // Helper function for bite force chart data
-  const processBiteForceChart = (fsrData) => {
-    const validFsrData = fsrData.filter(p => 
-        (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
-        (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
-    );
-    
-    if (validFsrData.length === 0) {
-      setBiteForceData({
-        labels: [],
-        datasets: [
-          {
-            data: [],
-            color: () => 'rgba(0, 176, 118, 1)',
-            strokeWidth: 2
-          },
-          {
-            data: [],
-            color: () => 'rgba(0, 122, 255, 1)',
-            strokeWidth: 2
-          }
-        ],
-        legend: ['Left', 'Right']
-      });
-      return;
-    }
-    
-    const sortedFsr = [...validFsrData].sort((a, b) => a.timestamp - b.timestamp);
-    const biteLabels = sortedFsr.map((_, i) => i.toString());
-    const leftBiteValues = sortedFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
-    const rightBiteValues = sortedFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
-    
-    const chartData = {
-      labels: biteLabels,
-      datasets: [
-        { data: leftBiteValues, color: () => 'rgba(0, 176, 118, 1)', strokeWidth: 2, index: 0 },
-        { data: rightBiteValues, color: () => 'rgba(0, 122, 255, 1)', strokeWidth: 2, index: 1 }
-      ],
-      legend: ['Left', 'Right']
-    };
-    
-    setBiteForceData(chartData);
-  };
-
-  // Helper for HR chart
-  const processHrChart = (hrmData) => {
-    const validHrmData = hrmData.map(p => {
-        const parsedValue = parseFloat(p.heartRate);
-        return { ...p, heartRate: !isNaN(parsedValue) ? parsedValue : null };
-    }).filter(p => p.heartRate !== null);
-
-    if (validHrmData.length === 0) {
-      setHrChartData({
-        labels: [],
-        datasets: [{
-          data: [],
-          color: () => 'rgba(255, 59, 48, 1)',
-          strokeWidth: 2
-        }]
-      });
-      return;
-    }
-    
-    const sortedHrm = [...validHrmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
-    const hrLabels = sortedHrm.map((_, i) => i.toString());
-    const hrValues = sortedHrm.map(p => p.heartRate);
-    
-    const chartData = {
-      labels: hrLabels,
-      datasets: [{ 
-        data: hrValues, 
-        color: () => 'rgba(255, 59, 48, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    };
-    
-    setHrChartData(chartData);
-  };
-
-  // Helper for Temp chart
-  const processTempChart = (htmData) => {
-    const validHtmData = htmData.filter(p => typeof p.temperature === 'number' && !isNaN(p.temperature));
-
-    if (validHtmData.length === 0) {
-      setTempChartData({
-        labels: [],
-        datasets: [{
-          data: [],
-          color: () => 'rgba(255, 149, 0, 1)',
-          strokeWidth: 2
-        }]
-      });
-      return;
-    }
-    
-    const sortedHtm = [...validHtmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
-    const tempLabels = sortedHtm.map((_, i) => i.toString());
-    const tempValues = sortedHtm.map(p => p.temperature);
-    
-    const chartData = {
-      labels: tempLabels,
-      datasets: [{ 
-        data: tempValues, 
-        color: () => 'rgba(255, 149, 0, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    };
-    
-    setTempChartData(chartData);
-  };
+  }, [deviceId, sensorDataRepository, fadeAnim]);
 
   // Fetch data on initial mount
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Subscribe to data changes
+  // Create a ref to hold the latest fetchData function
+  const fetchDataRef = useRef(fetchData);
+  
+  // Update the ref whenever fetchData changes
   useEffect(() => {
-    const handleDataChange = (eventData) => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+  
+  // Create a debounced version of fetchData ONLY for the listener
+  const debouncedFetchData = useRef(
+    debounce(() => {
+      console.log('[ReportsDetailed] Debounced fetch triggered...');
+      // Call the latest fetchData function from the ref
+      fetchDataRef.current();
+    }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
+  ).current;
+
+  // Subscribe to data changes (using the debounced fetch)
+  useEffect(() => {
+    const handleDataChange = (eventData: { deviceId: string; type: string }) => {
       // Re-fetch data if the change affects the current device
       if (eventData.deviceId === deviceId) {
-        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), re-fetching...`);
-        fetchData();
+        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), queueing debounced fetch...`);
+        debouncedFetchData(); // Call the debounced function
       }
     };
 
@@ -4206,8 +4056,9 @@ export default function ReportsDetailedScreen() {
     // Cleanup subscription on unmount
     return () => {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+      debouncedFetchData.cancel(); // Cancel any pending debounced calls
     };
-  }, [deviceId, fetchData]);
+  }, [deviceId, debouncedFetchData]);
 
   // Show loading indicator
   if (loading) {
@@ -4234,7 +4085,11 @@ export default function ReportsDetailedScreen() {
   }
 
   // Show message if no data
-  if (!sessionStats && !impacts.length && !fsrPackets.length && !hrmPackets.length && !htmPackets.length) {
+  if (!sessionStats && 
+      !impactTimelineData?.datasets?.[0]?.data?.length && 
+      !biteForceChartData?.datasets?.[0]?.data?.length && 
+      !hrmChartData?.datasets?.[0]?.data?.length && 
+      !tempChartData?.datasets?.[0]?.data?.length) {
     return (
       <View style={styles.emptyContainer}>
         <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
@@ -4299,7 +4154,7 @@ export default function ReportsDetailedScreen() {
             </GlassCard>
           </Animated.View>
 
-          {/* Heart Rate Card - Refined */}
+          {/* Heart Rate Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -4312,28 +4167,26 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Heart Rate</Text>
               </View>
               
-              <View style={styles.dataValueContainer}>
-                <Text style={styles.dataValue}>{sessionStats?.avgHr ?? '--'}</Text>
-                <Text style={styles.dataUnit}>bpm</Text>
-              </View>
-              
-              <Text style={styles.dataSubtext}>Avg: {sessionStats?.avgHr ?? '--'} bpm / Max: {sessionStats?.maxHr ?? '--'} bpm</Text>
-              
               <View style={styles.chartContainer}>
-                {hrChartData && (
-                  <SafeLineChart
-                    data={hrChartData}
-                    emptyMessage="No heart rate data available"
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : hrmChartData ? (
+                  <HeartRateTrendChart
+                    data={hrmChartData}
+                    avgHr={sessionStats?.avgHr}
+                    minHr={sessionStats?.minHr}
+                    maxHr={sessionStats?.maxHr}
                   />
+                ) : (
+                  <Text style={styles.emptyChartText}>No heart rate data available</Text>
                 )}
               </View>
             </GlassCard>
           </Animated.View>
 
-          {/* Temperature Card - Refined */}
+          {/* Temperature Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -4343,29 +4196,29 @@ export default function ReportsDetailedScreen() {
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
                   <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
                 </View>
-                <Text style={styles.cardTitle}>Avg Temperature</Text>
-              </View>
-              
-              <View style={styles.dataValueContainer}>
-                <Text style={styles.dataValue}>{sessionStats?.avgTemp ?? '--'}</Text>
-                <Text style={styles.dataUnit}>°F</Text>
+                <Text style={styles.cardTitle}>Temperature</Text>
               </View>
               
               <View style={styles.chartContainer}>
-                {tempChartData && (
-                  <SafeLineChart
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : tempChartData ? (
+                  <TemperatureStabilityGraph
                     data={tempChartData}
-                    emptyMessage="No temperature data available"
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier
+                    currentTemp={sessionStats?.currentTemp}
+                    avgTemp={sessionStats?.avgTemp}
+                    maxTemp={sessionStats?.maxTemp}
                   />
+                ) : (
+                  <Text style={styles.emptyChartText}>No temperature data available</Text>
                 )}
               </View>
             </GlassCard>
           </Animated.View>
 
-          {/* Bite Force Card - Refined */}
+          {/* Bite Force Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -4375,36 +4228,54 @@ export default function ReportsDetailedScreen() {
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
                   <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
                 </View>
-                <Text style={styles.cardTitle}>Bite Force (Left/Right)</Text>
+                <Text style={styles.cardTitle}>Bite Force</Text>
               </View>
-              
-              <View style={styles.dataValueContainer}>
-                <Text style={styles.dataValue}>{sessionStats?.avgBite ?? '--'}</Text>
-                <Text style={styles.dataUnit}>(Avg)</Text>
-              </View>
-              
-              {biteForceData && biteForceData.datasets[0].data.length > 0 && (
-                <View style={styles.legendContainer}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 176, 118, 1)'}]} />
-                    <Text style={styles.legendText}>Left</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 122, 255, 1)'}]} />
-                    <Text style={styles.legendText}>Right</Text>
-                  </View>
-                </View>
-              )}
               
               <View style={styles.chartContainer}>
-                {biteForceData && (
-                  <SafeLineChart
-                    data={biteForceData}
-                    emptyMessage="No bite force data available"
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : biteForceChartData ? (
+                  <BiteForceDynamicsChart
+                    data={biteForceChartData}
+                    avgLeft={sessionStats?.avgBiteLeft}
+                    avgRight={sessionStats?.avgBiteRight}
+                    avgTotal={sessionStats?.avgBiteTotal}
+                    maxForce={sessionStats?.maxBiteForce}
                   />
+                ) : (
+                  <Text style={styles.emptyChartText}>No bite force data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Motion Overview Card */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(80, 80, 80, 0.1)'}]}>
+                  <MaterialCommunityIcons name="axis-arrow" size={20} color="rgba(80, 80, 80, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Motion Overview</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : motionChartData ? (
+                  <MotionOverviewGraph
+                    data={motionChartData}
+                    peakAccel={sessionStats?.peakAccel}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No motion data available</Text>
                 )}
               </View>
             </GlassCard>
@@ -4427,15 +4298,11 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Concussion Risk</Text>
               </View>
               
-              <View style={styles.riskValueContainer}>
-                <Text style={[styles.riskValue, getRiskStyle(sessionStats?.concussionRisk)]}>
-                  {sessionStats?.concussionRisk ?? 'Low'}
-                </Text>
-              </View>
+              <ConcussionRiskGauge risk={sessionStats?.concussionRisk} />
             </GlassCard>
           </Animated.View>
 
-          {/* Impact Timeline Card - Refined */}
+          {/* Impact Timeline Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -4449,12 +4316,15 @@ export default function ReportsDetailedScreen() {
               </View>
               
               <View style={styles.chartContainer}>
-                {impactTimelineData && impactTimelineData.datasets[0].data.length > 0 ? (
-                  <SafeLineChart
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : impactTimelineData ? (
+                  <ImpactTimelineGraph
                     data={impactTimelineData}
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
+                    totalImpacts={sessionStats?.totalImpacts}
+                    maxG={sessionStats?.maxG}
                   />
                 ) : (
                   <Text style={styles.emptyChartText}>No impact data available</Text>
@@ -4477,13 +4347,12 @@ export default function ReportsDetailedScreen() {
               </View>
               
               <View style={styles.chartContainer}>
-                {severityDistData && severityDistData.datasets[0].data.length > 0 ? (
-                  <SafeLineChart
-                    data={severityDistData}
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
-                  />
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : severityDistData ? (
+                  <SeverityDistributionGraph data={severityDistData} />
                 ) : (
                   <Text style={styles.emptyChartText}>No impact data available</Text>
                 )}
@@ -4491,7 +4360,7 @@ export default function ReportsDetailedScreen() {
             </GlassCard>
           </Animated.View>
 
-          {/* CHIE Card - Refined */}
+          {/* CHIE Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -4505,15 +4374,14 @@ export default function ReportsDetailedScreen() {
               </View>
               
               <View style={styles.chartContainer}>
-                {chieData && chieData.datasets[0].data.length > 0 ? (
-                  <SafeLineChart
-                    data={chieData}
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier
-                  />
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : chieData ? (
+                  <CumulativeExposureGraph data={chieData} />
                 ) : (
-                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                  <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
                 )}
               </View>
             </GlassCard>
@@ -5450,6 +5318,201 @@ const styles = StyleSheet.create({
 export default BarChart; 
 
 ================================================================================
+File: app/components/charts/BiteForceDynamicsChart.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import { ChartData } from '@/src/types';
+import LineChart from './LineChart';
+
+interface BiteForceDynamicsChartProps {
+  data: ChartData;
+  avgLeft?: number | null;
+  avgRight?: number | null;
+  avgTotal?: number | null;
+  maxForce?: number | null;
+  height?: number;
+  width?: number;
+}
+
+const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
+  data,
+  avgLeft,
+  avgRight,
+  avgTotal,
+  maxForce,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // More comprehensive check for valid data
+  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No bite force data available</Text>
+      </View>
+    );
+  }
+
+  // Ensure that the first dataset has data
+  const firstDataset = data.datasets[0];
+  if (!firstDataset || !firstDataset.data || !Array.isArray(firstDataset.data) || firstDataset.data.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No bite force data available</Text>
+      </View>
+    );
+  }
+
+  // Create a safe version of the data object
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map(dataset => {
+      if (!dataset) return {
+        data: [],
+        color: (opacity = 1) => 'rgba(0, 0, 0, 0)',
+        strokeWidth: 0
+      };
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data : [],
+        color: typeof dataset.color === 'function' ? dataset.color : 
+          (opacity = 1) => dataset === data.datasets[0] ? 
+            'rgba(0, 176, 118, 1)' : 'rgba(0, 122, 255, 1)',
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
+      };
+    }),
+    legend: data.legend
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* KPI metrics row */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={[styles.metricValue, { color: 'rgba(0, 176, 118, 1)' }]}>
+            {avgLeft ?? '--'}
+          </Text>
+          <Text style={styles.metricLabel}>Left Avg</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={[styles.metricValue, { color: 'rgba(0, 122, 255, 1)' }]}>
+            {avgRight ?? '--'}
+          </Text>
+          <Text style={styles.metricLabel}>Right Avg</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>{maxForce ?? '--'}</Text>
+          <Text style={styles.metricLabel}>Max Force</Text>
+        </View>
+      </View>
+
+      {/* Legend */}
+      <View style={styles.legendContainer}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: 'rgba(0, 176, 118, 1)' }]} />
+          <Text style={styles.legendText}>Left</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: 'rgba(0, 122, 255, 1)' }]} />
+          <Text style={styles.legendText}>Right</Text>
+        </View>
+      </View>
+
+      {/* Chart */}
+      <LineChart 
+        data={safeData}
+        width={width}
+        height={height}
+        bezier={false}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 0,
+          // Color function that will be overridden by dataset colors
+          color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: "2",
+            strokeWidth: "1",
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4, 4',
+            strokeWidth: 0.5,
+            stroke: 'rgba(0, 0, 0, 0.05)',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 8,
+    marginBottom: 8,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default BiteForceDynamicsChart; 
+
+================================================================================
 File: app/components/charts/ChartStyles.ts
 ================================================================================
 
@@ -5514,6 +5577,553 @@ const chartStyles = StyleSheet.create({
 export default chartStyles; 
 
 ================================================================================
+File: app/components/charts/ConcussionRiskGauge.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+
+interface ConcussionRiskGaugeProps {
+  risk?: 'Low' | 'Moderate' | 'High' | 'Critical' | null;
+  width?: number;
+}
+
+const ConcussionRiskGauge: React.FC<ConcussionRiskGaugeProps> = ({
+  risk = 'Low',
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Default to 'Low' if risk is undefined or null
+  const safeRisk = risk || 'Low';
+  
+  // Calculate indicator position
+  let percentage = 0;
+  let textColor = COLORS.primary;
+  let gaugeColor = COLORS.primary;
+  
+  switch (safeRisk) {
+    case 'Critical':
+      percentage = 100;
+      textColor = 'rgb(200, 0, 0)';
+      gaugeColor = 'rgb(200, 0, 0)';
+      break;
+    case 'High':
+      percentage = 75;
+      textColor = 'rgb(255, 59, 48)';
+      gaugeColor = 'rgb(255, 59, 48)';
+      break;
+    case 'Moderate':
+      percentage = 50;
+      textColor = 'rgb(255, 149, 0)';
+      gaugeColor = 'rgb(255, 149, 0)';
+      break;
+    case 'Low':
+    default:
+      percentage = 25;
+      textColor = 'rgb(0, 176, 118)';
+      gaugeColor = 'rgb(0, 176, 118)';
+      break;
+  }
+  
+  const indicatorPosition = (percentage / 100) * (width - 32);
+  
+  return (
+    <View style={[styles.container, { width }]}>
+      <Text style={[styles.riskValue, { color: textColor }]}>
+        {safeRisk}
+      </Text>
+      <Text style={styles.riskLabel}>
+        Concussion Risk Level
+      </Text>
+      
+      {/* Gauge Track */}
+      <View style={[styles.gaugeTrack, { width: width - 32 }]}>
+        {/* Risk labels */}
+        <View style={styles.riskLabelContainer}>
+          <Text style={[styles.riskLabelText, { color: 'rgb(0, 176, 118)' }]}>Low</Text>
+          <Text style={[styles.riskLabelText, { color: 'rgb(255, 149, 0)' }]}>Moderate</Text>
+          <Text style={[styles.riskLabelText, { color: 'rgb(255, 59, 48)' }]}>High</Text>
+          <Text style={[styles.riskLabelText, { color: 'rgb(200, 0, 0)' }]}>Critical</Text>
+        </View>
+        
+        {/* Gauge indicator */}
+        <View style={[styles.gaugeIndicator, { left: indicatorPosition - 6, backgroundColor: gaugeColor }]} />
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  riskValue: {
+    fontSize: 32,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  riskLabel: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
+  },
+  gaugeTrack: {
+    height: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: 4,
+    position: 'relative',
+  },
+  gaugeIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    position: 'absolute',
+    top: -2,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  riskLabelContainer: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  riskLabelText: {
+    fontSize: 12,
+    fontWeight: '500',
+  }
+});
+
+export default ConcussionRiskGauge; 
+
+================================================================================
+File: app/components/charts/CumulativeExposureGraph.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import { ChartData } from '@/src/types';
+import LineChart from './LineChart';
+
+interface CumulativeExposureGraphProps {
+  data: ChartData | null;
+  height?: number;
+  width?: number;
+}
+
+const CumulativeExposureGraph: React.FC<CumulativeExposureGraphProps> = ({
+  data,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Check if we have valid data to display
+  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No impact exposure data available</Text>
+      </View>
+    );
+  }
+
+  // Create a safe version of the data
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map(dataset => {
+      if (!dataset) return {
+        data: [],
+        color: (opacity = 1) => 'rgba(0, 122, 255, 1)',
+        strokeWidth: 2
+      };
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data : [],
+        color: typeof dataset.color === 'function' ? dataset.color : 
+          (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
+      };
+    }),
+    legend: data.legend
+  };
+
+  // Get last data point (most recent cumulative value)
+  const lastDataPoint = safeData.datasets[0]?.data?.length ? 
+    safeData.datasets[0].data[safeData.datasets[0].data.length - 1] : 0;
+
+  return (
+    <View style={styles.container}>
+      {/* Cumulative Value */}
+      <View style={styles.totalContainer}>
+        <Text style={styles.totalValue}>
+          {lastDataPoint !== null && lastDataPoint !== undefined ? Math.round(lastDataPoint) : '0'}
+        </Text>
+        <Text style={styles.totalLabel}>Total Accumulated G-Force</Text>
+      </View>
+
+      {/* Chart */}
+      <LineChart 
+        data={safeData}
+        width={width}
+        height={height}
+        bezier={true}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 0,
+          color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: "2",
+            strokeWidth: "1",
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4, 4',
+            strokeWidth: 0.5,
+            stroke: 'rgba(0, 0, 0, 0.05)',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  totalContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  totalValue: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: 'rgba(0, 122, 255, 1)',
+  },
+  totalLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default CumulativeExposureGraph; 
+
+================================================================================
+File: app/components/charts/HeartRateTrendChart.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import { ChartData } from '@/src/types';
+import LineChart from './LineChart';
+
+interface HeartRateTrendChartProps {
+  data: ChartData | null;
+  avgHr?: number | null;
+  minHr?: number | null;
+  maxHr?: number | null;
+  height?: number;
+  width?: number;
+}
+
+const HeartRateTrendChart: React.FC<HeartRateTrendChartProps> = ({
+  data,
+  avgHr,
+  minHr,
+  maxHr,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Check if we have valid data to display
+  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No heart rate data available</Text>
+      </View>
+    );
+  }
+
+  // Create a safe version of the data
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map(dataset => {
+      if (!dataset) return {
+        data: [],
+        color: (opacity = 1) => 'rgba(255, 59, 48, 1)',
+        strokeWidth: 2
+      };
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data : [],
+        color: typeof dataset.color === 'function' ? dataset.color : 
+          (opacity = 1) => `rgba(255, 59, 48, ${opacity})`,
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
+      };
+    }),
+    legend: data.legend
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Stats row with KPIs */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={[styles.metricValue, { color: 'rgba(255, 59, 48, 1)' }]}>
+            {avgHr !== null && avgHr !== undefined ? avgHr : '--'}
+          </Text>
+          <Text style={styles.metricLabel}>Avg BPM</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {minHr !== null && minHr !== undefined ? minHr : '--'}
+          </Text>
+          <Text style={styles.metricLabel}>Min</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {maxHr !== null && maxHr !== undefined ? maxHr : '--'}
+          </Text>
+          <Text style={styles.metricLabel}>Max</Text>
+        </View>
+      </View>
+
+      {/* Chart */}
+      <LineChart 
+        data={safeData}
+        width={width}
+        height={height}
+        bezier={true}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 0,
+          color: (opacity = 1) => `rgba(255, 59, 48, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: "2",
+            strokeWidth: "1",
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4, 4',
+            strokeWidth: 0.5,
+            stroke: 'rgba(0, 0, 0, 0.05)',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default HeartRateTrendChart; 
+
+================================================================================
+File: app/components/charts/ImpactTimelineGraph.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import { ChartData } from '@/src/types';
+import LineChart from './LineChart';
+
+interface ImpactTimelineGraphProps {
+  data: ChartData | null;
+  totalImpacts?: number | null;
+  maxG?: number | null;
+  height?: number;
+  width?: number;
+}
+
+const ImpactTimelineGraph: React.FC<ImpactTimelineGraphProps> = ({
+  data,
+  totalImpacts,
+  maxG,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Check if we have valid data to display
+  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No impact data available</Text>
+      </View>
+    );
+  }
+
+  // Create a safe version of the data
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map(dataset => {
+      if (!dataset) return {
+        data: [],
+        color: (opacity = 1) => 'rgba(0, 176, 118, 1)',
+        strokeWidth: 2
+      };
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data : [],
+        color: typeof dataset.color === 'function' ? dataset.color : 
+          (opacity = 1) => `rgba(0, 176, 118, ${opacity})`,
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
+      };
+    }),
+    legend: data.legend
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Stats row */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {totalImpacts !== null && totalImpacts !== undefined ? totalImpacts : '0'}
+          </Text>
+          <Text style={styles.metricLabel}>Total Impacts</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {maxG !== null && maxG !== undefined ? `${maxG}g` : '0g'}
+          </Text>
+          <Text style={styles.metricLabel}>Max G-Force</Text>
+        </View>
+      </View>
+
+      {/* Chart */}
+      <LineChart 
+        data={safeData}
+        width={width}
+        height={height}
+        bezier={true}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 0,
+          color: (opacity = 1) => `rgba(0, 176, 118, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: "4",
+            strokeWidth: "2",
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4, 4',
+            strokeWidth: 0.5,
+            stroke: 'rgba(0, 0, 0, 0.05)',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default ImpactTimelineGraph; 
+
+================================================================================
 File: app/components/charts/LineChart.tsx
 ================================================================================
 
@@ -5552,22 +6162,58 @@ const LineChart: React.FC<LineChartProps> = ({
   bezier = true,
   style
 }) => {
-  // Check if we have any datasets
-  const hasDatasets = data.datasets && data.datasets.length > 0;
-  
-  // Check if we have any non-empty datasets
-  const hasNonEmptyDatasets = hasDatasets && data.datasets.some(dataset => 
-    dataset.data && dataset.data.length > 0 && dataset.data.some(val => val > 0)
-  );
-  
-  // If no data at all, display "No data available" message
-  if (!hasDatasets || !hasNonEmptyDatasets) {
+  // More robust checks for data and its structure
+  if (!data) {
     return (
       <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={styles.noDataText}>No data available</Text>
       </View>
     );
   }
+  
+  // Check if we have valid datasets
+  const hasValidDatasets = data.datasets && 
+                          Array.isArray(data.datasets) && 
+                          data.datasets.length > 0;
+  
+  if (!hasValidDatasets) {
+    return (
+      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No data available</Text>
+      </View>
+    );
+  }
+  
+  // Create safe datasets - ensure each dataset has a valid data array and color function
+  const safeDatasets = data.datasets.map((dataset, index) => {
+    if (!dataset) return { data: [], color: () => 'rgba(0, 230, 118, 1)', strokeWidth: 2 };
+    
+    return {
+      data: dataset.data && Array.isArray(dataset.data) ? dataset.data : [],
+      color: typeof dataset.color === 'function' ? dataset.color : () => 'rgba(0, 230, 118, 1)',
+      strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2,
+    };
+  });
+  
+  // Check if any dataset has valid data
+  const hasDataPoints = safeDatasets.some(ds => 
+    ds.data.length > 0 && ds.data.some(val => typeof val === 'number')
+  );
+  
+  if (!hasDataPoints) {
+    return (
+      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No data available</Text>
+      </View>
+    );
+  }
+  
+  // Create a safe data object
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: safeDatasets,
+    legend: data.legend
+  };
   
   // Generate default chart config if not provided
   const defaultChartConfig = chartConfig || {
@@ -5604,7 +6250,7 @@ const LineChart: React.FC<LineChartProps> = ({
   return (
     <View style={styles.container}>
       <RNLineChart
-        data={data}
+        data={safeData}
         width={width}
         height={height}
         chartConfig={defaultChartConfig}
@@ -5944,6 +6590,355 @@ const styles = StyleSheet.create({
 });
 
 export default MonthlyOverviewChart; 
+
+================================================================================
+File: app/components/charts/MotionOverviewGraph.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import { ChartData } from '@/src/types';
+import LineChart from './LineChart';
+
+interface MotionOverviewGraphProps {
+  data: ChartData | null;
+  peakAccel?: number | null;
+  height?: number;
+  width?: number;
+}
+
+const MotionOverviewGraph: React.FC<MotionOverviewGraphProps> = ({
+  data,
+  peakAccel,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Check if we have valid data to display
+  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No motion data available</Text>
+      </View>
+    );
+  }
+
+  // Create a safe version of the data
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map(dataset => {
+      if (!dataset) return {
+        data: [],
+        color: (opacity = 1) => 'rgba(80, 80, 80, 1)',
+        strokeWidth: 2
+      };
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data : [],
+        color: typeof dataset.color === 'function' ? dataset.color : 
+          (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
+      };
+    }),
+    legend: data.legend
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Stats */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {peakAccel !== null && peakAccel !== undefined ? peakAccel : '--'}
+          </Text>
+          <Text style={styles.metricLabel}>Peak Acceleration (g)</Text>
+        </View>
+      </View>
+
+      {/* Chart */}
+      <LineChart 
+        data={safeData}
+        width={width}
+        height={height}
+        bezier={true}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 2,
+          color: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: "2",
+            strokeWidth: "1",
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4, 4',
+            strokeWidth: 0.5,
+            stroke: 'rgba(0, 0, 0, 0.05)',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default MotionOverviewGraph; 
+
+================================================================================
+File: app/components/charts/SeverityDistributionGraph.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import BarChart from './BarChart';
+
+interface SeverityDistributionGraphProps {
+  data: { labels: string[]; data: number[] };
+  height?: number;
+  width?: number;
+}
+
+const SeverityDistributionGraph: React.FC<SeverityDistributionGraphProps> = ({
+  data,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Check if we have valid data to display
+  const hasData = data && 
+                 data.labels && 
+                 data.labels.length > 0 && 
+                 data.data && 
+                 data.data.length > 0 && 
+                 data.data.some(val => val > 0);
+
+  if (!hasData) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No severity distribution data available</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <BarChart 
+        data={data.data}
+        labels={data.labels}
+        barColor={COLORS.primary}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default SeverityDistributionGraph; 
+
+================================================================================
+File: app/components/charts/TemperatureStabilityGraph.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS } from '@/src/constants';
+import { ChartData } from '@/src/types';
+import LineChart from './LineChart';
+
+interface TemperatureStabilityGraphProps {
+  data: ChartData;
+  avgTemp?: number | null;
+  maxTemp?: number | null;
+  currentTemp?: number | null;
+  height?: number;
+  width?: number;
+}
+
+const TemperatureStabilityGraph: React.FC<TemperatureStabilityGraphProps> = ({
+  data,
+  avgTemp,
+  maxTemp,
+  currentTemp,
+  height = 180,
+  width = Dimensions.get('window').width - 64,
+}) => {
+  // Check if we have valid data to display
+  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return (
+      <View style={[styles.container, { height, width }]}>
+        <Text style={styles.emptyText}>No temperature data available</Text>
+      </View>
+    );
+  }
+
+  // Create a safe version of the data
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map(dataset => {
+      if (!dataset) return {
+        data: [],
+        color: (opacity = 1) => 'rgba(255, 149, 0, 1)',
+        strokeWidth: 2
+      };
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data : [],
+        color: typeof dataset.color === 'function' ? dataset.color : 
+          (opacity = 1) => `rgba(255, 149, 0, ${opacity})`,
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
+      };
+    }),
+    legend: data.legend
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* KPI stats */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={[styles.metricValue, { color: 'rgba(255, 149, 0, 1)' }]}>
+            {currentTemp !== null && currentTemp !== undefined ? currentTemp : '--'}°F
+          </Text>
+          <Text style={styles.metricLabel}>Current</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {avgTemp !== null && avgTemp !== undefined ? avgTemp : '--'}°F
+          </Text>
+          <Text style={styles.metricLabel}>Average</Text>
+        </View>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricValue}>
+            {maxTemp !== null && maxTemp !== undefined ? maxTemp : '--'}°F
+          </Text>
+          <Text style={styles.metricLabel}>Maximum</Text>
+        </View>
+      </View>
+
+      {/* Chart */}
+      <LineChart 
+        data={safeData}
+        width={width}
+        height={height}
+        bezier={true}
+        chartConfig={{
+          backgroundColor: 'transparent',
+          backgroundGradientFrom: 'transparent',
+          backgroundGradientTo: 'transparent',
+          decimalPlaces: 1,
+          color: (opacity = 1) => `rgba(255, 149, 0, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          style: {
+            borderRadius: 16,
+          },
+          propsForDots: {
+            r: "2",
+            strokeWidth: "1",
+          },
+          propsForBackgroundLines: {
+            strokeDasharray: '4, 4',
+            strokeWidth: 0.5,
+            stroke: 'rgba(0, 0, 0, 0.05)',
+          },
+        }}
+        style={{
+          marginVertical: 8,
+          borderRadius: 16,
+        }}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    padding: 20,
+  }
+});
+
+export default TemperatureStabilityGraph; 
 
 ================================================================================
 File: app/components/charts/WeeklyOverviewChart.tsx
@@ -11153,6 +12148,7 @@ File: package.json
     "@babel/traverse": "^7.26.10",
     "@react-native-community/cli": "^15.1.3",
     "@types/jest": "^29.5.14",
+    "@types/lodash": "^4.17.16",
     "@types/react": "~18.3.12",
     "@types/react-native-base64": "^0.2.2",
     "@types/react-test-renderer": "^18.3.1",
@@ -13769,77 +14765,67 @@ export class AthleteRepository extends BaseRepository {
    * Get athlete by device ID
    */
   public async getAthleteByDeviceId(deviceId: string): Promise<Athlete | null> {
-    return new Promise<Athlete | null>((resolve, reject) => {
-      this.db.transaction(tx => {
-        tx.executeSql(
-          'SELECT * FROM athletes WHERE device_id = ?',
-          [deviceId],
-          (_, { rows }) => {
-            if (rows.length === 0) {
-              resolve(null);
-              return;
-            }
-            
-            const row = rows.item(0);
-            resolve({
-              id: row.id,
-              name: row.name,
-              team: row.team,
-              position: row.position,
-              age: row.age,
-              height: row.height,
-              weight: row.weight,
-              deviceId: row.device_id,
-              notes: row.notes,
-              createdAt: row.created_at,
-              updatedAt: row.updated_at
-            });
-          },
-          (_, error) => {
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
+    try {
+      const result = await this.db.getAllAsync('SELECT * FROM athletes WHERE device_id = ?', [deviceId]);
+      
+      if (!result || !result.length) {
+        console.log('[AthleteRepository getAthleteByDeviceId] No athlete found with device ID:', deviceId);
+        return null;
+      }
+      
+      const row = result[0];
+      return {
+        id: row.id,
+        name: row.name,
+        team: row.team,
+        position: row.position,
+        age: row.age,
+        height: row.height,
+        weight: row.weight,
+        deviceId: row.device_id,
+        notes: row.notes,
+        number: row.number,
+        active: row.active === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    } catch (error) {
+      console.error(`Error getting athlete by device ID ${deviceId}:`, error);
+      throw error;
+    }
   }
 
   /**
    * Get athletes by team
    */
   public async getAthletesByTeam(team: string): Promise<Athlete[]> {
-    return new Promise<Athlete[]>((resolve, reject) => {
-      this.db.transaction(tx => {
-        tx.executeSql(
-          'SELECT * FROM athletes WHERE team = ? ORDER BY name ASC',
-          [team],
-          (_, { rows }) => {
-            const athletes: Athlete[] = [];
-            for (let i = 0; i < rows.length; i++) {
-              const row = rows.item(i);
-              athletes.push({
-                id: row.id,
-                name: row.name,
-                team: row.team,
-                position: row.position,
-                age: row.age,
-                height: row.height,
-                weight: row.weight,
-                deviceId: row.device_id,
-                notes: row.notes,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at
-              });
-            }
-            resolve(athletes);
-          },
-          (_, error) => {
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
+    try {
+      const result = await this.db.getAllAsync('SELECT * FROM athletes WHERE team = ? ORDER BY name ASC', [team]);
+      
+      if (!result || !result.length) {
+        console.log(`[AthleteRepository getAthletesByTeam] No athletes found in team: ${team}`);
+        return [];
+      }
+      
+      return result.map(row => ({
+        id: row.id,
+        name: row.name,
+        team: row.team,
+        position: row.position,
+        age: row.age,
+        height: row.height,
+        weight: row.weight,
+        deviceId: row.device_id,
+        notes: row.notes,
+        number: row.number,
+        active: row.active === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+    } catch (error) {
+      console.error(`Error getting athletes by team ${team}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -14256,45 +15242,52 @@ export class SensorDataRepository {
     const appTimestamp = Date.now();
     console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
 
-    // Calculate G-forces for impact detection
-    const SENSITIVITY_200G = 16384 / 200; // Example conversion factor - adjust based on actual sensor
-    const gForceX = packet.accel200[0] / SENSITIVITY_200G;
-    const gForceY = packet.accel200[1] / SENSITIVITY_200G;
-    const gForceZ = packet.accel200[2] / SENSITIVITY_200G;
-    const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
+    try {
+      // Calculate G-forces for impact detection
+      const SENSITIVITY_200G = 16384 / 200; // Example conversion factor - adjust based on actual sensor
+      const gForceX = packet.accel200[0] / SENSITIVITY_200G;
+      const gForceY = packet.accel200[1] / SENSITIVITY_200G;
+      const gForceZ = packet.accel200[2] / SENSITIVITY_200G;
+      const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
 
-    // Insert the raw packet data
-    const result = await this.db.runAsync(
-      `INSERT INTO motion_packets (
-        device_id, device_timestamp,
-        gyro_x, gyro_y, gyro_z,
-        accel16_x, accel16_y, accel16_z,
-        accel200_x, accel200_y, accel200_z,
-        mag_x, mag_y, mag_z,
-        bite_l, bite_r, app_timestamp
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        deviceId, packet.timestamp, // Device timestamp
-        packet.gyro[0], packet.gyro[1], packet.gyro[2],
-        packet.accel16[0], packet.accel16[1], packet.accel16[2],
-        packet.accel200[0], packet.accel200[1], packet.accel200[2],
-        packet.mag[0], packet.mag[1], packet.mag[2],
-        packet.bite_l, packet.bite_r, appTimestamp // App timestamp
-      ]
-    );
-
-    // Check for potential impact event
-    const thresholdG = 80; // 80G threshold for potential concussion
-    if (magnitude > thresholdG) {
-      await this.recordImpactEventInternal(
-        deviceId, undefined, packet.timestamp, 
-        magnitude, gForceX, gForceY, gForceZ,
-        appTimestamp
+      // Insert the raw packet data
+      const result = await this.db.runAsync(
+        `INSERT INTO motion_packets (
+          device_id, device_timestamp,
+          gyro_x, gyro_y, gyro_z,
+          accel16_x, accel16_y, accel16_z,
+          accel200_x, accel200_y, accel200_z,
+          mag_x, mag_y, mag_z,
+          bite_l, bite_r, app_timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          deviceId, packet.timestamp, // Device timestamp
+          packet.gyro[0], packet.gyro[1], packet.gyro[2],
+          packet.accel16[0], packet.accel16[1], packet.accel16[2],
+          packet.accel200[0], packet.accel200[1], packet.accel200[2],
+          packet.mag[0], packet.mag[1], packet.mag[2],
+          packet.bite_l, packet.bite_r, appTimestamp // App timestamp
+        ]
       );
-    }
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
-    return result.lastInsertRowId;
+      console.log(`[SensorDataRepo] Motion Packet recorded successfully. ID: ${result.lastInsertRowId}, Changes: ${result.changes}`);
+
+      // Check for potential impact event
+      const thresholdG = 80; // 80G threshold for potential concussion
+      if (magnitude > thresholdG) {
+        await this.recordImpactEventInternal(
+          deviceId, undefined, packet.timestamp, 
+          magnitude, gForceX, gForceY, gForceZ,
+          appTimestamp
+        );
+      }
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('[SensorDataRepo] FAILED to insert Motion Packet:', error);
+      throw error;
+    }
   }
 
   /**
@@ -14377,45 +15370,41 @@ export class SensorDataRepository {
     startTime: number,
     endTime: number
   ): Promise<any[]> {
-    const startSeconds = Math.floor(startTime / 1000);
-    const endSeconds = Math.floor(endTime / 1000);
+    // Use app_timestamp for date range queries for ALL packet types
+    const timestampField = 'app_timestamp';
+
+    // Define the timestamp field for impact_events. If it's named 'timestamp',
+    // ensure recordImpactEventInternal stores app_timestamp there.
+    const impactTimestampField = 'timestamp'; // Or 'app_timestamp' if you add that column
 
     let query: string;
-    let timestampField = 'app_timestamp'; // Default to app timestamp
 
-    if (sensorType === 'motion_packets' || sensorType === 'fsr_packets') {
-      timestampField = 'device_timestamp'; // Use device timestamp for these
-      query = `SELECT * FROM ${sensorType}
-               WHERE device_id = ? AND device_timestamp BETWEEN ? AND ?
-               ORDER BY device_timestamp ASC`;
-    } else if (sensorType === 'impact_events') {
-      timestampField = 'timestamp'; // Impact events use 'timestamp' field
-      query = `SELECT * FROM ${sensorType}
-               WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-               ORDER BY timestamp ASC`;
-    } else { // hrm_packets, htm_packets use app_timestamp
-      if (sensorType === 'hrm_packets') {
-         query = `SELECT id, device_id, flags, heart_rate AS heartRate, app_timestamp FROM ${sensorType}
-                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
-                  ORDER BY app_timestamp ASC`;
-      } else { // For htm_packets or any others falling here
+    // Construct the query based on the sensor type
+    if (sensorType === 'impact_events') {
+         // Make sure the 'timestamp' column in impact_events reliably stores app_timestamp
+         // or add an 'app_timestamp' column to impact_events in a new migration.
+         // For now, assuming 'timestamp' holds app_timestamp for impacts.
          query = `SELECT * FROM ${sensorType}
-                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
-                  ORDER BY app_timestamp ASC`;
-      }
+                  WHERE device_id = ? AND ${impactTimestampField} BETWEEN ? AND ?
+                  ORDER BY ${impactTimestampField} ASC`;
+    } else {
+         query = `SELECT * FROM ${sensorType}
+                  WHERE device_id = ? AND ${timestampField} BETWEEN ? AND ?
+                  ORDER BY ${timestampField} ASC`;
     }
 
+    console.log(`[SensorDataRepo getSensorData] Querying ${sensorType} for device ${deviceId} between ${new Date(startTime).toISOString()} and ${new Date(endTime).toISOString()}`);
+    console.log(`[SensorDataRepo getSensorData] Query: ${query}`);
+    console.log(`[SensorDataRepo getSensorData] Params: [${deviceId}, ${startTime}, ${endTime}]`);
+
     try {
-      const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]); // Use original ms timestamps for query
-      console.log(`[SensorDataRepo] Fetched ${sensorType} results:`, results ? results.length : 0); // Log fetched count
-      // Optional: Log first few results to verify structure
-      if (results && results.length > 0 && sensorType === 'hrm_packets') {
-          console.log(`[SensorDataRepo] First few HRM results structure:`, JSON.stringify(results.slice(0, 3)));
-      }
-      return results ?? []; // Return empty array if results are null/undefined
+        // Execute the query using the new async API
+        const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]);
+        console.log(`[SensorDataRepo getSensorData] Fetched ${results?.length ?? 0} ${sensorType} results.`);
+        return results ?? []; // Return empty array if results are null/undefined
     } catch (error) {
-      console.error(`Error querying ${sensorType} data:`, error);
-      throw error;
+        console.error(`[SensorDataRepo getSensorData] Error querying ${sensorType} data:`, error);
+        throw error;
     }
   }
 
@@ -14548,7 +15537,7 @@ export class SensorDataRepository {
       [
         event.deviceId,
         event.athleteId ?? null,
-        event.timestamp,
+        event.createdAt, // Use createdAt (app timestamp) for the main timestamp column
         event.magnitude,
         event.x, event.y, event.z,
         event.durationMs ?? null,
@@ -14556,7 +15545,7 @@ export class SensorDataRepository {
         0, // processed = false
         event.severity ?? null,
         event.notes ?? null,
-        event.createdAt // Use createdAt from the event object
+        event.createdAt // Also store in created_at
       ]
     );
     // Emit concussion detected event
@@ -15601,13 +16590,13 @@ export class BluetoothService {
   /**
    * Parse and handle incoming BLE characteristic updates from the device
    */
-  private handleCharacteristicUpdate(
+  private handleCharacteristicUpdate = async (
     deviceId: string,
     serviceUuid: string,
     characteristicUuid: string,
     error: BleError | null,
     characteristic: Characteristic | null
-  ) {
+  ): Promise<void> => {
     if (error) {
         // Handle connection errors, log them, potentially update device status
         console.error(`[BluetoothService] Error monitoring ${characteristicUuid}:`, error.message);
@@ -15674,7 +16663,9 @@ export class BluetoothService {
 
         // --- IMU Data ---
         else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
-            if (buffer.length >= 32) { // Expected size based on motion_packet struct
+            const EXPECTED_IMU_LENGTH = 32; // Define expected length
+            if (buffer.length >= EXPECTED_IMU_LENGTH) {
+                // Parse only if length is sufficient
                 const motionPacket: MotionPacket = {
                     gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)],
                     accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)],
@@ -15685,7 +16676,8 @@ export class BluetoothService {
                     timestamp: buffer.readUInt32LE(28) // Device timestamp
                 };
                 console.log(`[BluetoothService] Parsed IMU: Gyro=${motionPacket.gyro[0]}, Acc16=${motionPacket.accel16[0]}, Acc200=${motionPacket.accel200[0]}, Mag=${motionPacket.mag[0]}, BiteL=${motionPacket.bite_l}, DevTS=${motionPacket.timestamp}`);
-                this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket); // Store raw packet
+                // Use await here to catch potential errors from the repository
+                await this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket);
                 // Emit specific live data points as needed (e.g., high-G accel)
                 const SENSITIVITY_200G = 16384 / 200; // Example, adjust as needed
                 const gForceX = motionPacket.accel200[0] / SENSITIVITY_200G;
@@ -15693,9 +16685,11 @@ export class BluetoothService {
                 const gForceZ = motionPacket.accel200[2] / SENSITIVITY_200G;
                 const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
-                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
             } else {
-                 console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes`);
+                // Log the warning and skip processing this packet
+                console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_IMU_LENGTH}). Skipping packet.`);
+                // DO NOT attempt to parse or save incomplete data
             }
         }
 
@@ -16671,6 +17665,405 @@ export const LAYOUT_ANIMATION_CONFIG = {
 } as const; 
 
 ================================================================================
+File: src/utils/dataProcessing.ts
+================================================================================
+
+import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData, ChartDataset } from '../types';
+import { formatChartTimestamp } from './timeUtils';
+
+// --- Constants ---
+const ACCEL_200G_SENSITIVITY = 16384 / 200; // Adjust based on actual sensor spec
+const MAX_CHART_POINTS = 100; // Limit points for performance
+
+// --- Helper: Subsample data ---
+export function subsampleData<T>(data: T[], maxPoints: number = MAX_CHART_POINTS): T[] {
+  if (!data || data.length <= maxPoints) return data;
+  const step = Math.ceil(data.length / maxPoints);
+  return data.filter((_, index) => index % step === 0);
+}
+
+// --- Processing Functions ---
+
+/**
+ * Processes HRM packets for heart rate visualization
+ */
+export function processHrmForChart(packets: HRMPacket[]): { 
+  chartData: ChartData, 
+  avgHr: number | null, 
+  minHr: number | null, 
+  maxHr: number | null 
+} {
+  if (!packets || packets.length === 0) {
+    return { 
+      chartData: { labels: [], datasets: [] }, 
+      avgHr: null, 
+      minHr: null, 
+      maxHr: null 
+    };
+  }
+
+  // Filter invalid data and sort by timestamp
+  const validPackets = packets
+    .filter(p => typeof p.heartRate === 'number' && !isNaN(p.heartRate) && p.heartRate > 0)
+    .sort((a, b) => a.appTimestamp - b.appTimestamp);
+
+  // If no valid data after filtering, return empty result
+  if (validPackets.length === 0) {
+    return { 
+      chartData: { labels: [], datasets: [] }, 
+      avgHr: null, 
+      minHr: null, 
+      maxHr: null 
+    };
+  }
+
+  // Subsample for better chart performance
+  const subsampled = subsampleData(validPackets);
+  
+  // Format data for chart
+  const labels = subsampled.map(p => formatChartTimestamp(p.appTimestamp));
+  const data = subsampled.map(p => p.heartRate);
+
+  // Calculate statistics
+  const validHrs = validPackets.map(p => p.heartRate);
+  const avgHr = validHrs.length > 0 ? 
+    Math.round(validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : null;
+  const minHr = validHrs.length > 0 ? Math.min(...validHrs) : null;
+  const maxHr = validHrs.length > 0 ? Math.max(...validHrs) : null;
+
+  const datasets: ChartDataset[] = [{
+    data: data,
+    color: (opacity = 1) => `rgba(255, 59, 48, ${opacity})`, // Red for HR
+    strokeWidth: 2,
+  }];
+
+  return { chartData: { labels, datasets }, avgHr, minHr, maxHr };
+}
+
+/**
+ * Processes HTM packets for temperature visualization
+ */
+export function processTempForChart(packets: HTMPacket[]): { 
+  chartData: ChartData, 
+  avgTemp: number | null, 
+  minTemp: number | null, 
+  maxTemp: number | null, 
+  currentTemp: number | null 
+} {
+  if (!packets || packets.length === 0) {
+    return { 
+      chartData: { labels: [], datasets: [] }, 
+      avgTemp: null, 
+      minTemp: null, 
+      maxTemp: null, 
+      currentTemp: null 
+    };
+  }
+
+  // Filter invalid data and sort by timestamp
+  const validPackets = packets
+    .filter(p => typeof p.temperature === 'number' && !isNaN(p.temperature))
+    .sort((a, b) => a.appTimestamp - b.appTimestamp);
+
+  // If no valid data after filtering, return empty result
+  if (validPackets.length === 0) {
+    return { 
+      chartData: { labels: [], datasets: [] }, 
+      avgTemp: null, 
+      minTemp: null, 
+      maxTemp: null, 
+      currentTemp: null 
+    };
+  }
+
+  // Subsample for better chart performance
+  const subsampled = subsampleData(validPackets);
+  
+  // Format data for chart
+  const labels = subsampled.map(p => formatChartTimestamp(p.appTimestamp));
+  const data = subsampled.map(p => p.temperature);
+
+  // Calculate statistics
+  const validTemps = validPackets.map(p => p.temperature);
+  const avgTemp = validTemps.length > 0 ? 
+    parseFloat((validTemps.reduce((a, b) => a + b, 0) / validTemps.length).toFixed(1)) : null;
+  const minTemp = validTemps.length > 0 ? Math.min(...validTemps) : null;
+  const maxTemp = validTemps.length > 0 ? Math.max(...validTemps) : null;
+  const currentTemp = validPackets.length > 0 ? validPackets[validPackets.length - 1].temperature : null;
+
+  const datasets: ChartDataset[] = [{
+    data: data,
+    color: (opacity = 1) => `rgba(255, 149, 0, ${opacity})`, // Orange for Temp
+    strokeWidth: 2,
+  }];
+
+  return { chartData: { labels, datasets }, avgTemp, minTemp, maxTemp, currentTemp };
+}
+
+/**
+ * Processes FSR packets for bite force visualization
+ */
+export function processFsrForChart(packets: FSRPacket[]): { 
+  chartData: ChartData, 
+  avgLeft: number | null, 
+  avgRight: number | null, 
+  avgTotal: number | null,
+  maxForce: number | null 
+} {
+  if (!packets || packets.length === 0) {
+    return { 
+      chartData: { labels: [], datasets: [] }, 
+      avgLeft: null, 
+      avgRight: null, 
+      avgTotal: null,
+      maxForce: null
+    };
+  }
+
+  // Filter and sort by timestamp
+  const validPackets = packets
+    .filter(p => (
+      (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
+      (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
+    ))
+    .sort((a, b) => {
+      // Use timestamp from FSRPacket
+      return a.timestamp - b.timestamp;
+    });
+
+  if (validPackets.length === 0) {
+    return { 
+      chartData: { labels: [], datasets: [] }, 
+      avgLeft: null, 
+      avgRight: null, 
+      avgTotal: null,
+      maxForce: null
+    };
+  }
+
+  // Subsample for better chart performance
+  const subsampled = subsampleData(validPackets);
+  
+  // Format data for chart
+  const labels = subsampled.map(p => formatChartTimestamp(p.timestamp));
+  const leftData = subsampled.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
+  const rightData = subsampled.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
+
+  // Calculate statistics from all valid data
+  const validLeft = validPackets
+    .map(p => p.left_bite)
+    .filter(v => typeof v === 'number' && !isNaN(v));
+    
+  const validRight = validPackets
+    .map(p => p.right_bite)
+    .filter(v => typeof v === 'number' && !isNaN(v));
+    
+  const avgLeft = validLeft.length > 0 ? 
+    Math.round(validLeft.reduce((a, b) => a + b, 0) / validLeft.length) : null;
+    
+  const avgRight = validRight.length > 0 ? 
+    Math.round(validRight.reduce((a, b) => a + b, 0) / validRight.length) : null;
+    
+  const allValid = [...validLeft, ...validRight];
+  const avgTotal = allValid.length > 0 ? 
+    Math.round(allValid.reduce((a, b) => a + b, 0) / allValid.length) : null;
+    
+  const maxForce = allValid.length > 0 ? Math.max(...allValid) : null;
+
+  const datasets: ChartDataset[] = [
+    { 
+      data: leftData, 
+      color: (opacity = 1) => `rgba(0, 176, 118, ${opacity})`, // Green for Left
+      strokeWidth: 2 
+    },
+    { 
+      data: rightData, 
+      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`, // Blue for Right
+      strokeWidth: 2 
+    }
+  ];
+
+  return { 
+    chartData: { labels, datasets, legend: ['Left', 'Right'] }, 
+    avgLeft, 
+    avgRight, 
+    avgTotal,
+    maxForce
+  };
+}
+
+/**
+ * Processes motion packets for acceleration visualization
+ */
+export function processMotionForChart(packets: MotionPacket[]): { 
+  accelMagnitudeChart: ChartData, 
+  peakAccel: number | null
+} {
+  if (!packets || packets.length === 0) {
+    return { 
+      accelMagnitudeChart: { labels: [], datasets: [] }, 
+      peakAccel: null 
+    };
+  }
+
+  // Sort by timestamp
+  const sortedPackets = packets.sort((a, b) => {
+    // Use appTimestamp if available, fallback to device timestamp
+    const aTime = (a as any).appTimestamp || a.timestamp;
+    const bTime = (b as any).appTimestamp || b.timestamp;
+    return aTime - bTime;
+  });
+
+  // Calculate G-force magnitudes
+  const magnitudes = sortedPackets.map(p => {
+    // Convert raw values to G-force
+    const gx = (p.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
+    const gy = (p.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
+    const gz = (p.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
+    // Calculate magnitude (vector length)
+    return Math.sqrt(gx*gx + gy*gy + gz*gz);
+  });
+
+  // Find peak acceleration
+  const peakAccel = magnitudes.length > 0 ? 
+    parseFloat(Math.max(...magnitudes).toFixed(2)) : null;
+
+  // Subsample for better chart performance
+  const subsampled = subsampleData(sortedPackets);
+  
+  // Format data for chart
+  const labels = subsampled.map(p => 
+    formatChartTimestamp((p as any).appTimestamp || p.timestamp));
+    
+  const subsampledMagnitudes = subsampled.map((_, i) => {
+    const originalIndex = Math.floor(i * (sortedPackets.length / subsampled.length));
+    return magnitudes[originalIndex];
+  });
+
+  const datasets: ChartDataset[] = [{
+    data: subsampledMagnitudes,
+    color: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`, // Gray for magnitude
+    strokeWidth: 2,
+  }];
+
+  return { 
+    accelMagnitudeChart: { labels, datasets }, 
+    peakAccel 
+  };
+}
+
+/**
+ * Processes impact events for timeline and distribution visualizations
+ */
+export function processImpactsForCharts(impacts: ImpactEvent[]): {
+  timelineChart: ChartData,
+  severityDistribution: { labels: string[], data: number[] },
+  cumulativeExposureChart: ChartData,
+  totalImpacts: number,
+  highImpacts: number,
+  maxG: number | null,
+  concussionRisk: 'Low' | 'Moderate' | 'High' | 'Critical'
+} {
+  if (!impacts || impacts.length === 0) {
+    return {
+      timelineChart: { labels: [], datasets: [] },
+      severityDistribution: { labels: [], data: [] },
+      cumulativeExposureChart: { labels: [], datasets: [] },
+      totalImpacts: 0,
+      highImpacts: 0,
+      maxG: null,
+      concussionRisk: 'Low'
+    };
+  }
+
+  // Sort by timestamp
+  const sortedImpacts = impacts.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Timeline Chart
+  const subsampledTimeline = subsampleData(sortedImpacts);
+  const timelineLabels = subsampledTimeline.map(p => formatChartTimestamp(p.timestamp));
+  const timelineData = subsampledTimeline.map(p => p.magnitude);
+  const timelineChart: ChartData = {
+    labels: timelineLabels,
+    datasets: [{ 
+      data: timelineData, 
+      color: (opacity = 1) => `rgba(0, 176, 118, ${opacity})`, 
+      strokeWidth: 2 
+    }]
+  };
+
+  // Severity Distribution
+  const severityCounts = { 
+    low: 0, 
+    moderate: 0, 
+    severe: 0, 
+    critical: 0 
+  };
+  
+  let highImpactCount = 0;
+  
+  impacts.forEach(p => {
+    const severity = p.severity ?? 'low'; // Default to low if undefined
+    if (severityCounts.hasOwnProperty(severity)) {
+      severityCounts[severity]++;
+    }
+    if (severity === 'severe' || severity === 'critical') {
+      highImpactCount++;
+    }
+  });
+  
+  const severityDistribution = {
+    labels: Object.keys(severityCounts).map(k => k.charAt(0).toUpperCase() + k.slice(1)),
+    data: Object.values(severityCounts)
+  };
+
+  // Cumulative Exposure
+  let cumulativeG = 0;
+  const cumulativeData = sortedImpacts.map(p => {
+    cumulativeG += p.magnitude;
+    return cumulativeG;
+  });
+  
+  const subsampledCumulative = subsampleData(cumulativeData);
+  const cumulativeLabels = subsampleData(sortedImpacts).map(p => formatChartTimestamp(p.timestamp));
+  
+  const cumulativeExposureChart: ChartData = {
+    labels: cumulativeLabels,
+    datasets: [{ 
+      data: subsampledCumulative, 
+      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`, 
+      strokeWidth: 2 
+    }]
+  };
+
+  // Calculate KPIs
+  const magnitudes = impacts.map(p => p.magnitude);
+  const maxG = magnitudes.length > 0 ? 
+    parseFloat(Math.max(...magnitudes).toFixed(2)) : null;
+    
+  // Determine risk level
+  let concussionRisk: 'Low' | 'Moderate' | 'High' | 'Critical' = 'Low';
+  
+  if (highImpactCount >= 3 || (maxG !== null && maxG >= 150)) {
+    concussionRisk = 'Critical';
+  } else if (highImpactCount >= 2 || (maxG !== null && maxG >= 120)) {
+    concussionRisk = 'High';
+  } else if (highImpactCount >= 1 || (maxG !== null && maxG >= 90)) {
+    concussionRisk = 'Moderate';
+  }
+
+  return {
+    timelineChart,
+    severityDistribution,
+    cumulativeExposureChart,
+    totalImpacts: impacts.length,
+    highImpacts: highImpactCount,
+    maxG,
+    concussionRisk
+  };
+} 
+
+================================================================================
 File: src/utils/EventEmitter.ts
 ================================================================================
 
@@ -17282,6 +18675,84 @@ export function getLastNDaysRangeLocal(days: number): { startDate: Date, endDate
 
   console.log(`[timeUtils] Last ${days} Days Range (Local): ${startDate.toISOString()} to ${endDate.toISOString()}`);
   return { startDate, endDate };
+}
+
+/**
+ * Format a timestamp for chart display, showing time only
+ * @param timestamp - Timestamp in milliseconds
+ * @returns Formatted time string (HH:MM:SS)
+ */
+export function formatChartTimestamp(timestamp: number): string {
+  // Guard against invalid timestamps
+  if (!timestamp || isNaN(timestamp)) {
+    return '';
+  }
+  
+  const date = new Date(timestamp);
+  
+  // Check if date is valid (catches the 1970 issue)
+  if (date.getFullYear() <= 1970 && timestamp > 0) {
+    // If timestamp seems to be in seconds rather than milliseconds, convert
+    const dateFromSeconds = new Date(timestamp * 1000);
+    if (dateFromSeconds.getFullYear() > 1970) {
+      return dateFromSeconds.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    }
+  }
+  
+  // Standard formatting for valid dates
+  return date.toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
+/**
+ * Format a timestamp for user-friendly display, including contextual date info
+ * @param timestamp - Timestamp in milliseconds
+ * @returns Formatted date/time string
+ */
+export function formatUserFriendlyDateTime(timestamp: number): string {
+  // Guard against invalid timestamps
+  if (!timestamp || isNaN(timestamp)) {
+    return 'Invalid date';
+  }
+  
+  const date = new Date(timestamp);
+  
+  // Check if date is valid (catches the 1970 issue)
+  if (date.getFullYear() <= 1970 && timestamp > 0) {
+    // If timestamp seems to be in seconds rather than milliseconds, convert
+    const dateFromSeconds = new Date(timestamp * 1000);
+    if (dateFromSeconds.getFullYear() > 1970) {
+      return formatDateTimeRelative(dateFromSeconds);
+    }
+    return 'Invalid date';
+  }
+  
+  return formatDateTimeRelative(date);
+}
+
+/**
+ * Helper function to format date with relative terms (Today, Yesterday)
+ */
+function formatDateTimeRelative(date: Date): string {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) {
+    return `Today, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } else if (date.toDateString() === yesterday.toDateString()) {
+    return `Yesterday, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + 
+           ', ' + date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
 } 
 
 ================================================================================

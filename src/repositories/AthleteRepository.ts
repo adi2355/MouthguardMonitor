@@ -88,77 +88,67 @@ export class AthleteRepository extends BaseRepository {
    * Get athlete by device ID
    */
   public async getAthleteByDeviceId(deviceId: string): Promise<Athlete | null> {
-    return new Promise<Athlete | null>((resolve, reject) => {
-      this.db.transaction(tx => {
-        tx.executeSql(
-          'SELECT * FROM athletes WHERE device_id = ?',
-          [deviceId],
-          (_, { rows }) => {
-            if (rows.length === 0) {
-              resolve(null);
-              return;
-            }
-            
-            const row = rows.item(0);
-            resolve({
-              id: row.id,
-              name: row.name,
-              team: row.team,
-              position: row.position,
-              age: row.age,
-              height: row.height,
-              weight: row.weight,
-              deviceId: row.device_id,
-              notes: row.notes,
-              createdAt: row.created_at,
-              updatedAt: row.updated_at
-            });
-          },
-          (_, error) => {
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
+    try {
+      const result = await this.db.getAllAsync('SELECT * FROM athletes WHERE device_id = ?', [deviceId]);
+      
+      if (!result || !result.length) {
+        console.log('[AthleteRepository getAthleteByDeviceId] No athlete found with device ID:', deviceId);
+        return null;
+      }
+      
+      const row = result[0];
+      return {
+        id: row.id,
+        name: row.name,
+        team: row.team,
+        position: row.position,
+        age: row.age,
+        height: row.height,
+        weight: row.weight,
+        deviceId: row.device_id,
+        notes: row.notes,
+        number: row.number,
+        active: row.active === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    } catch (error) {
+      console.error(`Error getting athlete by device ID ${deviceId}:`, error);
+      throw error;
+    }
   }
 
   /**
    * Get athletes by team
    */
   public async getAthletesByTeam(team: string): Promise<Athlete[]> {
-    return new Promise<Athlete[]>((resolve, reject) => {
-      this.db.transaction(tx => {
-        tx.executeSql(
-          'SELECT * FROM athletes WHERE team = ? ORDER BY name ASC',
-          [team],
-          (_, { rows }) => {
-            const athletes: Athlete[] = [];
-            for (let i = 0; i < rows.length; i++) {
-              const row = rows.item(i);
-              athletes.push({
-                id: row.id,
-                name: row.name,
-                team: row.team,
-                position: row.position,
-                age: row.age,
-                height: row.height,
-                weight: row.weight,
-                deviceId: row.device_id,
-                notes: row.notes,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at
-              });
-            }
-            resolve(athletes);
-          },
-          (_, error) => {
-            reject(error);
-            return false;
-          }
-        );
-      });
-    });
+    try {
+      const result = await this.db.getAllAsync('SELECT * FROM athletes WHERE team = ? ORDER BY name ASC', [team]);
+      
+      if (!result || !result.length) {
+        console.log(`[AthleteRepository getAthletesByTeam] No athletes found in team: ${team}`);
+        return [];
+      }
+      
+      return result.map(row => ({
+        id: row.id,
+        name: row.name,
+        team: row.team,
+        position: row.position,
+        age: row.age,
+        height: row.height,
+        weight: row.weight,
+        deviceId: row.device_id,
+        notes: row.notes,
+        number: row.number,
+        active: row.active === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+    } catch (error) {
+      console.error(`Error getting athletes by team ${team}:`, error);
+      throw error;
+    }
   }
 
   /**

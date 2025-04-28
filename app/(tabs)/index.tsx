@@ -456,7 +456,7 @@ export default function Dashboard() {
         </GlassCard>
 
         {/* Bottom tab spacer */}
-        <View style={{ height: 80 }} /> {/* Increased height to accommodate footer */}
+        <View style={{ height: 80 }}><Text style={{ display: 'none' }}>Spacer for footer</Text></View>
 
       </ScrollView>
 

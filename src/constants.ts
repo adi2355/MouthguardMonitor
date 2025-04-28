@@ -7,36 +7,39 @@ export const MOUTHGUARD_DB_NAME: string = "mouthguardMonitor.db";
 export const COLORS = {
   // Core Palette
   primary: '#005432',       // Evergreen (For buttons, active icons, highlights)
-  background: '#EDEBD1',    // Changed from White to Sand (Main app background)
+  background: '#F8F9FA',    // Changed to lighter neutral background
   card: '#FFFFFF',          // White (Card backgrounds, slightly elevated)
-  secondaryBackground: '#EDEBD1', // Sand (Subtle backgrounds, dividers, or inactive states)
+  secondaryBackground: '#F8F8F8', // Lighter sand color as recommended
 
   // Text Palette
   textPrimary: '#303434',    // Soft Black (Primary text)
-  textSecondary: '#4F6069',  // Slate (Secondary text, subtitles)
-  textTertiary: '#7E96A0',   // Gray (Placeholder text, disabled text, subtle info)
-  textOnPrimary: '#FFFFFF', // White (Text on Evergreen buttons/elements)
+  textSecondary: '#6B7280',  // Slate (Secondary text, subtitles, labels)
+  textTertiary: '#9CA3AF',   // Gray (Placeholder text, disabled text, subtle info)
+  textOnPrimary: '#FFFFFF',  // White (Text on Evergreen buttons/elements)
   textAccent: '#005432',     // Evergreen (Links, highlighted values)
 
   // Accents (Use Sparingly!)
   accent1: '#9CCB3B',        // Apple (Maybe for specific highlights or success states)
   accent2: '#009374',        // Teal (Alternative accent, info indicators)
   accent3: '#006484',        // Storm (Another alternative accent)
-  accent4: '#DBE442',        // Lemongrass (Could be a warning indicator)
+  accent4: '#FFD60A',        // Apple Yellow (for temperature graph)
   accent5: '#80B0A6',        // Seaglass (Subtle accent or background)
 
   // Semantic Colors
-  success: '#34C759',        // Standard Green (Overriding Apple Green for clarity)
-  warning: '#FF9500',        // Standard Orange (Using standard warning) - Lemongrass might be too subtle
-  error: '#FF3B30',          // Standard Red (Using standard error)
-  info: '#006484',           // Storm (For informational messages/icons)
+  success: '#32D74B',        // Apple Green (using more pastel-toned green)
+  warning: '#FF9500',        // Standard Orange
+  error: '#FF453A',          // Apple Red (heart rate)
+  info: '#0A84FF',           // Apple Blue (bite force)
 
   // Neutrals & Borders
-  border: '#CAD2D8',          // Silver (Subtle borders and dividers)
-  borderLight: '#EAEAEA',    // Lighter border option
-  inputBackground: '#F0F0F0',// Light gray for input fields
-  disabled: '#CAD2D8',        // Silver (Disabled elements background/text)
+  border: '#E5E7EB',         // Lighter border for softer appearance
+  borderLight: '#F3F4F6',    // Even lighter border option
+  inputBackground: '#F9FAFB', // Light gray for input fields
+  disabled: '#D1D5DB',       // Disabled elements background/text
   shadow: '#000000',         // Black for shadows (used with low opacity)
+
+  // Chart Colors
+  chartBackground: '#1C1C1E', // Softer dark gray for chart backgrounds
 
   // Institutional (Use as needed for branding)
   instGreen: '#006747',
@@ -45,9 +48,9 @@ export const COLORS = {
   // Legacy structure maintained for backward compatibility
   text: {
     primary: '#303434',    // Map to textPrimary
-    secondary: '#4F6069',  // Map to textSecondary
-    tertiary: '#7E96A0',   // Map to textTertiary
-    onPrimary: '#FFFFFF',  // Add this for consistency
+    secondary: '#6B7280',  // Map to textSecondary
+    tertiary: '#9CA3AF',   // Map to textTertiary
+    onPrimary: '#FFFFFF',  // For text on primary colored backgrounds
   },
   cardBackground: '#FFFFFF', // Map to card
 };

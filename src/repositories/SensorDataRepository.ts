@@ -180,45 +180,52 @@ export class SensorDataRepository {
     const appTimestamp = Date.now();
     console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
 
-    // Calculate G-forces for impact detection
-    const SENSITIVITY_200G = 16384 / 200; // Example conversion factor - adjust based on actual sensor
-    const gForceX = packet.accel200[0] / SENSITIVITY_200G;
-    const gForceY = packet.accel200[1] / SENSITIVITY_200G;
-    const gForceZ = packet.accel200[2] / SENSITIVITY_200G;
-    const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
+    try {
+      // Calculate G-forces for impact detection
+      const SENSITIVITY_200G = 16384 / 200; // Example conversion factor - adjust based on actual sensor
+      const gForceX = packet.accel200[0] / SENSITIVITY_200G;
+      const gForceY = packet.accel200[1] / SENSITIVITY_200G;
+      const gForceZ = packet.accel200[2] / SENSITIVITY_200G;
+      const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
 
-    // Insert the raw packet data
-    const result = await this.db.runAsync(
-      `INSERT INTO motion_packets (
-        device_id, device_timestamp,
-        gyro_x, gyro_y, gyro_z,
-        accel16_x, accel16_y, accel16_z,
-        accel200_x, accel200_y, accel200_z,
-        mag_x, mag_y, mag_z,
-        bite_l, bite_r, app_timestamp
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        deviceId, packet.timestamp, // Device timestamp
-        packet.gyro[0], packet.gyro[1], packet.gyro[2],
-        packet.accel16[0], packet.accel16[1], packet.accel16[2],
-        packet.accel200[0], packet.accel200[1], packet.accel200[2],
-        packet.mag[0], packet.mag[1], packet.mag[2],
-        packet.bite_l, packet.bite_r, appTimestamp // App timestamp
-      ]
-    );
-
-    // Check for potential impact event
-    const thresholdG = 80; // 80G threshold for potential concussion
-    if (magnitude > thresholdG) {
-      await this.recordImpactEventInternal(
-        deviceId, undefined, packet.timestamp, 
-        magnitude, gForceX, gForceY, gForceZ,
-        appTimestamp
+      // Insert the raw packet data
+      const result = await this.db.runAsync(
+        `INSERT INTO motion_packets (
+          device_id, device_timestamp,
+          gyro_x, gyro_y, gyro_z,
+          accel16_x, accel16_y, accel16_z,
+          accel200_x, accel200_y, accel200_z,
+          mag_x, mag_y, mag_z,
+          bite_l, bite_r, app_timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          deviceId, packet.timestamp, // Device timestamp
+          packet.gyro[0], packet.gyro[1], packet.gyro[2],
+          packet.accel16[0], packet.accel16[1], packet.accel16[2],
+          packet.accel200[0], packet.accel200[1], packet.accel200[2],
+          packet.mag[0], packet.mag[1], packet.mag[2],
+          packet.bite_l, packet.bite_r, appTimestamp // App timestamp
+        ]
       );
-    }
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
-    return result.lastInsertRowId;
+      console.log(`[SensorDataRepo] Motion Packet recorded successfully. ID: ${result.lastInsertRowId}, Changes: ${result.changes}`);
+
+      // Check for potential impact event
+      const thresholdG = 80; // 80G threshold for potential concussion
+      if (magnitude > thresholdG) {
+        await this.recordImpactEventInternal(
+          deviceId, undefined, packet.timestamp, 
+          magnitude, gForceX, gForceY, gForceZ,
+          appTimestamp
+        );
+      }
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('[SensorDataRepo] FAILED to insert Motion Packet:', error);
+      throw error;
+    }
   }
 
   /**
@@ -301,45 +308,41 @@ export class SensorDataRepository {
     startTime: number,
     endTime: number
   ): Promise<any[]> {
-    const startSeconds = Math.floor(startTime / 1000);
-    const endSeconds = Math.floor(endTime / 1000);
+    // Use app_timestamp for date range queries for ALL packet types
+    const timestampField = 'app_timestamp';
+
+    // Define the timestamp field for impact_events. If it's named 'timestamp',
+    // ensure recordImpactEventInternal stores app_timestamp there.
+    const impactTimestampField = 'timestamp'; // Or 'app_timestamp' if you add that column
 
     let query: string;
-    let timestampField = 'app_timestamp'; // Default to app timestamp
 
-    if (sensorType === 'motion_packets' || sensorType === 'fsr_packets') {
-      timestampField = 'device_timestamp'; // Use device timestamp for these
-      query = `SELECT * FROM ${sensorType}
-               WHERE device_id = ? AND device_timestamp BETWEEN ? AND ?
-               ORDER BY device_timestamp ASC`;
-    } else if (sensorType === 'impact_events') {
-      timestampField = 'timestamp'; // Impact events use 'timestamp' field
-      query = `SELECT * FROM ${sensorType}
-               WHERE device_id = ? AND timestamp BETWEEN ? AND ?
-               ORDER BY timestamp ASC`;
-    } else { // hrm_packets, htm_packets use app_timestamp
-      if (sensorType === 'hrm_packets') {
-         query = `SELECT id, device_id, flags, heart_rate AS heartRate, app_timestamp FROM ${sensorType}
-                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
-                  ORDER BY app_timestamp ASC`;
-      } else { // For htm_packets or any others falling here
+    // Construct the query based on the sensor type
+    if (sensorType === 'impact_events') {
+         // Make sure the 'timestamp' column in impact_events reliably stores app_timestamp
+         // or add an 'app_timestamp' column to impact_events in a new migration.
+         // For now, assuming 'timestamp' holds app_timestamp for impacts.
          query = `SELECT * FROM ${sensorType}
-                  WHERE device_id = ? AND app_timestamp BETWEEN ? AND ?
-                  ORDER BY app_timestamp ASC`;
-      }
+                  WHERE device_id = ? AND ${impactTimestampField} BETWEEN ? AND ?
+                  ORDER BY ${impactTimestampField} ASC`;
+    } else {
+         query = `SELECT * FROM ${sensorType}
+                  WHERE device_id = ? AND ${timestampField} BETWEEN ? AND ?
+                  ORDER BY ${timestampField} ASC`;
     }
 
+    console.log(`[SensorDataRepo getSensorData] Querying ${sensorType} for device ${deviceId} between ${new Date(startTime).toISOString()} and ${new Date(endTime).toISOString()}`);
+    console.log(`[SensorDataRepo getSensorData] Query: ${query}`);
+    console.log(`[SensorDataRepo getSensorData] Params: [${deviceId}, ${startTime}, ${endTime}]`);
+
     try {
-      const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]); // Use original ms timestamps for query
-      console.log(`[SensorDataRepo] Fetched ${sensorType} results:`, results ? results.length : 0); // Log fetched count
-      // Optional: Log first few results to verify structure
-      if (results && results.length > 0 && sensorType === 'hrm_packets') {
-          console.log(`[SensorDataRepo] First few HRM results structure:`, JSON.stringify(results.slice(0, 3)));
-      }
-      return results ?? []; // Return empty array if results are null/undefined
+        // Execute the query using the new async API
+        const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]);
+        console.log(`[SensorDataRepo getSensorData] Fetched ${results?.length ?? 0} ${sensorType} results.`);
+        return results ?? []; // Return empty array if results are null/undefined
     } catch (error) {
-      console.error(`Error querying ${sensorType} data:`, error);
-      throw error;
+        console.error(`[SensorDataRepo getSensorData] Error querying ${sensorType} data:`, error);
+        throw error;
     }
   }
 
@@ -472,7 +475,7 @@ export class SensorDataRepository {
       [
         event.deviceId,
         event.athleteId ?? null,
-        event.timestamp,
+        event.createdAt, // Use createdAt (app timestamp) for the main timestamp column
         event.magnitude,
         event.x, event.y, event.z,
         event.durationMs ?? null,
@@ -480,7 +483,7 @@ export class SensorDataRepository {
         0, // processed = false
         event.severity ?? null,
         event.notes ?? null,
-        event.createdAt // Use createdAt from the event object
+        event.createdAt // Also store in created_at
       ]
     );
     // Emit concussion detected event

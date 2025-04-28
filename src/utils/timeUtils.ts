@@ -65,4 +65,82 @@ export function getLastNDaysRangeLocal(days: number): { startDate: Date, endDate
 
   console.log(`[timeUtils] Last ${days} Days Range (Local): ${startDate.toISOString()} to ${endDate.toISOString()}`);
   return { startDate, endDate };
+}
+
+/**
+ * Format a timestamp for chart display, showing time only
+ * @param timestamp - Timestamp in milliseconds
+ * @returns Formatted time string (HH:MM:SS)
+ */
+export function formatChartTimestamp(timestamp: number): string {
+  // Guard against invalid timestamps
+  if (!timestamp || isNaN(timestamp)) {
+    return '';
+  }
+  
+  const date = new Date(timestamp);
+  
+  // Check if date is valid (catches the 1970 issue)
+  if (date.getFullYear() <= 1970 && timestamp > 0) {
+    // If timestamp seems to be in seconds rather than milliseconds, convert
+    const dateFromSeconds = new Date(timestamp * 1000);
+    if (dateFromSeconds.getFullYear() > 1970) {
+      return dateFromSeconds.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    }
+  }
+  
+  // Standard formatting for valid dates
+  return date.toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+}
+
+/**
+ * Format a timestamp for user-friendly display, including contextual date info
+ * @param timestamp - Timestamp in milliseconds
+ * @returns Formatted date/time string
+ */
+export function formatUserFriendlyDateTime(timestamp: number): string {
+  // Guard against invalid timestamps
+  if (!timestamp || isNaN(timestamp)) {
+    return 'Invalid date';
+  }
+  
+  const date = new Date(timestamp);
+  
+  // Check if date is valid (catches the 1970 issue)
+  if (date.getFullYear() <= 1970 && timestamp > 0) {
+    // If timestamp seems to be in seconds rather than milliseconds, convert
+    const dateFromSeconds = new Date(timestamp * 1000);
+    if (dateFromSeconds.getFullYear() > 1970) {
+      return formatDateTimeRelative(dateFromSeconds);
+    }
+    return 'Invalid date';
+  }
+  
+  return formatDateTimeRelative(date);
+}
+
+/**
+ * Helper function to format date with relative terms (Today, Yesterday)
+ */
+function formatDateTimeRelative(date: Date): string {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) {
+    return `Today, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } else if (date.toDateString() === yesterday.toDateString()) {
+    return `Yesterday, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + 
+           ', ' + date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
 } 

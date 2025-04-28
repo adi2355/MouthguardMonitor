@@ -846,13 +846,13 @@ export class BluetoothService {
   /**
    * Parse and handle incoming BLE characteristic updates from the device
    */
-  private handleCharacteristicUpdate(
+  private handleCharacteristicUpdate = async (
     deviceId: string,
     serviceUuid: string,
     characteristicUuid: string,
     error: BleError | null,
     characteristic: Characteristic | null
-  ) {
+  ): Promise<void> => {
     if (error) {
         // Handle connection errors, log them, potentially update device status
         console.error(`[BluetoothService] Error monitoring ${characteristicUuid}:`, error.message);
@@ -919,7 +919,9 @@ export class BluetoothService {
 
         // --- IMU Data ---
         else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
-            if (buffer.length >= 32) { // Expected size based on motion_packet struct
+            const EXPECTED_IMU_LENGTH = 32; // Define expected length
+            if (buffer.length >= EXPECTED_IMU_LENGTH) {
+                // Parse only if length is sufficient
                 const motionPacket: MotionPacket = {
                     gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)],
                     accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)],
@@ -930,7 +932,8 @@ export class BluetoothService {
                     timestamp: buffer.readUInt32LE(28) // Device timestamp
                 };
                 console.log(`[BluetoothService] Parsed IMU: Gyro=${motionPacket.gyro[0]}, Acc16=${motionPacket.accel16[0]}, Acc200=${motionPacket.accel200[0]}, Mag=${motionPacket.mag[0]}, BiteL=${motionPacket.bite_l}, DevTS=${motionPacket.timestamp}`);
-                this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket); // Store raw packet
+                // Use await here to catch potential errors from the repository
+                await this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket);
                 // Emit specific live data points as needed (e.g., high-G accel)
                 const SENSITIVITY_200G = 16384 / 200; // Example, adjust as needed
                 const gForceX = motionPacket.accel200[0] / SENSITIVITY_200G;
@@ -938,9 +941,11 @@ export class BluetoothService {
                 const gForceZ = motionPacket.accel200[2] / SENSITIVITY_200G;
                 const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
-                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
             } else {
-                 console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes`);
+                // Log the warning and skip processing this packet
+                console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_IMU_LENGTH}). Skipping packet.`);
+                // DO NOT attempt to parse or save incomplete data
             }
         }
 

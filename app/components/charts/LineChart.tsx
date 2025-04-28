@@ -33,22 +33,58 @@ const LineChart: React.FC<LineChartProps> = ({
   bezier = true,
   style
 }) => {
-  // Check if we have any datasets
-  const hasDatasets = data.datasets && data.datasets.length > 0;
-  
-  // Check if we have any non-empty datasets
-  const hasNonEmptyDatasets = hasDatasets && data.datasets.some(dataset => 
-    dataset.data && dataset.data.length > 0 && dataset.data.some(val => val > 0)
-  );
-  
-  // If no data at all, display "No data available" message
-  if (!hasDatasets || !hasNonEmptyDatasets) {
+  // More robust checks for data and its structure
+  if (!data) {
     return (
       <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={styles.noDataText}>No data available</Text>
       </View>
     );
   }
+  
+  // Check if we have valid datasets
+  const hasValidDatasets = data.datasets && 
+                          Array.isArray(data.datasets) && 
+                          data.datasets.length > 0;
+  
+  if (!hasValidDatasets) {
+    return (
+      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No data available</Text>
+      </View>
+    );
+  }
+  
+  // Create safe datasets - ensure each dataset has a valid data array and color function
+  const safeDatasets = data.datasets.map((dataset, index) => {
+    if (!dataset) return { data: [], color: () => 'rgba(0, 230, 118, 1)', strokeWidth: 2 };
+    
+    return {
+      data: dataset.data && Array.isArray(dataset.data) ? dataset.data : [],
+      color: typeof dataset.color === 'function' ? dataset.color : () => 'rgba(0, 230, 118, 1)',
+      strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2,
+    };
+  });
+  
+  // Check if any dataset has valid data
+  const hasDataPoints = safeDatasets.some(ds => 
+    ds.data.length > 0 && ds.data.some(val => typeof val === 'number')
+  );
+  
+  if (!hasDataPoints) {
+    return (
+      <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No data available</Text>
+      </View>
+    );
+  }
+  
+  // Create a safe data object
+  const safeData = {
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: safeDatasets,
+    legend: data.legend
+  };
   
   // Generate default chart config if not provided
   const defaultChartConfig = chartConfig || {
@@ -85,7 +121,7 @@ const LineChart: React.FC<LineChartProps> = ({
   return (
     <View style={styles.container}>
       <RNLineChart
-        data={data}
+        data={safeData}
         width={width}
         height={height}
         chartConfig={defaultChartConfig}

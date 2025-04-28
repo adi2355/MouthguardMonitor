@@ -14,49 +14,107 @@ import { debounce } from 'lodash';
 import LineChart from '../components/charts/LineChart';
 import BarChart from '../components/charts/BarChart';
 
-// Safe wrapper for LineChart that ensures proper dataset format
-const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }) => {
-  // Determine if there is actual data to render
-  const hasActualData = data && 
-                       data.datasets && 
-                       data.datasets.some((ds) => ds.data && ds.data.length > 0 && 
-                                                 ds.data.some((val) => val !== null && val !== undefined));
+// Import new data processing utilities
+import { 
+  processHrmForChart, 
+  processTempForChart, 
+  processFsrForChart, 
+  processMotionForChart, 
+  processImpactsForCharts 
+} from '@/src/utils/dataProcessing';
 
-  // Don't render if no data structure at all
-  if (!data || !data.datasets) {
+// Import our new visualization components
+import HeartRateTrendChart from '../components/charts/HeartRateTrendChart';
+import ScrollableHeartRateChart from '../components/charts/ScrollableHeartRateChart';
+import TemperatureStabilityGraph from '../components/charts/TemperatureStabilityGraph';
+import BiteForceDynamicsChart from '../components/charts/BiteForceDynamicsChart';
+import MotionOverviewGraph from '../components/charts/MotionOverviewGraph';
+import ConcussionRiskGauge from '../components/charts/ConcussionRiskGauge';
+import ImpactTimelineGraph from '../components/charts/ImpactTimelineGraph';
+import SeverityDistributionGraph from '../components/charts/SeverityDistributionGraph';
+import CumulativeExposureGraph from '../components/charts/CumulativeExposureGraph';
+
+// Safe wrapper for LineChart that ensures proper dataset format
+const SafeLineChart = ({ 
+  data, 
+  emptyMessage = "No data available", 
+  ...props 
+}: {
+  data: any; 
+  emptyMessage?: string;
+  [key: string]: any;
+}) => {
+  // First check if data exists at all
+  if (!data) {
     return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
   }
 
-  // If datasets exist but are empty, show empty message
+  // Check if datasets array exists and is valid
+  if (!data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
+    return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
+  }
+
+  // Check if any dataset has actual data to display
+  const hasActualData = data.datasets.some((ds: any) => {
+    // Guard against undefined or null dataset
+    if (!ds) return false;
+    // Guard against missing data array
+    if (!ds.data || !Array.isArray(ds.data)) return false;
+    // Check if there's at least one valid data point
+    return ds.data.length > 0 && ds.data.some((val: any) => val !== null && val !== undefined);
+  });
+
+  // If no actual data was found, show empty message
   if (!hasActualData) {
     return <Text style={styles.emptyChartText}>{emptyMessage}</Text>;
   }
 
   // Create a safe data structure with properly formatted datasets
   const safeData = {
-    labels: data.labels || [],
-    datasets: data.datasets.map((dataset, index) => ({
-      data: dataset.data || [],
-      color: dataset.color || (() => 'rgba(0, 176, 118, 1)'),
-      strokeWidth: dataset.strokeWidth || 2,
-      index: index // Ensure index is set
-    })),
-    legend: data.legend || undefined
+    labels: Array.isArray(data.labels) ? data.labels : [],
+    datasets: data.datasets.map((dataset: any, index: number) => {
+      // Handle null/undefined dataset
+      if (!dataset) {
+        return {
+          data: [],
+          color: () => 'rgba(0, 176, 118, 1)',
+          strokeWidth: 2,
+          index
+        };
+      }
+      
+      return {
+        data: Array.isArray(dataset.data) ? dataset.data.map((val: any) => 
+          typeof val === 'number' && !isNaN(val) ? val : 0
+        ) : [],
+        color: typeof dataset.color === 'function' ? dataset.color : () => 'rgba(0, 176, 118, 1)',
+        strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2,
+        index
+      };
+    }),
+    legend: data.legend
   };
+
+  // Extract only the supported props to avoid type errors
+  const { width, height, bezier, style, chartConfig } = props;
 
   return (
     <LineChart 
       data={safeData}
-      withDots={false}
-      bezier={props.bezier !== undefined ? props.bezier : true}
-      chartConfig={{
+      width={width}
+      height={height}
+      bezier={bezier}
+      style={style}
+      chartConfig={chartConfig || {
         backgroundColor: 'transparent',
         backgroundGradientFrom: 'transparent',
         backgroundGradientTo: 'transparent',
-        fillShadowGradientFrom: safeData.datasets[0].color(0.8),
+        fillShadowGradientFrom: typeof safeData.datasets[0]?.color === 'function' ? 
+          safeData.datasets[0].color(0.8) : 'rgba(0, 176, 118, 0.8)',
         fillShadowGradientTo: 'rgba(255, 255, 255, 0)',
         decimalPlaces: 0,
-        color: (opacity = 1) => safeData.datasets[0].color(opacity),
+        color: (opacity = 1) => typeof safeData.datasets[0]?.color === 'function' ? 
+          safeData.datasets[0].color(opacity) : `rgba(0, 176, 118, ${opacity})`,
         labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
         propsForBackgroundLines: {
           strokeDasharray: '4, 4',
@@ -64,13 +122,20 @@ const SafeLineChart = ({ data, emptyMessage = "No data available", ...props }) =
           stroke: 'rgba(0, 0, 0, 0.05)',
         },
       }}
-      {...props} 
     />
   );
 };
 
 // Enhanced GlassCard component with improved styling
-const GlassCard = ({ style, children, intensity = 15 }) => {
+const GlassCard = ({ 
+  style, 
+  children, 
+  intensity = 15 
+}: {
+  style?: any;
+  children: React.ReactNode;
+  intensity?: number;
+}) => {
   // Use BlurView on iOS for true glass effect, fallback for Android
   if (Platform.OS === 'ios') {
     return (
@@ -95,36 +160,49 @@ const GlassCard = ({ style, children, intensity = 15 }) => {
 };
 
 export default function ReportsDetailedScreen() {
-  const sensorDataRepository = useSensorDataRepository(); // Get the repository
+  const sensorDataRepository = useSensorDataRepository();
 
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
-  // State for storing fetched data
-  const [impacts, setImpacts] = useState([]);
-  const [motionPackets, setMotionPackets] = useState([]);
-  const [fsrPackets, setFsrPackets] = useState([]);
-  const [hrmPackets, setHrmPackets] = useState([]);
-  const [htmPackets, setHtmPackets] = useState([]);
+  // State for raw data (only when needed for specialized visualization)
+  const [impacts, setImpacts] = useState<any[]>([]);
 
-  // State for aggregated stats
-  const [sessionStats, setSessionStats] = useState(null);
-  const [impactTimelineData, setImpactTimelineData] = useState(null);
-  const [severityDistData, setSeverityDistData] = useState(null);
-  const [chieData, setChieData] = useState(null);
-  const [directionData, setDirectionData] = useState(null);
-  const [biteForceData, setBiteForceData] = useState(null);
-  const [hrChartData, setHrChartData] = useState(null);
-  const [tempChartData, setTempChartData] = useState(null);
+  // State for processed chart data
+  const [hrmChartData, setHrmChartData] = useState<ChartData | null>(null);
+  const [tempChartData, setTempChartData] = useState<ChartData | null>(null);
+  const [biteForceChartData, setBiteForceChartData] = useState<ChartData | null>(null);
+  const [motionChartData, setMotionChartData] = useState<ChartData | null>(null);
+  const [impactTimelineData, setImpactTimelineData] = useState<ChartData | null>(null);
+  const [severityDistData, setSeverityDistData] = useState<{ labels: string[], data: number[] } | null>(null);
+  const [chieData, setChieData] = useState<ChartData | null>(null);
+  
+  // State for calculated session stats/KPIs
+  const [sessionStats, setSessionStats] = useState<{
+    avgHr?: number | null;
+    minHr?: number | null;
+    maxHr?: number | null;
+    avgTemp?: number | null;
+    maxTemp?: number | null;
+    currentTemp?: number | null;
+    avgBiteLeft?: number | null;
+    avgBiteRight?: number | null;
+    avgBiteTotal?: number | null;
+    maxBiteForce?: number | null;
+    peakAccel?: number | null;
+    totalImpacts?: number | null;
+    highImpacts?: number | null;
+    maxG?: number | null;
+    concussionRisk?: 'Low' | 'Moderate' | 'High' | 'Critical' | null;
+  } | null>(null);
 
   // Loading and error states
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Assume single device for now
   const deviceId = DEVICE_ID_SIM;
 
-  const getRiskStyle = (risk) => {
+  const getRiskStyle = (risk: any) => {
     switch (risk?.toLowerCase()) {
       case 'high': 
       case 'critical': return { color: COLORS.error };
@@ -158,404 +236,141 @@ export default function ReportsDetailedScreen() {
         sensorDataRepository.getSensorData(deviceId, 'htm_packets', startTime, endTime),
       ]);
 
-      // --- Store Raw Data (only when necessary for rendering) ---
-      // We only need impacts for the direction visualization which requires the raw data
+      // Keep raw impact data for direction visualization if needed
       setImpacts(fetchedImpacts);
       
-      // These are only used for processing and can be passed directly to processAndSetChartData
-      // without storing in state
-      // setMotionPackets(fetchedMotion);
-      // setFsrPackets(fetchedFsr);
-      // setHrmPackets(fetchedHrm);
-      // setHtmPackets(fetchedHtm);
-
       console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
+      console.log('[ReportsDetailed] == STARTING PROCESSING ==');
 
-      // --- Process Data for Charts and KPIs ---
-      processAndSetChartData(
-        fetchedImpacts,
-        fetchedFsr,
-        fetchedHrm,
-        fetchedHtm
-      );
+      // --- Process data using utility functions ---
+      console.log(`[ReportsDetailed] --> Processing HRM (${fetchedHrm.length} packets)...`);
+      const hrmResults = processHrmForChart(fetchedHrm);
+      console.log(`[ReportsDetailed] <-- Done Processing HRM. Results:`, JSON.stringify(hrmResults));
+      console.log('[ReportsDetailed] --> Setting HRM Chart Data...');
+      setHrmChartData(hrmResults.chartData);
+      console.log('[ReportsDetailed] <-- Done Setting HRM Chart Data.');
+      
+      console.log(`[ReportsDetailed] --> Processing Temp (${fetchedHtm.length} packets)...`);
+      const tempResults = processTempForChart(fetchedHtm);
+      console.log(`[ReportsDetailed] <-- Done Processing Temp. Results:`, JSON.stringify(tempResults));
+      console.log('[ReportsDetailed] --> Setting Temp Chart Data...');
+      setTempChartData(tempResults.chartData);
+      console.log('[ReportsDetailed] <-- Done Setting Temp Chart Data.');
+      
+      console.log(`[ReportsDetailed] --> Processing FSR (${fetchedFsr.length} packets)...`);
+      const fsrResults = processFsrForChart(fetchedFsr);
+      console.log(`[ReportsDetailed] <-- Done Processing FSR. Results:`, JSON.stringify(fsrResults));
+      console.log('[ReportsDetailed] --> Setting Bite Force Chart Data...');
+      setBiteForceChartData(fsrResults.chartData);
+      console.log('[ReportsDetailed] <-- Done Setting Bite Force Chart Data.');
+      
+      console.log(`[ReportsDetailed] --> Processing Motion (${fetchedMotion.length} packets)...`);
+      const motionResults = processMotionForChart(fetchedMotion);
+      console.log(`[ReportsDetailed] <-- Done Processing Motion. Results:`, JSON.stringify(motionResults));
+      console.log('[ReportsDetailed] --> Setting Motion Chart Data...');
+      setMotionChartData(motionResults.accelMagnitudeChart);
+      console.log('[ReportsDetailed] <-- Done Setting Motion Chart Data.');
+      
+      console.log(`[ReportsDetailed] --> Processing Impacts (${fetchedImpacts.length} packets)...`);
+      const impactResults = processImpactsForCharts(fetchedImpacts);
+      console.log(`[ReportsDetailed] <-- Done Processing Impacts. Results:`, JSON.stringify(impactResults));
+      console.log('[ReportsDetailed] --> Setting Impact Chart Data...');
+      setImpactTimelineData(impactResults.timelineChart);
+      console.log('[ReportsDetailed] --> Setting Severity Distribution Data...');
+      setSeverityDistData(impactResults.severityDistribution);
+      console.log('[ReportsDetailed] --> Setting CHIE Data...');
+      setChieData(impactResults.cumulativeExposureChart);
+      console.log('[ReportsDetailed] <-- Done Setting Impact Chart Data.');
+      
+      // Create a consolidated object with all stats, ensuring each property is defined
+      console.log('[ReportsDetailed] --> Consolidating final stats...');
+      // Log each property to find what might be undefined
+      console.log('[ReportsDetailed] Stats inputs:', {
+        avgHr: hrmResults.avgHr,
+        minHr: hrmResults.minHr,
+        maxHr: hrmResults.maxHr,
+        avgTemp: tempResults.avgTemp,
+        maxTemp: tempResults.maxTemp,
+        currentTemp: tempResults.currentTemp,
+        avgBiteLeft: fsrResults.avgLeft,
+        avgBiteRight: fsrResults.avgRight,
+        avgBiteTotal: fsrResults.avgTotal,
+        maxBiteForce: fsrResults.maxForce,
+        peakAccel: motionResults.peakAccel,
+        totalImpacts: impactResults.totalImpacts,
+        highImpacts: impactResults.highImpacts,
+        maxG: impactResults.maxG,
+        concussionRisk: impactResults.concussionRisk
+      });
+      
+      const finalStats = {
+        // Heart rate
+        avgHr: hrmResults.avgHr ?? null,
+        minHr: hrmResults.minHr ?? null,
+        maxHr: hrmResults.maxHr ?? null,
+        
+        // Temperature
+        avgTemp: tempResults.avgTemp ?? null,
+        maxTemp: tempResults.maxTemp ?? null,
+        currentTemp: tempResults.currentTemp ?? null,
+        
+        // Bite force
+        avgBiteLeft: fsrResults.avgLeft ?? null,
+        avgBiteRight: fsrResults.avgRight ?? null,
+        avgBiteTotal: fsrResults.avgTotal ?? null,
+        maxBiteForce: fsrResults.maxForce ?? null,
+        
+        // Motion
+        peakAccel: motionResults.peakAccel ?? null,
+        
+        // Impacts
+        totalImpacts: impactResults.totalImpacts ?? 0,
+        highImpacts: impactResults.highImpacts ?? 0,
+        maxG: impactResults.maxG ?? null,
+        concussionRisk: impactResults.concussionRisk ?? 'Low'
+      };
+      
+      console.log('[ReportsDetailed] <-- Done Consolidating stats. Value:', JSON.stringify(finalStats));
+      console.log('[ReportsDetailed] --> Setting Session Stats...');
+      setSessionStats(finalStats);
+      console.log('[ReportsDetailed] <-- Done Setting Session Stats.');
 
       // Animate cards in
+      console.log('[ReportsDetailed] --> Starting Animation...');
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
         useNativeDriver: true,
-      }).start();
+      }).start(() => {
+        console.log('[ReportsDetailed] <-- Animation Completed.');
+      });
+      console.log('[ReportsDetailed] == PROCESSING COMPLETE ==');
 
     } catch (err) {
       console.error('[ReportsDetailed] Error fetching data:', err);
+      // Add more detailed error logging
+      if (err instanceof Error) {
+        console.error('[ReportsDetailed] Error Name:', err.name);
+        console.error('[ReportsDetailed] Error Message:', err.message);
+        console.error('[ReportsDetailed] Error Stack:', err.stack);
+      }
       setError(err instanceof Error ? err.message : 'Failed to load report data');
+      
       // Clear existing data on error
       setImpacts([]);
-      setMotionPackets([]);
-      setFsrPackets([]);
-      setHrmPackets([]);
-      setHtmPackets([]);
-      setSessionStats(null);
+      setHrmChartData(null);
+      setTempChartData(null);
+      setBiteForceChartData(null);
+      setMotionChartData(null);
       setImpactTimelineData(null);
       setSeverityDistData(null);
       setChieData(null);
-      setDirectionData(null);
-      setBiteForceData(null);
-      setHrChartData(null);
-      setTempChartData(null);
+      setSessionStats(null);
     } finally {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [deviceId, sensorDataRepository]);
-
-  // --- Data Processing Function ---
-  const processAndSetChartData = (
-    impactData,
-    fsrData,
-    hrmData,
-    htmData
-  ) => {
-    console.log('[ReportsDetailed] Processing data...');
-    
-    if (!impactData || impactData.length === 0) {
-      console.log('[ReportsDetailed] No impact data.');
-      // Reset chart data if no impacts
-      setImpactTimelineData({
-        labels: [],
-        datasets: [{ 
-          data: [], 
-          color: () => 'rgba(0, 176, 118, 1)', 
-          strokeWidth: 2,
-          index: 0
-        }]
-      });
-      setSeverityDistData({
-        labels: [],
-        datasets: [{ 
-          data: [], 
-          color: () => 'rgba(0, 176, 118, 1)', 
-          strokeWidth: 2,
-          index: 0
-        }]
-      });
-      setChieData({
-        labels: [],
-        datasets: [{ 
-          data: [], 
-          color: () => 'rgba(0, 122, 255, 1)', 
-          strokeWidth: 2,
-          index: 0
-        }]
-      });
-      setDirectionData([]);
-      
-      // Process other data types if available
-      processBiteForceChart(fsrData);
-      processHrChart(hrmData);
-      processTempChart(htmData);
-      
-      // Calculate Avg HR
-      const validHrs = hrmData.map(p => {
-        const rawValue = p.heartRate;
-        const parsedValue = parseFloat(rawValue);
-        return !isNaN(parsedValue) ? parsedValue : null;
-      }).filter(hr => hr !== null);
-      
-      const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
-      const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
-
-      // Calculate Avg Temp
-      const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
-      const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
-
-      // Calculate Avg Bite Force
-      const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
-      const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
-      const allValidBites = [...validLeftBites, ...validRightBites];
-      const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
-
-      // Set basic session stats
-      const basicStats = {
-        totalImpacts: 0,
-        maxG: 0,
-        avgG: 0,
-        highImpacts: 0,
-        avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
-        maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
-        avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--', 
-        avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-        concussionRisk: 'Low',
-        duration: "N/A", 
-        caloriesBurned: "N/A", 
-        acceleration: "N/A", 
-        biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-      };
-      
-      setSessionStats(basicStats);
-      return;
-    }
-
-    // Impact data exists...
-    console.log('[ReportsDetailed] Processing WITH impact data.');
-    const magnitudes = impactData.map(i => i.magnitude);
-    const totalImpacts = impactData.length;
-    const maxG = magnitudes.length > 0 ? Math.max(...magnitudes) : 0;
-    const avgG = magnitudes.length > 0 ? magnitudes.reduce((a, b) => a + b, 0) / totalImpacts : 0;
-    const highImpacts = impactData.filter(i => i.magnitude >= 80).length;
-
-    // Calculate HR stats
-    const validHrs = hrmData.map(p => {
-      const rawValue = p.heartRate;
-      const parsedValue = parseFloat(rawValue);
-      return !isNaN(parsedValue) ? parsedValue : null;
-    }).filter(hr => hr !== null);
-    
-    const avgHrValue = validHrs.length > 0 ? (validHrs.reduce((a, b) => a + b, 0) / validHrs.length) : NaN;
-    const maxHrValue = validHrs.length > 0 ? Math.max(...validHrs) : NaN;
-
-    // Calculate Avg Temp
-    const validTemps = htmData.map(p => p.temperature).filter(t => typeof t === 'number' && !isNaN(t));
-    const avgTempValue = validTemps.length > 0 ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length) : NaN;
-
-    // Calculate Avg Bite Force
-    const validLeftBites = fsrData.map(p => p.left_bite).filter(b => typeof b === 'number' && !isNaN(b));
-    const validRightBites = fsrData.map(p => p.right_bite).filter(b => typeof b === 'number' && !isNaN(b));
-    const allValidBites = [...validLeftBites, ...validRightBites];
-    const avgBiteValue = allValidBites.length > 0 ? (allValidBites.reduce((a, b) => a + b, 0) / allValidBites.length) : NaN;
-
-    const calculatedStats = {
-      totalImpacts,
-      maxG: maxG.toFixed(1),
-      avgG: avgG.toFixed(1),
-      highImpacts,
-      avgHr: !isNaN(avgHrValue) ? avgHrValue.toFixed(0) : '--',
-      maxHr: !isNaN(maxHrValue) ? maxHrValue.toFixed(0) : '--',
-      avgTemp: !isNaN(avgTempValue) ? avgTempValue.toFixed(1) : '--',
-      avgBite: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-      concussionRisk: highImpacts > 0 || maxG > 100 ? 'High' : (maxG > 80 ? 'Moderate' : 'Low'),
-      duration: "N/A",
-      caloriesBurned: "N/A",
-      acceleration: "N/A",
-      biteForce: !isNaN(avgBiteValue) ? avgBiteValue.toFixed(0) : '--',
-    };
-    
-    setSessionStats(calculatedStats);
-
-    // 2. Process Impact Timeline Data
-    const sortedImpacts = [...impactData].sort((a, b) => a.timestamp - b.timestamp);
-    // Apply subsampling for better performance
-    const subsampledImpacts = subsampleData(sortedImpacts);
-    const timelineLabels = subsampledImpacts.map((_, i) => i.toString());
-    const timelineValues = subsampledImpacts.map(i => i.magnitude);
-    setImpactTimelineData({
-      labels: timelineLabels,
-      datasets: [{ 
-        data: timelineValues, 
-        color: () => 'rgba(0, 176, 118, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    });
-
-    // 3. Process Severity Distribution Data
-    const bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, Infinity];
-    const binCounts = Array(bins.length - 1).fill(0);
-    impactData.forEach(impact => {
-      for (let i = 0; i < bins.length - 1; i++) {
-        if (impact.magnitude >= bins[i] && impact.magnitude < bins[i+1]) {
-          binCounts[i]++;
-          break;
-        }
-      }
-    });
-    const severityLabels = bins.slice(0, -1).map((bin, i) => 
-      `${bin}-${bins[i+1] < Infinity ? bins[i+1]-1 : '+'}`
-    ); 
-    setSeverityDistData({
-      labels: severityLabels,
-      datasets: [{ 
-        data: binCounts, 
-        color: () => 'rgba(0, 176, 118, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    });
-
-    // 4. Process CHIE Data
-    let cumulativeG = 0;
-    const chieValues = sortedImpacts.map(impact => {
-      cumulativeG += impact.magnitude; // Simple sum for now
-      return cumulativeG;
-    });
-    
-    // Then subsample the results for display
-    const subsampledChieValues = subsampleData(chieValues);
-    const chieLabels = Array.from({ length: subsampledChieValues.length }, (_, i) => i.toString());
-    
-    setChieData({
-      labels: chieLabels,
-      datasets: [{ 
-        data: subsampledChieValues, 
-        color: () => 'rgba(0, 122, 255, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    });
-
-    // 5. Process Direction Data
-    const directions = impactData.map(impact => ({
-      x: impact.x,
-      y: impact.y,
-      magnitude: impact.magnitude
-    }));
-    setDirectionData(directions);
-
-    // 6. Process Bite Force Chart
-    processBiteForceChart(fsrData);
-    // 7. Process HR Chart
-    processHrChart(hrmData);
-    // 8. Process Temp Chart
-    processTempChart(htmData);
-
-    console.log('[ReportsDetailed] Data processing complete.');
-  };
-
-  // Helper function to subsample large datasets
-  const subsampleData = (data, maxPoints = 100) => {
-    if (!data || data.length <= maxPoints) return data;
-    
-    const step = Math.ceil(data.length / maxPoints);
-    const result = [];
-    
-    for (let i = 0; i < data.length; i += step) {
-      result.push(data[i]);
-    }
-    
-    return result;
-  };
-
-  // Helper for HR chart
-  const processHrChart = (hrmData) => {
-    const validHrmData = hrmData.map(p => {
-        const parsedValue = parseFloat(p.heartRate);
-        return { ...p, heartRate: !isNaN(parsedValue) ? parsedValue : null };
-    }).filter(p => p.heartRate !== null);
-
-    if (validHrmData.length === 0) {
-      setHrChartData({
-        labels: [],
-        datasets: [{
-          data: [],
-          color: () => 'rgba(255, 59, 48, 1)',
-          strokeWidth: 2
-        }]
-      });
-      return;
-    }
-    
-    // Sort and subsample for better performance
-    const sortedHrm = [...validHrmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
-    const subsampledHrm = subsampleData(sortedHrm);
-    
-    const hrLabels = subsampledHrm.map((_, i) => i.toString());
-    const hrValues = subsampledHrm.map(p => p.heartRate);
-    
-    const chartData = {
-      labels: hrLabels,
-      datasets: [{ 
-        data: hrValues, 
-        color: () => 'rgba(255, 59, 48, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    };
-    
-    setHrChartData(chartData);
-  };
-
-  // Helper for Temp chart
-  const processTempChart = (htmData) => {
-    const validHtmData = htmData.filter(p => typeof p.temperature === 'number' && !isNaN(p.temperature));
-
-    if (validHtmData.length === 0) {
-      setTempChartData({
-        labels: [],
-        datasets: [{
-          data: [],
-          color: () => 'rgba(255, 149, 0, 1)',
-          strokeWidth: 2
-        }]
-      });
-      return;
-    }
-    
-    // Sort and subsample for better performance
-    const sortedHtm = [...validHtmData].sort((a, b) => a.appTimestamp - b.appTimestamp);
-    const subsampledHtm = subsampleData(sortedHtm);
-    
-    const tempLabels = subsampledHtm.map((_, i) => i.toString());
-    const tempValues = subsampledHtm.map(p => p.temperature);
-    
-    const chartData = {
-      labels: tempLabels,
-      datasets: [{ 
-        data: tempValues, 
-        color: () => 'rgba(255, 149, 0, 1)', 
-        strokeWidth: 2,
-        index: 0
-      }]
-    };
-    
-    setTempChartData(chartData);
-  };
-
-  // Helper function for bite force chart data
-  const processBiteForceChart = (fsrData) => {
-    const validFsrData = fsrData.filter(p => 
-        (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
-        (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
-    );
-    
-    if (validFsrData.length === 0) {
-      setBiteForceData({
-        labels: [],
-        datasets: [
-          {
-            data: [],
-            color: () => 'rgba(0, 176, 118, 1)',
-            strokeWidth: 2
-          },
-          {
-            data: [],
-            color: () => 'rgba(0, 122, 255, 1)',
-            strokeWidth: 2
-          }
-        ],
-        legend: ['Left', 'Right']
-      });
-      return;
-    }
-    
-    // Sort and subsample for better performance
-    const sortedFsr = [...validFsrData].sort((a, b) => a.timestamp - b.timestamp);
-    const subsampledFsr = subsampleData(sortedFsr);
-    
-    const biteLabels = subsampledFsr.map((_, i) => i.toString());
-    const leftBiteValues = subsampledFsr.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
-    const rightBiteValues = subsampledFsr.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
-    
-    const chartData = {
-      labels: biteLabels,
-      datasets: [
-        { data: leftBiteValues, color: () => 'rgba(0, 176, 118, 1)', strokeWidth: 2, index: 0 },
-        { data: rightBiteValues, color: () => 'rgba(0, 122, 255, 1)', strokeWidth: 2, index: 1 }
-      ],
-      legend: ['Left', 'Right']
-    };
-    
-    setBiteForceData(chartData);
-  };
+  }, [deviceId, sensorDataRepository, fadeAnim]);
 
   // Fetch data on initial mount
   useEffect(() => {
@@ -581,7 +396,7 @@ export default function ReportsDetailedScreen() {
 
   // Subscribe to data changes (using the debounced fetch)
   useEffect(() => {
-    const handleDataChange = (eventData) => {
+    const handleDataChange = (eventData: { deviceId: string; type: string }) => {
       // Re-fetch data if the change affects the current device
       if (eventData.deviceId === deviceId) {
         console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), queueing debounced fetch...`);
@@ -596,7 +411,7 @@ export default function ReportsDetailedScreen() {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
       debouncedFetchData.cancel(); // Cancel any pending debounced calls
     };
-  }, [deviceId, debouncedFetchData]); // Add debouncedFetchData to dependencies
+  }, [deviceId, debouncedFetchData]);
 
   // Show loading indicator
   if (loading) {
@@ -625,8 +440,8 @@ export default function ReportsDetailedScreen() {
   // Show message if no data
   if (!sessionStats && 
       !impactTimelineData?.datasets?.[0]?.data?.length && 
-      !biteForceData?.datasets?.[0]?.data?.length && 
-      !hrChartData?.datasets?.[0]?.data?.length && 
+      !biteForceChartData?.datasets?.[0]?.data?.length && 
+      !hrmChartData?.datasets?.[0]?.data?.length && 
       !tempChartData?.datasets?.[0]?.data?.length) {
     return (
       <View style={styles.emptyContainer}>
@@ -692,12 +507,12 @@ export default function ReportsDetailedScreen() {
             </GlassCard>
           </Animated.View>
 
-          {/* Heart Rate Card - Refined */}
+          {/* Heart Rate Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
           })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
+            <GlassCard style={styles.heartRateCard}>
               <View style={styles.cardHeader}>
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
                   <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
@@ -705,28 +520,31 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Heart Rate</Text>
               </View>
               
-              <View style={styles.dataValueContainer}>
-                <Text style={styles.dataValue}>{sessionStats?.avgHr ?? '--'}</Text>
-                <Text style={styles.dataUnit}>bpm</Text>
-              </View>
-              
-              <Text style={styles.dataSubtext}>Avg: {sessionStats?.avgHr ?? '--'} bpm / Max: {sessionStats?.maxHr ?? '--'} bpm</Text>
-              
-              <View style={styles.chartContainer}>
-                {hrChartData && (
-                  <SafeLineChart
-                    data={hrChartData}
-                    emptyMessage="No heart rate data available"
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
+              <View style={styles.scrollableChartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : hrmChartData ? (
+                  <ScrollableHeartRateChart
+                    data={hrmChartData}
+                    currentValue={sessionStats?.avgHr ?? 0}
+                    timestamp={hrmChartData?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                    height={280}
+                    rangeData={{
+                      min: sessionStats?.minHr ?? 0,
+                      max: sessionStats?.maxHr ?? 0,
+                      timeRange: hrmChartData?.timeRangeLabel || "Today"
+                    }}
                   />
+                ) : (
+                  <Text style={styles.emptyChartText}>No heart rate data available</Text>
                 )}
               </View>
             </GlassCard>
           </Animated.View>
 
-          {/* Temperature Card - Refined */}
+          {/* Temperature Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -736,29 +554,29 @@ export default function ReportsDetailedScreen() {
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
                   <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
                 </View>
-                <Text style={styles.cardTitle}>Avg Temperature</Text>
-              </View>
-              
-              <View style={styles.dataValueContainer}>
-                <Text style={styles.dataValue}>{sessionStats?.avgTemp ?? '--'}</Text>
-                <Text style={styles.dataUnit}>°F</Text>
+                <Text style={styles.cardTitle}>Temperature</Text>
               </View>
               
               <View style={styles.chartContainer}>
-                {tempChartData && (
-                  <SafeLineChart
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : tempChartData ? (
+                  <TemperatureStabilityGraph
                     data={tempChartData}
-                    emptyMessage="No temperature data available"
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
+                    currentTemp={sessionStats?.currentTemp}
+                    avgTemp={sessionStats?.avgTemp}
+                    maxTemp={sessionStats?.maxTemp}
                   />
+                ) : (
+                  <Text style={styles.emptyChartText}>No temperature data available</Text>
                 )}
               </View>
             </GlassCard>
           </Animated.View>
 
-          {/* Bite Force Card - Refined */}
+          {/* Bite Force Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -768,36 +586,54 @@ export default function ReportsDetailedScreen() {
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
                   <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
                 </View>
-                <Text style={styles.cardTitle}>Bite Force (Left/Right)</Text>
+                <Text style={styles.cardTitle}>Bite Force</Text>
               </View>
-              
-              <View style={styles.dataValueContainer}>
-                <Text style={styles.dataValue}>{sessionStats?.avgBite ?? '--'}</Text>
-                <Text style={styles.dataUnit}>(Avg)</Text>
-              </View>
-              
-              {biteForceData && biteForceData.datasets[0].data.length > 0 && (
-                <View style={styles.legendContainer}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 176, 118, 1)'}]} />
-                    <Text style={styles.legendText}>Left</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, {backgroundColor: 'rgba(0, 122, 255, 1)'}]} />
-                    <Text style={styles.legendText}>Right</Text>
-                  </View>
-                </View>
-              )}
               
               <View style={styles.chartContainer}>
-                {biteForceData && (
-                  <SafeLineChart
-                    data={biteForceData}
-                    emptyMessage="No bite force data available"
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : biteForceChartData ? (
+                  <BiteForceDynamicsChart
+                    data={biteForceChartData}
+                    avgLeft={sessionStats?.avgBiteLeft}
+                    avgRight={sessionStats?.avgBiteRight}
+                    avgTotal={sessionStats?.avgBiteTotal}
+                    maxForce={sessionStats?.maxBiteForce}
                   />
+                ) : (
+                  <Text style={styles.emptyChartText}>No bite force data available</Text>
+                )}
+              </View>
+            </GlassCard>
+          </Animated.View>
+
+          {/* Motion Overview Card */}
+          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0]
+          })}], marginTop: 8}}>
+            <GlassCard style={styles.dataCard}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(80, 80, 80, 0.1)'}]}>
+                  <MaterialCommunityIcons name="axis-arrow" size={20} color="rgba(80, 80, 80, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Motion Overview</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : motionChartData ? (
+                  <MotionOverviewGraph
+                    data={motionChartData}
+                    peakAccel={sessionStats?.peakAccel}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No motion data available</Text>
                 )}
               </View>
             </GlassCard>
@@ -820,15 +656,11 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Concussion Risk</Text>
               </View>
               
-              <View style={styles.riskValueContainer}>
-                <Text style={[styles.riskValue, getRiskStyle(sessionStats?.concussionRisk)]}>
-                  {sessionStats?.concussionRisk ?? 'Low'}
-                </Text>
-              </View>
+              <ConcussionRiskGauge risk={sessionStats?.concussionRisk} />
             </GlassCard>
           </Animated.View>
 
-          {/* Impact Timeline Card - Refined */}
+          {/* Impact Timeline Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -842,12 +674,15 @@ export default function ReportsDetailedScreen() {
               </View>
               
               <View style={styles.chartContainer}>
-                {impactTimelineData && impactTimelineData.datasets[0].data.length > 0 ? (
-                  <SafeLineChart
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : impactTimelineData ? (
+                  <ImpactTimelineGraph
                     data={impactTimelineData}
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
+                    totalImpacts={sessionStats?.totalImpacts}
+                    maxG={sessionStats?.maxG}
                   />
                 ) : (
                   <Text style={styles.emptyChartText}>No impact data available</Text>
@@ -870,13 +705,12 @@ export default function ReportsDetailedScreen() {
               </View>
               
               <View style={styles.chartContainer}>
-                {severityDistData && severityDistData.datasets[0].data.length > 0 ? (
-                  <SafeLineChart
-                    data={severityDistData}
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier={false}
-                  />
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : severityDistData ? (
+                  <SeverityDistributionGraph data={severityDistData} />
                 ) : (
                   <Text style={styles.emptyChartText}>No impact data available</Text>
                 )}
@@ -884,7 +718,7 @@ export default function ReportsDetailedScreen() {
             </GlassCard>
           </Animated.View>
 
-          {/* CHIE Card - Refined */}
+          {/* CHIE Card */}
           <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
             inputRange: [0, 1],
             outputRange: [20, 0]
@@ -898,15 +732,14 @@ export default function ReportsDetailedScreen() {
               </View>
               
               <View style={styles.chartContainer}>
-                {chieData && chieData.datasets[0].data.length > 0 ? (
-                  <SafeLineChart
-                    data={chieData}
-                    width={Dimensions.get('window').width - 64}
-                    height={120}
-                    bezier
-                  />
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : chieData ? (
+                  <CumulativeExposureGraph data={chieData} />
                 ) : (
-                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                  <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
                 )}
               </View>
             </GlassCard>
@@ -983,6 +816,11 @@ const styles = StyleSheet.create({
   dataCard: {
     marginBottom: 8,
   },
+  heartRateCard: {
+    marginBottom: 8,
+    paddingHorizontal: 0,
+    paddingVertical: 16,
+  },
   riskCard: {
     minHeight: 120,
   },
@@ -990,6 +828,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
+    paddingHorizontal: 20,
   },
   iconContainer: {
     width: 36,
@@ -1063,6 +902,11 @@ const styles = StyleSheet.create({
   chartContainer: {
     alignItems: 'center',
     marginTop: 8,
+    width: '100%',
+  },
+  scrollableChartContainer: {
+    width: '100%',
+    paddingHorizontal: 0,
   },
   legendContainer: {
     flexDirection: 'row',
