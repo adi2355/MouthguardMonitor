@@ -67,14 +67,24 @@ export default function Devices() {
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [connectionInProgress, setConnectionInProgress] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [athleteListVisible, setAthleteListVisible] = useState(false);
   const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [serviceReady, setServiceReady] = useState(false);
+  
+  // Check if bluetoothService is available
+  useEffect(() => {
+    setServiceReady(!!bluetoothService);
+  }, [bluetoothService]);
   
   // Load devices and status
   const loadDevices = useCallback(async () => {
+    if (!bluetoothService) {
+      console.log('BluetoothService not available, skipping device load');
+      setLoading(false);
+      return;
+    }
+    
     try {
       setLoading(true);
       // Get device statuses from BluetoothService
@@ -106,6 +116,8 @@ export default function Devices() {
   
   // Subscribe to device status updates
   useEffect(() => {
+    if (!bluetoothService) return;
+    
     const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates((status: DeviceStatus) => {
       // Use a function to update based on previous state
       setSavedDevices(prevStatuses => {
@@ -136,25 +148,27 @@ export default function Devices() {
   
   // Connect to a device
   const connectToDevice = async (deviceId: string, deviceName: string) => {
+    if (!bluetoothService) {
+      Alert.alert('Error', 'Bluetooth service not available');
+      return;
+    }
+    
     try {
-      setConnectionInProgress(true);
-      setConnectionError(null);
-      
       await bluetoothService.connectToDevice(deviceId);
-      
-      // Success will be reflected via the subscription to device status updates
-      Alert.alert('Success', `Connected to ${deviceName || deviceId}`);
+      // Success state is handled by the status subscription
     } catch (error) {
-      console.error('Error connecting to device:', error);
-      setConnectionError('Failed to connect to device. Please try again.');
-      Alert.alert('Connection Error', 'Failed to connect to device. Please try again.');
-    } finally {
-      setConnectionInProgress(false);
+      // Error state is handled by the status subscription
+      console.log(`[DevicesScreen] Attempted connection for ${deviceId}, status updates will reflect outcome.`);
     }
   };
   
   // Disconnect from a device
   const disconnectDevice = async (deviceId: string) => {
+    if (!bluetoothService) {
+      Alert.alert('Error', 'Bluetooth service not available');
+      return;
+    }
+    
     try {
       await bluetoothService.disconnectFromDevice(deviceId);
       
@@ -167,6 +181,11 @@ export default function Devices() {
   
   // Scan for devices
   const scanDevices = async () => {
+    if (!bluetoothService) {
+      Alert.alert('Error', 'Bluetooth service not available');
+      return;
+    }
+    
     try {
       setScanning(true);
       setScannedDevices([]);
@@ -219,8 +238,10 @@ export default function Devices() {
   
   // Renders saved device
   const renderDevice = ({ item }: { item: DeviceStatus }) => {
-    const isConnected = item.connected;
-    
+    const isConnected = item.connectionState === 'connected';
+    const isConnecting = item.connectionState === 'connecting';
+    const hasFailed = item.connectionState === 'failed';
+
     return (
       <TouchableOpacity 
         style={styles.deviceItem}
@@ -240,8 +261,17 @@ export default function Devices() {
         </LinearGradient>
         <View style={styles.deviceInfo}>
           <Text style={styles.deviceName}>{item.name}</Text>
-          <Text style={[styles.deviceStatus, isConnected ? styles.connectedText : styles.disconnectedText]}>
-            {isConnected ? "Connected" : "Not Connected"}
+          <Text style={[
+            styles.deviceStatus, 
+            isConnected ? styles.connectedText : 
+            isConnecting ? styles.connectingText : 
+            hasFailed ? styles.errorText :
+            styles.disconnectedText
+          ]}>
+            {isConnecting ? "Connecting..." : 
+             isConnected ? "Connected" :
+             hasFailed ? "Failed" : 
+             "Not Connected"}
           </Text>
           {item.batteryLevel !== undefined && (
             <View style={styles.batteryContainer}>
@@ -250,46 +280,47 @@ export default function Devices() {
                 size={14} 
                 color={getBatteryColor(item.batteryLevel)} 
               />
-              <Text style={[styles.batteryText, {color: getBatteryColor(item.batteryLevel)}]}>
-                {item.batteryLevel}%
-              </Text>
+              <Text style={styles.batteryText}>{item.batteryLevel}%</Text>
             </View>
           )}
+          
           {item.athleteInfo && (
-            <Text style={styles.athleteText}>Assigned to: {item.athleteInfo.name}</Text>
+            <View style={styles.athleteInfo}>
+              <MaterialCommunityIcons name="account" size={12} color={THEME.text.tertiary} />
+              <Text style={styles.athleteText}>{item.athleteInfo.name}</Text>
+            </View>
+          )}
+          
+          {hasFailed && item.connectionError && (
+            <Text style={styles.errorTextSmall}>{item.connectionError}</Text>
           )}
         </View>
         <View style={styles.deviceActions}>
-          {connectionInProgress && selectedDeviceId === item.id ? (
+          {isConnecting ? (
             <View style={styles.loadingButton}>
               <ActivityIndicator size="small" color={THEME.primary} />
             </View>
           ) : isConnected ? (
             <TouchableOpacity 
-              onPress={() => disconnectDevice(item.id)}
+              onPress={() => disconnectDevice(item.id)} 
               style={styles.actionButton}
-              disabled={connectionInProgress}
-              activeOpacity={0.7}
-            >
+              activeOpacity={0.7}>
               <MaterialCommunityIcons name="bluetooth-off" size={20} color={THEME.error} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity 
-              onPress={() => connectToDevice(item.id, item.name)}
+              onPress={() => connectToDevice(item.id, item.name)} 
               style={styles.actionButton}
-              disabled={connectionInProgress}
-              activeOpacity={0.7}
-            >
+              activeOpacity={0.7}>
               <MaterialCommunityIcons name="bluetooth-connect" size={20} color={THEME.primary} />
             </TouchableOpacity>
           )}
           
           <TouchableOpacity 
-            onPress={() => openAssignDeviceModal(item.id)}
+            onPress={() => openAssignDeviceModal(item.id)} 
             style={styles.actionButton}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="account-plus" size={20} color={THEME.text.primary} />
+            activeOpacity={0.7}>
+            <MaterialCommunityIcons name="account-plus" size={20} color={THEME.text.secondary} />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -336,7 +367,6 @@ export default function Devices() {
             <TouchableOpacity 
               onPress={() => connectToDevice(item.id, item.name)}
               style={styles.actionButton}
-              disabled={connectionInProgress}
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons name="bluetooth-connect" size={20} color={THEME.primary} />
@@ -467,19 +497,7 @@ export default function Devices() {
   );
 
   // Scan for devices button (bottom)
-  const scanDevicesButton = connectionInProgress ? (
-    <View style={styles.scanButtonContainer}>
-      <TouchableOpacity
-        style={[styles.scanButton, styles.scanningButton]}
-        disabled={true}
-      >
-        <View style={styles.scanButtonInner}>
-          <ActivityIndicator color="#fff" size="small" style={styles.scanningIcon} />
-          <Text style={styles.scanButtonText}>Connecting...</Text>
-        </View>
-      </TouchableOpacity>
-    </View>
-  ) : (
+  const scanDevicesButton = (
     <View style={styles.scanButtonContainer}>
       <TouchableOpacity
         style={styles.scanButton}
@@ -654,13 +672,6 @@ export default function Devices() {
             </View>
           </GlassCard>
         </View>
-
-        {connectionError && (
-          <View style={styles.errorContainer}>
-            <MaterialCommunityIcons name="alert-circle" size={20} color={THEME.error} />
-            <Text style={styles.errorText}>{connectionError}</Text>
-          </View>
-        )}
         
         {/* Bottom tab spacer */}
         <View style={{ height: 24 }} />
@@ -805,7 +816,10 @@ const styles = StyleSheet.create({
   },
   connectedText: {
     color: THEME.success,
-    fontWeight: '500',
+  },
+  connectingText: {
+    color: THEME.warning,
+    fontStyle: 'italic',
   },
   disconnectedText: {
     color: THEME.text.tertiary,
@@ -828,14 +842,13 @@ const styles = StyleSheet.create({
   },
   batteryText: {
     fontSize: 12,
+    color: THEME.text.tertiary,
     marginLeft: 4,
-    fontWeight: '500',
   },
   athleteText: {
     fontSize: 12,
-    color: THEME.primary,
-    fontWeight: '500',
-    letterSpacing: 0.2,
+    color: THEME.text.tertiary,
+    marginLeft: 4,
   },
   deviceActions: {
     flexDirection: 'row',
@@ -958,6 +971,11 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
+  errorTextSmall: {
+    color: THEME.error,
+    fontSize: 12, 
+    marginTop: 4,
+  },
   athleteItem: {
     flexDirection: 'row',
     paddingVertical: 14,
@@ -966,7 +984,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   athleteInfo: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
   },
   athleteName: {
     fontSize: 16,

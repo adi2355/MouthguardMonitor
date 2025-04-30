@@ -5,6 +5,7 @@ import * as v1 from './v1';
 // Import future migration versions here
 import * as v2 from './v2';
 import * as v3 from './v3';
+import * as v4 from './v4';
 
 /**
  * Migration module interface
@@ -23,4 +24,5 @@ export const migrations: Record<number, MigrationModule> = {
   // Add future migrations here as they are created
   2: v2,
   3: v3,
+  4: v4,
 }; 

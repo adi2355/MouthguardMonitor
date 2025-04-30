@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useMemo } from 'react';
 import { View, Text, ActivityIndicator, AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DatabaseManager, databaseManager } from '../DatabaseManager';
@@ -8,17 +8,20 @@ import { BluetoothService } from '../services/BluetoothService';
 import { AppSetupService } from '../services/AppSetupService';
 import { AthleteRepository } from '../repositories/AthleteRepository';
 import { SensorDataRepository } from '../repositories/SensorDataRepository';
+import { SessionRepository } from '../repositories/SessionRepository';
 import { BluetoothHandler } from '../contexts/BluetoothContext';
+import { SessionProvider, useSession } from '../contexts/SessionContext';
 
 // Define the AppContext type
 interface AppContextType {
   databaseManager: DatabaseManager;
   storageService: StorageService;
   deviceService: DeviceService;
-  bluetoothService: BluetoothService;
+  bluetoothServiceRef: React.MutableRefObject<BluetoothService | null>;
   appSetupService: AppSetupService;
   athleteRepository: AthleteRepository;
   sensorDataRepository: SensorDataRepository;
+  sessionRepository: SessionRepository;
   initialized: boolean;
 }
 
@@ -37,9 +40,12 @@ interface AppProviderProps {
  */
 export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHandler }) => {
   const [initialized, setInitialized] = useState(false);
-  const [services, setServices] = useState<AppContextType | null>(null);
+  const [services, setServices] = useState<Omit<AppContextType, 'bluetoothServiceRef'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBackgroundLaunch, setIsBackgroundLaunch] = useState<boolean>(false);
+  
+  // Add ref for BluetoothService
+  const bluetoothServiceRef = useRef<BluetoothService | null>(null);
 
   useEffect(() => {
     // Check if app is starting in background (iOS only)
@@ -101,19 +107,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         console.log('[AppProvider] Initializing repositories...');
         const athleteRepository = new AthleteRepository(db);
         const sensorDataRepository = new SensorDataRepository(db);
+        const sessionRepository = new SessionRepository(db);
         console.log('[AppProvider] Repositories initialized');
         
         // Initialize services that depend on repositories
         const deviceService = new DeviceService(storageService);
         
-        // Prioritize Bluetooth service creation for background mode
-        const bluetoothService = new BluetoothService(
-          deviceService,
-          sensorDataRepository,
-          athleteRepository,
-          bluetoothHandler
-        );
-
         // In background mode, we prioritize getting the Bluetooth service ready
         // and defer other non-critical initializations
         if (isBackgroundLaunch) {
@@ -130,10 +129,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
             databaseManager,
             storageService,
             deviceService,
-            bluetoothService,
             appSetupService: minimalAppSetupService,
             athleteRepository,
             sensorDataRepository,
+            sessionRepository,
             initialized: true
           });
           
@@ -145,7 +144,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
             if (nextAppState === 'active') {
               console.log('[AppProvider] App came to foreground, completing full initialization');
               // Complete remaining setup when app comes to foreground
-              completeSetup(storageService, databaseManager, bluetoothService);
+              completeSetup(storageService, databaseManager);
               // Remove listener once we've handled the transition
               subscription.remove();
             }
@@ -162,16 +161,16 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
           await appSetupService.ensureInitialized();
           console.log('[AppProvider] AFTER appSetupService.ensureInitialized()');
           
-          // Set all services in state for context
+          // Set all services in state for context (WITHOUT BluetoothService)
           console.log('[AppProvider] Setting services and initialized state...');
           setServices({
             databaseManager,
             storageService,
             deviceService,
-            bluetoothService,
             appSetupService,
             athleteRepository,
             sensorDataRepository,
+            sessionRepository,
             initialized: true
           });
           
@@ -187,8 +186,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
     // Helper function to complete setup when app comes to foreground
     async function completeSetup(
       storageService: StorageService,
-      databaseManager: DatabaseManager,
-      bluetoothService: BluetoothService
+      databaseManager: DatabaseManager
     ) {
       try {
         const appSetupService = new AppSetupService(
@@ -199,68 +197,104 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         // Ensure app is properly initialized
         await appSetupService.ensureInitialized();
         
-        // Update services with the appSetupService
-        setServices(prevServices => {
-          if (!prevServices) return null;
-          return {
-            ...prevServices,
-            appSetupService
-          };
-        });
-        
-        console.log('[AppProvider] Deferred initialization completed successfully');
+        console.log('[AppProvider] ✅ Full app initialization completed');
       } catch (err: any) {
-        console.error('[AppProvider] Error during deferred initialization:', err);
+        console.error('[AppProvider] Error during full initialization:', err);
+        setError(err.message || 'Failed to complete initialization');
       }
     }
     
+    // Start the initialization process
     setupApp();
     
-    // Cleanup function
-    return () => {
-      // Close database connections when app is unmounted
-      if (services?.databaseManager) {
-        services.databaseManager.cleanup().catch(err => {
-          console.error('[AppProvider] Error cleaning up database connections:', err);
-        });
-      }
+  }, [isBackgroundLaunch]);
+
+  // Create the context value with memoization
+  const contextValue = useMemo(() => {
+    if (!services) return null;
+    return {
+      ...services,
+      bluetoothServiceRef,
     };
-  }, [bluetoothHandler]);
+  }, [services]);
 
-  // Loading state - don't show this in background mode
-  if ((!initialized || !services) && !isBackgroundLaunch) {
+  // Special component that creates the actual BluetoothService once SessionContext is available
+  const BluetoothServiceInitializer = () => {
+    const sessionContext = useSession();
+    // Use a ref to track if we've already created the service
+    const serviceCreatedRef = React.useRef(false);
+    
+    // Include sessionContext in dependency array to properly update when it changes
+    const getSessionContext = React.useCallback(() => sessionContext, [sessionContext]);
+    
+    useEffect(() => {
+      // Skip if services isn't available yet
+      if (!services) return;
+      
+      // Skip if we've already created the service to prevent infinite loops
+      if (serviceCreatedRef.current || bluetoothServiceRef.current) return;
+      
+      // Create the actual bluetoothService now that we have SessionContext
+      const bluetoothService = new BluetoothService(
+        services.deviceService,
+        services.sensorDataRepository,
+        services.athleteRepository,
+        getSessionContext,
+        bluetoothHandler
+      );
+      
+      // Store the service in the ref instead of in state
+      bluetoothServiceRef.current = bluetoothService;
+      
+      // Mark that we've created the service
+      serviceCreatedRef.current = true;
+      console.log('[AppProvider] BluetoothService created with SessionContext');
+      
+    }, [services, getSessionContext]); // No longer updating services in this effect
+    
+    return null;
+  };
+
+  if (error) {
+    // Display error state
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#00e676" />
-        <Text style={{ marginTop: 20, color: '#fff' }}>Initializing app...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Text style={{ fontSize: 18, marginBottom: 20, textAlign: 'center' }}>
+          Error initializing app
+        </Text>
+        <Text style={{ color: 'red', marginBottom: 20, textAlign: 'center' }}>
+          {error}
+        </Text>
+        <Text style={{ fontSize: 14, textAlign: 'center' }}>
+          Please restart the app or contact support if the problem persists.
+        </Text>
       </View>
     );
   }
 
-  // Error state - don't show this in background mode
-  if (error && !isBackgroundLaunch) {
+  if (!initialized || !contextValue) {
+    // Display loading state
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: '#ff4444', fontSize: 16, marginBottom: 10 }}>
-          Error: {error}
-        </Text>
-        <Text style={{ color: '#fff', textAlign: 'center', marginHorizontal: 20 }}>
-          Please restart the app or contact support.
-        </Text>
+        <ActivityIndicator size="large" color="#0000ff" />
+        <Text style={{ marginTop: 20 }}>Initializing app dependencies...</Text>
       </View>
     );
   }
 
+  // Provide the context value to children
   return (
-    <AppContext.Provider value={services!}>
-      {children}
+    <AppContext.Provider value={contextValue}>
+      <SessionProvider>
+        <BluetoothServiceInitializer />
+        {children}
+      </SessionProvider>
     </AppContext.Provider>
   );
 };
 
 /**
- * Custom hook to access the app context
- * @throws Error if used outside of AppProvider
+ * Custom hook to use the AppContext
  */
 export function useAppContext(): AppContextType {
   const context = useContext(AppContext);
@@ -271,7 +305,7 @@ export function useAppContext(): AppContextType {
 }
 
 /**
- * Custom hook to access the storage service
+ * Custom hook to use the StorageService
  */
 export function useStorageService(): StorageService {
   const { storageService } = useAppContext();
@@ -279,7 +313,7 @@ export function useStorageService(): StorageService {
 }
 
 /**
- * Custom hook to access the device service
+ * Custom hook to use the DeviceService
  */
 export function useDeviceService(): DeviceService {
   const { deviceService } = useAppContext();
@@ -287,15 +321,15 @@ export function useDeviceService(): DeviceService {
 }
 
 /**
- * Custom hook to access the bluetooth service
+ * Custom hook to use the BluetoothService
  */
-export function useBluetoothService(): BluetoothService {
-  const { bluetoothService } = useAppContext();
-  return bluetoothService;
+export function useBluetoothService(): BluetoothService | null {
+  const { bluetoothServiceRef } = useAppContext();
+  return bluetoothServiceRef.current;
 }
 
 /**
- * Custom hook to access the app setup service
+ * Custom hook to use the AppSetupService
  */
 export function useAppSetupService(): AppSetupService {
   const { appSetupService } = useAppContext();
@@ -303,7 +337,7 @@ export function useAppSetupService(): AppSetupService {
 }
 
 /**
- * Custom hook to access the athlete repository
+ * Custom hook to use the AthleteRepository
  */
 export function useAthleteRepository(): AthleteRepository {
   const { athleteRepository } = useAppContext();
@@ -311,9 +345,17 @@ export function useAthleteRepository(): AthleteRepository {
 }
 
 /**
- * Custom hook to access the sensor data repository
+ * Custom hook to use the SensorDataRepository
  */
 export function useSensorDataRepository(): SensorDataRepository {
   const { sensorDataRepository } = useAppContext();
   return sensorDataRepository;
+}
+
+/**
+ * Custom hook to use the SessionRepository
+ */
+export function useSessionRepository(): SessionRepository {
+  const { sessionRepository } = useAppContext();
+  return sessionRepository;
 } 

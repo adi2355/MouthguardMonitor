@@ -9,7 +9,7 @@ import { Platform } from 'react-native';
 
 // Export constants for use by other modules
 export const DB_VERSION_KEY = "dbVersion";
-export const CURRENT_DB_VERSION = 3;
+export const CURRENT_DB_VERSION = 4;
 export const MOUTHGUARD_DB_NAME = "mouthguardMonitor.db";
 
 /**

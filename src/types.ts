@@ -29,6 +29,7 @@ export interface ImuData {
     y: number;
     z: number;
     createdAt: number;
+    session_id?: string;
 }
 
 export interface AccelerometerData {
@@ -41,6 +42,7 @@ export interface AccelerometerData {
     z: number;
     magnitude: number;
     createdAt: number;
+    session_id?: string;
 }
 
 export interface TemperatureData {
@@ -50,6 +52,7 @@ export interface TemperatureData {
     timestamp: number;
     temperature: number;
     createdAt: number;
+    session_id?: string;
 }
 
 export interface ForceData {
@@ -59,6 +62,7 @@ export interface ForceData {
     timestamp: number;
     force: number;
     createdAt: number;
+    session_id?: string;
 }
 
 export interface HeartRateData {
@@ -67,6 +71,7 @@ export interface HeartRateData {
     timestamp: number;
     heartRate: number;
     createdAt: number;
+    session_id?: string;
 }
 
 export interface ImpactEvent {
@@ -84,6 +89,7 @@ export interface ImpactEvent {
     severity?: 'low' | 'moderate' | 'severe' | 'critical';
     notes?: string;
     createdAt: number;
+    session_id?: string;
 }
 
 // --- Device Packet Structures ---
@@ -98,6 +104,7 @@ export interface MotionPacket {
   bite_l: number;                       // uint16_t
   bite_r: number;                       // uint16_t
   timestamp: number;                    // uint32_t (Device timestamp, likely seconds or custom epoch)
+  session_id?: string;
 }
 
 // Matches C struct fsr_packet
@@ -105,6 +112,7 @@ export interface FSRPacket {
   left_bite: number;                    // int16_t
   right_bite: number;                   // int16_t
   timestamp: number;                    // uint32_t (Device timestamp)
+  session_id?: string;
 }
 
 // Represents the Heart Rate Measurement characteristic data
@@ -114,6 +122,7 @@ export interface HRMPacket {
   // Optional fields based on flags (energy expended, rr-interval) not included for simplicity
   deviceTimestamp?: number;             // Optional: Add if you plan to parse/estimate device time
   appTimestamp: number;                 // Timestamp when received by the app
+  session_id?: string;
 }
 
 // Represents the Health Thermometer Measurement characteristic data
@@ -123,6 +132,7 @@ export interface HTMPacket {
   timestamp?: number;                   // Optional: Device timestamp if included based on flags
   type?: number;                        // Optional: Location type if included
   appTimestamp: number;                 // Timestamp when received by the app
+  session_id?: string;
 }
 
 export interface Session {
@@ -206,6 +216,8 @@ export interface DeviceStatus {
         id: string;
         name: string;
     }
+    connectionState?: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'failed';
+    connectionError?: string | null;
 }
 
 // Concussion alert/detection

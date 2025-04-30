@@ -9,6 +9,9 @@ import { useSensorDataRepository, useDeviceService, useBluetoothService } from '
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
 import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData, SavedDevice } from '@/src/types';
 import { debounce } from 'lodash';
+import { useLocalSearchParams } from 'expo-router';
+import { useSession } from '@/src/contexts/SessionContext';
+import { useSessionRepository } from '@/src/providers/AppProvider';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
@@ -205,11 +208,12 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 
 export default function ReportsDetailedScreen() {
   const sensorDataRepository = useSensorDataRepository();
-
-  // Animation values
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  // Add refreshKey state to force re-renders
-  const [refreshKey, setRefreshKey] = useState(0);
+  const sessionRepository = useSessionRepository();
+  const { activeSession } = useSession();
+  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  
+  // State for current session being viewed
+  const [currentSession, setCurrentSession] = useState<any>(null);
 
   // State for raw data (only when needed for specialized visualization)
   const [impacts, setImpacts] = useState<any[]>([]);
@@ -252,6 +256,33 @@ export default function ReportsDetailedScreen() {
   // Get device and bluetooth services to access device information
   const deviceService = useDeviceService();
   const bluetoothService = useBluetoothService();
+
+  // Effect to load session data when a session ID is provided
+  useEffect(() => {
+    const loadSession = async () => {
+      if (sessionId) {
+        try {
+          const session = await sessionRepository.getSessionById(sessionId);
+          if (session) {
+            setCurrentSession(session);
+            console.log(`[ReportsDetailed] Loaded session: ${session.id} - ${session.name}`);
+          } else {
+            console.error(`[ReportsDetailed] Session not found: ${sessionId}`);
+            setError(`Session with ID ${sessionId} not found`);
+          }
+        } catch (err) {
+          console.error('[ReportsDetailed] Error loading session:', err);
+          setError('Failed to load session data');
+        }
+      } else if (activeSession) {
+        // If no specific session ID provided, use active session if available
+        setCurrentSession(activeSession);
+        console.log(`[ReportsDetailed] Using active session: ${activeSession.id} - ${activeSession.name}`);
+      }
+    };
+
+    loadSession();
+  }, [sessionId, activeSession, sessionRepository]);
   
   // Effect to find and set the target device ID
   useEffect(() => {
@@ -259,11 +290,18 @@ export default function ReportsDetailedScreen() {
       let foundId: string | null = null;
       try {
         // 1. Check actively connected devices first (highest priority)
-        const connectedIds = bluetoothService.getConnectedDeviceIds();
-        if (connectedIds.length > 0) {
-          foundId = connectedIds[0]; // Use the first connected device
-          console.log(`[ReportsDetailed] Using actively connected device: ${foundId}`);
+        if (bluetoothService) {
+          const connectedIds = bluetoothService.getConnectedDeviceIds();
+          if (connectedIds.length > 0) {
+            foundId = connectedIds[0]; // Use the first connected device
+            console.log(`[ReportsDetailed] Using actively connected device: ${foundId}`);
+          }
         } else {
+          console.log('[ReportsDetailed] BluetoothService not available yet');
+        }
+
+        // If no connected devices found or bluetoothService isn't available
+        if (!foundId) {
           // 2. If none connected, check saved devices
           const savedDevices = await deviceService.getSavedDevices();
           console.log(`[ReportsDetailed] Found ${savedDevices.length} saved devices`);
@@ -322,11 +360,27 @@ export default function ReportsDetailedScreen() {
     setError(null);
 
     try {
-      // Define time range (e.g., last 24 hours, or all data for sim device)
-      const endTime = Date.now();
-      const startTime = 0; // Fetch all data for simplicity initially
+      // Define query options
+      const options: {
+        startTime?: number;
+        endTime?: number;
+        sessionId?: string;
+      } = {};
 
-      // Fetch all relevant data types
+      // If we have a current session, use its ID for filtering
+      if (currentSession) {
+        options.sessionId = currentSession.id;
+        console.log(`[ReportsDetailed] Fetching data for session: ${currentSession.id}`);
+      } else {
+        // Otherwise use a time range (last 24 hours)
+        const endTime = Date.now();
+        const startTime = endTime - (24 * 60 * 60 * 1000); // 24 hours
+        options.startTime = startTime;
+        options.endTime = endTime;
+        console.log(`[ReportsDetailed] No session specified, fetching data for last 24 hours`);
+      }
+
+      // Fetch all relevant data types with session filtering
       const [
         fetchedImpacts,
         fetchedMotion,
@@ -334,11 +388,11 @@ export default function ReportsDetailedScreen() {
         fetchedHrm,
         fetchedHtm
       ] = await Promise.all([
-        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', options),
       ]);
 
       // Keep raw impact data for direction visualization if needed
@@ -440,14 +494,6 @@ export default function ReportsDetailedScreen() {
       setSessionStats(finalStats);
       console.log('[ReportsDetailed] <-- Done Setting Session Stats.');
 
-      // Animate cards in
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        console.log('[ReportsDetailed] <-- Animation Completed.');
-      });
       console.log('[ReportsDetailed] == PROCESSING COMPLETE ==');
 
     } catch (err) {
@@ -474,15 +520,38 @@ export default function ReportsDetailedScreen() {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [targetDeviceId, sensorDataRepository, fadeAnim]);
+  }, [targetDeviceId, sensorDataRepository, currentSession]);
 
   // Fetch data whenever targetDeviceId changes from null to a valid value
+  // or when currentSession changes
   useEffect(() => {
     if (targetDeviceId !== null) {
-      console.log(`[ReportsDetailed] targetDeviceId set to ${targetDeviceId}, triggering initial data fetch`);
       fetchData();
     }
-  }, [targetDeviceId, fetchData]);
+  }, [targetDeviceId, fetchData, currentSession]);
+  
+  // Set up event listener for data changes
+  useEffect(() => {
+    if (!targetDeviceId) return;
+    
+    const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
+      // Only refetch for matching device and session
+      if (
+        eventData.deviceId === targetDeviceId && 
+        (!currentSession || !eventData.sessionId || eventData.sessionId === currentSession.id)
+      ) {
+        console.log(`[ReportsDetailed] Data changed event triggered for ${eventData.type} - refreshing charts...`);
+        fetchData();
+      }
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    // Cleanup subscription on unmount
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, [targetDeviceId, fetchData, currentSession]);
 
   // Create a ref to hold the latest fetchData function
   const fetchDataRef = useRef(fetchData);
@@ -500,36 +569,6 @@ export default function ReportsDetailedScreen() {
       fetchDataRef.current();
     }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
   ).current;
-
-  // Subscribe to data changes (using the debounced fetch)
-  useEffect(() => {
-    const handleDataChange = (eventData: { deviceId: string; type: string }) => {
-      // Skip if targetDeviceId is not set yet
-      if (targetDeviceId === null) {
-        return;
-      }
-      
-      // Re-fetch data if the change affects the current device
-      if (eventData.deviceId === targetDeviceId) {
-        console.log(`[ReportsDetailed] Data changed for device ${targetDeviceId} (type: ${eventData.type}), queueing debounced fetch...`);
-        debouncedFetchData(); // Call the debounced function
-        
-        // Force a re-render shortly after data is likely fetched
-        setTimeout(() => {
-          console.log('[ReportsDetailed] Forcing component refresh after data change');
-          setRefreshKey(prev => prev + 1);
-        }, 1200); // Wait slightly longer than the debounce period (1000ms)
-      }
-    };
-
-    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
-    
-    // Cleanup subscription on unmount
-    return () => {
-      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
-      debouncedFetchData.cancel(); // Cancel any pending debounced calls
-    };
-  }, [targetDeviceId, debouncedFetchData]);
 
   // Add detailed chart data logging
   useEffect(() => {
@@ -609,7 +648,6 @@ export default function ReportsDetailedScreen() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
-          key={refreshKey} // Add key to force re-render when refreshKey changes
           style={styles.container}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -628,10 +666,7 @@ export default function ReportsDetailedScreen() {
           </View>
 
           {/* Session Info Card - Refined */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}]}}>
+          <View>
             <GlassCard style={styles.summaryCard}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Session Report</Text>
@@ -659,7 +694,7 @@ export default function ReportsDetailedScreen() {
                 </View>
               </View>
             </GlassCard>
-          </Animated.View>
+          </View>
 
           {/* Heart Rate Card - Modified for iOS compatibility */}
           <View style={[styles.chartCardContainer, {marginTop: 8}]}>

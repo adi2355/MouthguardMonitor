@@ -18,12 +18,13 @@ import {
   SAMPLE_SENSOR_READINGS,
   playerData,
 } from '@/src/constants';
-import { useBluetoothService, useDeviceService } from '@/src/providers/AppProvider';
+import { useBluetoothService, useDeviceService, useSessionRepository } from '@/src/providers/AppProvider';
 import { LiveDataPoint, SavedDevice, DeviceStatus } from '@/src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LineChart from '../../app/components/charts/LineChart';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSession } from '@/src/contexts/SessionContext';
 
 // Sample data remains the same
 const SAMPLE_DEVICES = [
@@ -84,14 +85,15 @@ export default function Dashboard() {
   const router = useRouter();
   const bluetoothService = useBluetoothService();
   const deviceService = useDeviceService();
+  const { activeSession, startNewSession, endCurrentSession, isSessionActive, sessionLoading, sessionInitError } = useSession();
+  const sessionRepository = useSessionRepository();
   
-  // Session State
-  const [isSessionActive, setIsSessionActive] = useState(false);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  // Session State - derived from SessionContext
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [isTogglingSession, setIsTogglingSession] = useState(false);
   
   // Loading & Refreshing State
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
   // Data State 
@@ -107,21 +109,31 @@ export default function Dashboard() {
   // Create a ref to track the latest connectedDevices state without triggering effect reruns
   const connectedDevicesRef = useRef<DeviceStatus[]>([]);
   
+  // Add a reference for device history to prevent state updates triggering more renders
+  const deviceHistoryRef = useRef<SavedDevice[]>([]);
+  
+  // Update the history ref when state changes
+  useEffect(() => {
+    deviceHistoryRef.current = deviceHistory;
+  }, [deviceHistory]);
+  
   // Update the ref whenever connectedDevices changes
   useEffect(() => {
     connectedDevicesRef.current = connectedDevices;
   }, [connectedDevices]);
   
-  // Timer interval for session timing remains the same
+  // Timer interval for session timing based on activeSession
   useEffect(() => {
-    let timerInterval = null;
+    let timerInterval: NodeJS.Timeout | null = null;
     
-    if (isSessionActive && sessionStartTime) {
+    if (isSessionActive && activeSession) {
       timerInterval = setInterval(() => {
-        const now = new Date();
-        const elapsed = now.getTime() - sessionStartTime.getTime();
+        const now = Date.now();
+        const elapsed = now - activeSession.startTime;
         setElapsedTime(elapsed);
       }, 1000);
+    } else {
+      setElapsedTime(0);
     }
     
     return () => {
@@ -129,67 +141,106 @@ export default function Dashboard() {
         clearInterval(timerInterval);
       }
     };
-  }, [isSessionActive, sessionStartTime]);
+  }, [isSessionActive, activeSession]);
   
-  // Load data function with real data
-  const loadData = useCallback(async () => {
-    console.log("[Dashboard] Loading data...");
-    setLoading(true);
-    try {
-      // Fetch device statuses from bluetooth service
-      const initialStatuses = bluetoothService.getDeviceStatuses();
-      setConnectedDevices(initialStatuses.filter(d => d.connected));
+  // Add a serviceReady state to track when BluetoothService is available
+  const [serviceReady, setServiceReady] = useState(false);
 
-      // Fetch saved device history
-      const saved = await deviceService.getSavedDevices();
-      // Sort by last connected time (most recent first) and take top 5
-      const sortedHistory = saved
-        .filter(d => d.lastConnected)
-        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
-        .slice(0, 5);
-      setDeviceHistory(sortedHistory);
-
-      // For now, keep sample impacts until we implement the repository
-      // const impacts = await sensorDataRepository.getRecentImpacts(5);
-      // setRecentImpacts(impacts);
-
-      console.log("[Dashboard] Initial data loaded");
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      Alert.alert('Error', 'Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [bluetoothService, deviceService]);
-
-  // Modify the useEffect for Bluetooth subscriptions to remove connectedDevices dependency
   useEffect(() => {
-    loadData(); // Initial load
+    // Check if the bluetoothService is available
+    if (bluetoothService) {
+      setServiceReady(true);
+    }
+  }, [bluetoothService]);
 
+  // Use a single effect for initial loading with stable dependencies
+  useEffect(() => {
+    // Skip if services aren't ready
+    if (!serviceReady || sessionLoading) {
+      return;
+    }
+    
+    let isMounted = true;
+    
+    const loadDataAsync = async () => {
+      if (!isMounted) return;
+      
+      console.log('[Dashboard] Loading data...');
+      
+      try {
+        // Get device statuses - only if bluetoothService is available
+        if (bluetoothService) {
+          const statuses = bluetoothService.getDeviceStatuses();
+          if (isMounted) {
+            setConnectedDevices(statuses.filter(d => d.connected));
+          }
+        }
+
+        // Fetch saved device history
+        const saved = await deviceService.getSavedDevices();
+        // Sort by last connected time (most recent first) and take top 5
+        const sortedHistory = saved
+          .filter(d => d.lastConnected)
+          .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
+          .slice(0, 5);
+        
+        if (isMounted) {
+          setDeviceHistory(sortedHistory);
+          console.log("[Dashboard] Initial data loaded");
+          setLoading(false);
+          setRefreshing(false);
+        }
+      } catch (err: any) {
+        console.error('Error loading dashboard data:', err);
+        if (isMounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    
+    // Load data once
+    loadDataAsync();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  // Remove unnecessary dependencies to prevent rerenders
+  }, [serviceReady, sessionLoading, bluetoothService, deviceService]);
+
+  // Use a separate effect for subscriptions
+  useEffect(() => {
+    // Skip if services aren't ready
+    if (!serviceReady || sessionLoading || !bluetoothService) {
+      return;
+    }
+    
     // Subscribe to device status updates
-    const statusSubscription = bluetoothService.subscribeToDeviceStatusUpdates(deviceStatus => {
-      // Update the list of connected devices
+    // bluetoothService is guaranteed to be non-null at this point
+    const statusSubscription = bluetoothService.subscribeToDeviceStatusUpdates((status) => {
+      // Update the local state when device status changes
       setConnectedDevices(prev => {
-        const existingIndex = prev.findIndex(d => d.id === deviceStatus.id);
-        if (deviceStatus.connected) {
+        const existingIndex = prev.findIndex(d => d.id === status.id);
+        if (status.connected) {
           if (existingIndex > -1) {
             // Update existing
             const updated = [...prev];
-            updated[existingIndex] = deviceStatus;
+            updated[existingIndex] = status;
             return updated;
           } else {
             // Add new connected device
-            return [...prev, deviceStatus];
+            return [...prev, status];
           }
         } else {
           // Remove disconnected device
-          return prev.filter(d => d.id !== deviceStatus.id);
+          return prev.filter(d => d.id !== status.id);
         }
       });
     });
-
+    
     // Subscribe to live sensor data
+    // bluetoothService is guaranteed to be non-null at this point
     const sensorSubscription = bluetoothService.subscribeSensorData((deviceId, dataPoint: LiveDataPoint) => {
       // Use the ref instead of the state to check if device is connected
       const deviceIsConnected = connectedDevicesRef.current.some(d => d.id === deviceId);
@@ -197,61 +248,141 @@ export default function Dashboard() {
 
       if (dataPoint.type === 'accelerometer') {
         const magnitude = dataPoint.values[3]; // Assuming magnitude is the 4th value
-        setCurrentAcceleration(magnitude);
+        if (magnitude !== undefined) {
+          setCurrentAcceleration(magnitude);
+        }
       } else if (dataPoint.type === 'heartRate') {
         const hr = dataPoint.values[0];
-        setCurrentHeartRate(hr);
-        // Update session max HR if needed
-        if (isSessionActive) {
-          setMaxHeartRateSession(prevMax => (hr > (prevMax ?? 0) ? hr : prevMax));
+        if (hr !== undefined) {
+          setCurrentHeartRate(hr);
+          // Update max heart rate
+          setMaxHeartRateSession(prev => {
+            if (prev === null || hr > prev) {
+              return hr;
+            }
+            return prev;
+          });
         }
       }
     });
-
+    
+    // Return cleanup function
     return () => {
+      // Clean up subscriptions
       statusSubscription.remove();
       sensorSubscription.remove();
     };
-  }, [bluetoothService, loadData, isSessionActive]);
+  }, [serviceReady, sessionLoading, bluetoothService]);
 
-  // Handle refresh
+  // Create a function to load data with access to the latest state
+  const loadData = useCallback(async () => {
+    if (!bluetoothService) {
+      console.log("[Dashboard] Bluetooth service not available");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    
+    console.log('[Dashboard] Refreshing data...');
+    
+    try {
+      // Refresh device statuses
+      const statuses = bluetoothService.getDeviceStatuses();
+      setConnectedDevices(statuses.filter(d => d.connected));
+      
+      // Refresh saved device history
+      const saved = await deviceService.getSavedDevices();
+      // Sort by last connected time (most recent first) and take top 5
+      const sortedHistory = saved
+        .filter(d => d.lastConnected)
+        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
+        .slice(0, 5);
+      
+      setDeviceHistory(sortedHistory);
+      
+    } catch (err: any) {
+      console.error('Error refreshing dashboard data:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [bluetoothService, deviceService]);
+
+  // Pull-to-refresh handler with stable identity
   const onRefresh = useCallback(() => {
-    console.log("[Dashboard] Refresh triggered");
     setRefreshing(true);
     loadData();
   }, [loadData]);
-  
-  // Session control functions remain the same
-  const handleStartSession = () => {
-    setIsSessionActive(true);
-    setSessionStartTime(new Date());
-    setElapsedTime(0);
-    setMaxHeartRateSession(null); // Reset max HR for new session
-    Alert.alert('Session Started', 'Monitoring session has begun. All connected devices will record data.');
-  };
-  
-  const handleStopSession = async () => {
-    if (!isSessionActive || !sessionStartTime) return;
+
+  // Session management functions using SessionContext
+  const handleStartSession = async () => {
+    if (isTogglingSession) return; // Prevent double taps
     
-    const endTime = new Date();
-    const duration = endTime.getTime() - sessionStartTime.getTime();
-    setIsSessionActive(false);
-    
-    try {
-      // Simulate saving session
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+    if (connectedDevices.length === 0) {
       Alert.alert(
-        'Session Ended',
-        `Duration: ${formatDuration(duration)}`,
-        [{ text: 'View Report', onPress: () => router.push('/(tabs)/reports') }, { text: 'OK' }]
+        'No Devices Connected',
+        'Please connect at least one device before starting a session.',
+        [{ text: 'OK' }]
       );
+      return;
+    }
+
+    setIsTogglingSession(true);
+    try {
+      const sessionName = `Session ${new Date().toLocaleString()}`;
+      await startNewSession(sessionName);
+      
+      // Reset session stats
+      setMaxHeartRateSession(null);
+      setCurrentAcceleration(null);
+      setCurrentHeartRate(null);
+      
+      console.log(`[Dashboard] Session started: ${sessionName}`);
     } catch (error) {
-      console.error('Error ending session:', error);
-      Alert.alert('Error', 'Failed to end session');
+      console.error('Error starting session:', error);
+      Alert.alert('Error', 'Failed to start session. Please try again.');
+    } finally {
+      setIsTogglingSession(false);
     }
   };
-  
+
+  const handleStopSession = async () => {
+    if (isTogglingSession) return; // Prevent double taps
+    
+    setIsTogglingSession(true);
+    try {
+      // Confirm before stopping
+      Alert.alert(
+        'End Session',
+        'Are you sure you want to end the current session?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => setIsTogglingSession(false) },
+          { 
+            text: 'End Session', 
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // End the session via context
+                await endCurrentSession();
+                console.log('[Dashboard] Session ended');
+              } catch (error) {
+                console.error('Error stopping session:', error);
+                Alert.alert('Error', 'Failed to stop session. Please try again.');
+              } finally {
+                setIsTogglingSession(false);
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error stopping session:', error);
+      Alert.alert('Error', 'Failed to stop session. Please try again.');
+      setIsTogglingSession(false);
+    }
+  };
+
+  // Format milliseconds into readable duration
   const formatDuration = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -261,7 +392,7 @@ export default function Dashboard() {
     // Format: hh:mm:ss
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
-  
+
   // Extract data for the accelerometer magnitude chart
   const magnitudeData = accelerometerData.map(d => {
     // Handle different sensor data types
@@ -306,6 +437,100 @@ export default function Dashboard() {
     router.push('/screens/logs');
   };
 
+  // Render Session Control with error handling and loading states
+  const renderSessionControl = () => {
+    if (sessionLoading) {
+      return (
+        <View style={styles.sessionHeader}>
+          <ActivityIndicator color={THEME.primary} style={{padding: 20}} />
+        </View>
+      );
+    }
+    
+    if (sessionInitError) {
+      return (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorTitle}>Session Error:</Text>
+          <Text style={styles.errorTextDetail}>{sessionInitError}</Text>
+        </View>
+      );
+    }
+    
+    return (
+      <View style={styles.sessionHeader}>
+        <View>
+          <Text style={styles.sessionTitle}>
+            {isSessionActive ? 'Session in Progress' : 'Start New Session'}
+          </Text>
+          {isSessionActive && activeSession && (
+            <Text style={styles.sessionTime}>
+              Duration: {formatDuration(elapsedTime)}
+            </Text>
+          )}
+        </View>
+        <View style={styles.sessionControls}>
+          {isSessionActive ? (
+            <TouchableOpacity
+              style={[styles.sessionButton, styles.stopButton]}
+              onPress={handleStopSession}
+              disabled={isTogglingSession}
+            >
+              {isTogglingSession ? (
+                <ActivityIndicator color="#fff" size="small" style={styles.buttonLoader} />
+              ) : (
+                <MaterialCommunityIcons name="stop-circle" size={20} color="#fff" />
+              )}
+              <Text style={styles.sessionButtonText}>
+                {isTogglingSession ? 'Ending...' : 'End'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sessionButton, styles.startButton]}
+              onPress={handleStartSession}
+              disabled={isTogglingSession}
+            >
+              <LinearGradient
+                colors={['#00d68f', '#00b076']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              {isTogglingSession ? (
+                <ActivityIndicator color="#fff" size="small" style={styles.buttonLoader} />
+              ) : (
+                <MaterialCommunityIcons name="play-circle" size={20} color="#fff" />
+              )}
+              <Text style={styles.sessionButtonText}>
+                {isTogglingSession ? 'Starting...' : 'Start'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  // Show loading state until services are ready
+  if (!serviceReady || sessionLoading || loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
+
+  // Render error state if there's a session initialization error
+  if (sessionInitError) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>Session Error</Text>
+        <Text style={styles.errorText}>{sessionInitError}</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -330,7 +555,7 @@ export default function Dashboard() {
             end={{ x: 1, y: 1 }}
           />
           <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>{name}</Text>
+            <Text style={styles.headerTitle}>Dashboard</Text>
             <TouchableOpacity 
               style={styles.profileContainer} 
               onPress={() => router.push('/(tabs)/settings')}
@@ -344,53 +569,9 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* --- Alert Banner (Conditional) --- */}
-        {concussionRisk === 'High' && (
-          <View style={styles.alertBanner}>
-            <MaterialCommunityIcons name="alert-decagram" size={24} color="#fff" style={styles.alertIcon} />
-            <Text style={styles.alertText}>High Concussion Risk Detected</Text>
-          </View>
-        )}
-
         {/* --- Session Control (Keep this GlassCard) --- */}
         <GlassCard style={styles.card}>
-          <View style={styles.sessionHeader}>
-            <View>
-              <Text style={styles.sessionTitle}>
-                {isSessionActive ? 'Session in Progress' : 'Start New Session'}
-              </Text>
-              {isSessionActive && sessionStartTime && (
-                <Text style={styles.sessionTime}>
-                  Duration: {formatDuration(elapsedTime)}
-                </Text>
-              )}
-            </View>
-            <View style={styles.sessionControls}>
-              {isSessionActive ? (
-                <TouchableOpacity
-                  style={[styles.sessionButton, styles.stopButton]}
-                  onPress={handleStopSession}
-                >
-                  <MaterialCommunityIcons name="stop-circle" size={20} color="#fff" />
-                  <Text style={styles.sessionButtonText}>End</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.sessionButton, styles.startButton]}
-                  onPress={handleStartSession}
-                >
-                  <LinearGradient
-                    colors={['#00d68f', '#00b076']}
-                    style={StyleSheet.absoluteFill}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  />
-                  <MaterialCommunityIcons name="play-circle" size={20} color="#fff" />
-                  <Text style={styles.sessionButtonText}>Start</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
+          {renderSessionControl()}
         </GlassCard>
 
         {/* --- NEW: Summary Tiles Card --- */}
@@ -460,12 +641,16 @@ export default function Dashboard() {
 
       </ScrollView>
 
-      {/* --- Connection Status Footer --- */}
-      <View style={styles.connectionStatusFooter}>
-        <Text style={styles.connectionStatusText}>
-          {isDeviceConnected ? 'Device Connected' : 'No Device Connected'}
-        </Text>
-      </View>
+      {/* --- Connection Status Footer (Using real connected devices data) --- */}
+      {connectedDevices.length > 0 && (
+        <View style={[styles.connectionStatusFooter, { backgroundColor: 'rgba(0, 176, 118, 0.7)' }]}>
+          <Text style={styles.connectionStatusText}>
+            {connectedDevices.length === 1 
+              ? '1 Device Connected' 
+              : `${connectedDevices.length} Devices Connected`}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -705,5 +890,53 @@ const styles = StyleSheet.create({
     elevation: 5,
     marginHorizontal: 16,
     marginBottom: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: THEME.primary,
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 20,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    color: THEME.error,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 20,
+  },
+  errorText: {
+    color: THEME.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorBox: {
+    padding: 16,
+    backgroundColor: 'rgba(255, 69, 58, 0.1)', // Light red background
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.error,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  errorTextDetail: {
+    color: THEME.error,
+    fontSize: 14,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  buttonLoader: {
+    marginRight: 6,
   },
 });

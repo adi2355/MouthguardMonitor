@@ -55,8 +55,18 @@ export default function LiveMonitorScreen() {
   const [loading, setLoading] = useState(true);
   const [sessionActive, setSessionActive] = useState(false);
   const [liveData, setLiveData] = useState({});
+  const [serviceReady, setServiceReady] = useState(false);
   
   const bluetoothService = useBluetoothService();
+  
+  // Check if bluetoothService is available and set serviceReady state
+  useEffect(() => {
+    if (bluetoothService) {
+      setServiceReady(true);
+    } else {
+      setServiceReady(false);
+    }
+  }, [bluetoothService]);
   
   // Reference to store sensor data subscriptions
   const sensorDataSubscriptionRef = useRef(null);
@@ -64,6 +74,12 @@ export default function LiveMonitorScreen() {
   // Initialize device status and data
   useEffect(() => {
     console.log('[LiveMonitorScreen] useEffect running. Subscribing...');
+
+    // Skip if bluetoothService is not available
+    if (!bluetoothService) {
+      // Keep loading state true until service is available
+      return;
+    }
 
     // Flag to prevent setting loading state multiple times if updates come fast
     let initialLoadComplete = false;
@@ -139,6 +155,11 @@ export default function LiveMonitorScreen() {
   
   // Handle session start/stop
   const toggleSession = async () => {
+    if (!bluetoothService) {
+      console.error('Bluetooth service not available');
+      return;
+    }
+  
     if (sessionActive) {
       // Stop session
       try {

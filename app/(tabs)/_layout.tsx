@@ -40,6 +40,20 @@ export default function TabLayout() {
       />
       
       <Tabs.Screen
+        name="sessions"
+        options={{
+          title: 'Sessions',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="calendar-clock" 
+              size={size} 
+              color={color} 
+            />
+          ),
+        }}
+      />
+      
+      <Tabs.Screen
         name="coach"
         options={{
           title: 'Coach View',

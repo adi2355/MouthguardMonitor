@@ -7,7 +7,7 @@ import { BluetoothHandler, SensorCallbacks } from "../contexts/BluetoothContext"
 import { DeviceService } from "./DeviceService";
 import { SensorDataRepository } from "../repositories/SensorDataRepository";
 import { AthleteRepository } from "../repositories/AthleteRepository";
-import { DeviceStatus, LiveDataPoint, Session, MotionPacket, FSRPacket, HRMPacket, HTMPacket, ConcussionAlert } from "../types";
+import { DeviceStatus, LiveDataPoint, Session, MotionPacket, FSRPacket, HRMPacket, HTMPacket, ConcussionAlert, SavedDevice } from "../types";
 import { dataChangeEmitter, dbEvents } from "../utils/EventEmitter";
 import { v4 as uuidv4 } from 'uuid';
 import { MOUTHGUARD_UUIDS } from '../bleConstants'; // Import the new UUIDs
@@ -31,6 +31,12 @@ type SensorDataSubscription = {
   remove: () => void;
 };
 
+type SessionContextGetter = () => { 
+  activeSession: Session | null;
+  startNewSession: (name?: string, team?: string) => Promise<Session>;
+  endCurrentSession: () => Promise<void>;
+};
+
 /**
  * BluetoothService uses composition with BluetoothHandler and integrates with DeviceService
  * for saving connected devices and with SensorDataRepository for recording sensor data
@@ -41,27 +47,31 @@ export class BluetoothService {
   private sensorDataRepository: SensorDataRepository;
   private athleteRepository: AthleteRepository;
   private deviceStatusMap: Map<string, DeviceStatus> = new Map();
-  private currentSession: Session | null = null;
+  private getSessionContext: SessionContextGetter;
   private manager: BleManager; // BLE manager instance
   private connectedDevices: Map<string, Device> = new Map(); // Store Device directly
+  private connectionAttempts: Map<string, boolean> = new Map(); // Track connection attempts
 
   /**
    * Constructor
    * @param deviceService Service for saving devices
    * @param sensorDataRepository Repository for recording sensor data
    * @param athleteRepository Repository for athlete data
+   * @param getSessionContext Function to get session context
    * @param bluetoothHandler Optional BluetoothHandler instance (creates one if not provided)
    */
   constructor(
     deviceService: DeviceService, 
     sensorDataRepository: SensorDataRepository,
     athleteRepository: AthleteRepository,
+    getSessionContext: SessionContextGetter,
     bluetoothHandler?: BluetoothHandler
   ) {
     this.bluetoothHandler = bluetoothHandler || new BluetoothHandler();
     this.deviceService = deviceService;
     this.sensorDataRepository = sensorDataRepository;
     this.athleteRepository = athleteRepository;
+    this.getSessionContext = getSessionContext;
     this.manager = new BleManager();
     
     // Set up the callbacks to handle data from bluetooth
@@ -105,13 +115,22 @@ export class BluetoothService {
   /**
    * Update status for a specific device
    */
-  private async updateDeviceStatus(deviceId: string, isConnected: boolean): Promise<void> {
+  private async updateDeviceStatus(
+    deviceId: string, 
+    isConnected: boolean,
+    connectionState?: DeviceStatus['connectionState'],
+    errorMessage?: string | null
+  ): Promise<void> {
     try {
       // Get device details
+      const currentState = this.deviceStatusMap.get(deviceId);
+      
       let deviceStatus: DeviceStatus = {
         id: deviceId,
-        name: 'Unknown Device',
+        name: currentState?.name || 'Unknown Device',
         connected: isConnected,
+        connectionState: connectionState || (isConnected ? 'connected' : 'disconnected'),
+        connectionError: errorMessage === undefined ? (currentState?.connectionError || null) : errorMessage,
         lastSeen: Date.now()
       };
       
@@ -565,61 +584,74 @@ export class BluetoothService {
   }
 
   /**
-   * Connect to a device by ID and save it to storage
-   * @param deviceId ID of the device to connect to
+   * Connect to a specific device by ID
+   * @param deviceId Device ID to connect to
    */
   public async connectToDevice(deviceId: string): Promise<void> {
+    if (this.connectionAttempts.get(deviceId)) {
+      console.log(`[BluetoothService] Connection attempt already in progress for ${deviceId}`);
+      return; // Prevent concurrent attempts
+    }
+    
+    this.connectionAttempts.set(deviceId, true);
+    
     try {
+      // Update status to 'connecting' IMMEDIATELY
+      await this.updateDeviceStatus(deviceId, false, 'connecting');
+
       console.log(`[BluetoothService] Connecting to device: ${deviceId}`);
       
       // Check if already connected
       if (this.connectedDevices.has(deviceId)) {
-        console.log(`[BluetoothService] Device ${deviceId} already connected`);
-        this.updateDeviceStatus(deviceId, true);
+        console.log(`[BluetoothService] Device ${deviceId} is already connected`);
+        await this.updateDeviceStatus(deviceId, true, 'connected');
         return;
       }
       
-      // Attempt connection
+      // Connect to the device
       const device = await this.manager.connectToDevice(deviceId);
-      console.log(`[BluetoothService] Connected to device: ${deviceId}, Name initially: ${device.name || 'Unknown'}`);
-      
-      // Store in connected devices map
       this.connectedDevices.set(deviceId, device);
       
-      // Update device status immediately to show connected state, even if name is temporary
-      await this.updateDeviceStatus(deviceId, true);
-
+      // Update status to 'connected' AFTER successful connection but BEFORE discovery
+      await this.updateDeviceStatus(deviceId, true, 'connected');
+      
       // Discover services and characteristics
       console.log(`[BluetoothService] Discovering services for device: ${deviceId}`);
       await device.discoverAllServicesAndCharacteristics();
-      console.log(`[BluetoothService] Services discovered for device: ${deviceId}, Name after discovery: ${device.name || 'Unknown'}`);
       
-      // --- MOVED: Save/update device AFTER service discovery to ensure name is available ---
+      // Save the device
       const savedDevices = await this.deviceService.getSavedDevices();
-      const savedDevice = savedDevices.find(d => d.id === deviceId);
+      const existingDevice = savedDevices.find(d => d.id === deviceId);
       
-      if (savedDevice) {
-        // Pass the potentially updated name to updateDeviceLastConnected
-        console.log(`[BluetoothService] Device ${deviceId} already saved, updating last connected and name. Current name: ${device.name || 'Unknown'}, Saved name: ${savedDevice.name}`);
-        await this.deviceService.updateDeviceLastConnected(deviceId, device.name);
+      if (existingDevice) {
+        // Update last connected timestamp
+        await this.deviceService.updateDeviceLastConnected(deviceId);
       } else {
-        // Save the device after discovery (name should be more likely available)
-        console.log(`[BluetoothService] Device ${deviceId} not saved yet, saving now with name: ${device.name || 'Unknown'}`);
+        // Save new device using the device object directly
         await this.deviceService.saveDevice(device);
       }
       
-      // Setup monitoring for relevant characteristics
+      // Set up monitoring for the device
       this.setupMonitoringForDevice(deviceId);
       
-      // Re-update device status AFTER saving/updating to ensure the latest name from storage is used
-      await this.updateDeviceStatus(deviceId, true);
+      // Final update
+      await this.updateDeviceStatus(deviceId, true, 'connected');
       
+      console.log(`[BluetoothService] Successfully connected to device: ${deviceId}`);
     } catch (error) {
       console.error(`[BluetoothService] Error connecting to device ${deviceId}:`, error);
-      // Update status to disconnected on error
-      await this.updateDeviceStatus(deviceId, false);
-      this.connectedDevices.delete(deviceId); // Remove from live map
-      throw error;
+      
+      const errorMessage = error instanceof BleError 
+        ? `${error.message} (Code: ${error.errorCode})` 
+        : String(error);
+      
+      // Update status to 'failed' and include the error message
+      await this.updateDeviceStatus(deviceId, false, 'failed', errorMessage);
+      
+      this.connectedDevices.delete(deviceId);
+      // No need to rethrow if UI updates via status events
+    } finally {
+      this.connectionAttempts.delete(deviceId); // Clear attempt flag
     }
   }
 
@@ -747,44 +779,27 @@ export class BluetoothService {
   }
 
   /**
-   * Start a monitoring session
-   * Creates a new session in the database
+   * Start a new monitoring session
+   * @param name Optional session name
+   * @param team Optional team name
+   * @returns Session ID
    */
-  public async startSession(): Promise<string> {
-    if (this.currentSession) {
+  public async startSession(name?: string, team?: string): Promise<string> {
+    if (this.getSessionContext().activeSession) {
       throw new Error('A session is already active. Stop it before starting a new one.');
     }
     
     try {
-      // Create session ID
-      const sessionId = `session_${uuidv4()}`;
-      const now = Date.now();
+      // Start a new session using SessionContext
+      const session = await this.getSessionContext().startNewSession(
+        name || `Session ${new Date().toLocaleString()}`,
+        team
+      );
       
-      // Create session object
-      this.currentSession = {
-        id: sessionId,
-        name: `Session ${new Date(now).toLocaleString()}`,
-        startTime: now,
-        createdAt: now
-      };
+      console.log(`[BluetoothService] Started new session: ${session.id}`);
       
-      // Save session to database
-      // TODO: Implement SessionRepository and save session
-      console.log(`[BluetoothService] Started session ${sessionId}`);
-      
-      // Get all connected devices with athletes
-      const connectedDevices = Array.from(this.deviceStatusMap.values())
-        .filter(device => device.connected && device.athleteInfo);
-      
-      // Record session-athlete associations
-      for (const device of connectedDevices) {
-        if (device.athleteInfo) {
-          // TODO: Save session-athlete relationship in database
-          console.log(`[BluetoothService] Added athlete ${device.athleteInfo.id} to session ${sessionId}`);
-        }
-      }
-      
-      return sessionId;
+      // Return the session ID
+      return session.id;
     } catch (error) {
       console.error('[BluetoothService] Error starting session:', error);
       throw error;
@@ -792,28 +807,31 @@ export class BluetoothService {
   }
 
   /**
-   * Stop the current monitoring session
+   * Stop a monitoring session and save data
    */
   public async stopSession(): Promise<void> {
-    if (!this.currentSession) {
+    if (!this.getSessionContext().activeSession) {
       throw new Error('No active session to stop.');
     }
     
     try {
       const now = Date.now();
       
+      // Get a copy of the active session to use locally
+      const activeSession = { ...this.getSessionContext().activeSession };
+      
       // Update session with end time
-      this.currentSession.endTime = now;
+      activeSession.endTime = now;
       
       // Save updated session to database
       // TODO: Implement SessionRepository and update session
-      console.log(`[BluetoothService] Stopped session ${this.currentSession.id}`);
+      console.log(`[BluetoothService] Stopped session ${activeSession.id}`);
       
       // Update session-athlete records with end time
       // TODO: Implement SessionAthleteRepository and update records
       
       // Clear current session
-      this.currentSession = null;
+      await this.getSessionContext().endCurrentSession();
     } catch (error) {
       console.error('[BluetoothService] Error stopping session:', error);
       throw error;
@@ -889,6 +907,9 @@ export class BluetoothService {
         // Decode Base64 value to a Buffer
         const buffer = Buffer.from(characteristic.value, 'base64');
         const appTimestamp = Date.now(); // Timestamp when app received data
+        
+        // Get the current session ID if any
+        const activeSessionId = this.getSessionContext().activeSession?.id || null;
 
         // Make UUID comparisons case-insensitive for robustness
         const lowerCharUuid = characteristicUuid.toLowerCase();
@@ -907,10 +928,10 @@ export class BluetoothService {
                     flags: 0, // Flags aren't in your custom struct, set default or derive if needed
                     appTimestamp: appTimestamp
                 };
-                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}`);
-                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
+                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}, SessionID=${activeSessionId || 'none'}`);
+                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket, activeSessionId); // Pass session ID
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'heartRate', deviceId, timestamp: appTimestamp, values: [hrmPacket.heartRate] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId, sessionId: activeSessionId });
             } else {
                  console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HRM_LENGTH})`);
             }
@@ -931,10 +952,10 @@ export class BluetoothService {
                      flags: 0, // Flags aren't in your custom struct
                      appTimestamp: appTimestamp
                 };
-                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}`);
-                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
+                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}, SessionID=${activeSessionId || 'none'}`);
+                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket, activeSessionId); // Pass session ID
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'temperature', deviceId, timestamp: appTimestamp, values: [htmPacket.temperature] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId, sessionId: activeSessionId });
             } else {
                  console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HTM_LENGTH})`);
             }
@@ -958,11 +979,11 @@ export class BluetoothService {
                     bite_r: 0,
                     timestamp: appTimestamp // Use app timestamp as device timestamp is missing
                 };
-                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}`);
+                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}, SessionID=${activeSessionId || 'none'}`);
 
                 try {
                     // No need to adapt the packet since we've already created it with the correct types
-                    await this.sensorDataRepository.recordMotionPacket(deviceId, partialMotionPacket);
+                    await this.sensorDataRepository.recordMotionPacket(deviceId, partialMotionPacket, activeSessionId); // Pass session ID
 
                     // Emit live data for UI updates
                     const SENSITIVITY_200G = 16384 / 200; // Example sensitivity factor
@@ -971,7 +992,7 @@ export class BluetoothService {
                     const gForceZ = partialMotionPacket.accel200[2] / SENSITIVITY_200G;
                     const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
                     dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
-                    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId, sessionId: activeSessionId });
                 } catch (saveError) {
                     console.error(`[BluetoothService] Error saving partial IMU packet:`, saveError);
                 }
@@ -1001,12 +1022,12 @@ export class BluetoothService {
                 };
                 
                 // Log detailed info for debugging
-                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}`);
+                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}, SessionID=${activeSessionId || 'none'}`);
                 console.log(`[BluetoothService] Raw FSR Int16 values: Left=${rawLeftBite}, Right=${rawRightBite}`);
                 
-                await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
+                await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket, activeSessionId); // Pass session ID
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'force', deviceId, timestamp: appTimestamp, values: [fsrPacket.left_bite, fsrPacket.right_bite] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId, sessionId: activeSessionId });
             } else {
                  console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_FSR_LENGTH})`);
             }

@@ -21,14 +21,15 @@ export class SensorDataRepository {
     timestamp: number,
     x: number,
     y: number,
-    z: number
+    z: number,
+    sessionId: string | null = null
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO imu_data (device_id, sensor_id, timestamp, x, y, z, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [deviceId, sensorId, timestamp, x, y, z, now]
+        `INSERT INTO imu_data (device_id, sensor_id, timestamp, x, y, z, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [deviceId, sensorId, timestamp, x, y, z, now, sessionId]
       );
     } catch (error) {
       console.error('Error inserting IMU data:', error);
@@ -40,7 +41,7 @@ export class SensorDataRepository {
    * Record accelerometer data from a device
    */
   public async recordAccelerometerData(
-    data: AccelerometerData
+    data: AccelerometerData & { sessionId?: string | null }
   ): Promise<void> {
     const now = Date.now();
     const thresholdG = 80; // Example threshold
@@ -49,9 +50,9 @@ export class SensorDataRepository {
     await this.db.withTransactionAsync(async () => {
       try {
         await this.db.runAsync(
-          `INSERT INTO accelerometer_data (device_id, sensor_id, timestamp, x, y, z, magnitude, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [data.deviceId, data.sensorId, data.timestamp, data.x, data.y, data.z, data.magnitude, data.createdAt || now]
+          `INSERT INTO accelerometer_data (device_id, sensor_id, timestamp, x, y, z, magnitude, created_at, session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [data.deviceId, data.sensorId, data.timestamp, data.x, data.y, data.z, data.magnitude, data.createdAt || now, data.sessionId || null]
         );
 
         // Check if this is a potential concussion event (high-g impact)
@@ -59,7 +60,8 @@ export class SensorDataRepository {
           await this.recordImpactEventInternal(
             data.deviceId, undefined, data.timestamp, 
             data.magnitude, data.x, data.y, data.z, 
-            data.createdAt || now
+            data.createdAt || now, undefined, undefined, undefined, undefined,
+            data.sessionId || null
           ); // Use internal helper
         }
       } catch (error) {
@@ -73,14 +75,14 @@ export class SensorDataRepository {
    * Record temperature data from a device
    */
   public async recordTemperatureData(
-    data: TemperatureData
+    data: TemperatureData & { sessionId?: string | null }
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO temperature_data (device_id, sensor_id, timestamp, temperature, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [data.deviceId, data.sensorId, data.timestamp, data.temperature, data.createdAt || now]
+        `INSERT INTO temperature_data (device_id, sensor_id, timestamp, temperature, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [data.deviceId, data.sensorId, data.timestamp, data.temperature, data.createdAt || now, data.sessionId || null]
       );
     } catch (error) {
       console.error('Error inserting temperature data:', error);
@@ -95,14 +97,15 @@ export class SensorDataRepository {
     deviceId: string,
     sensorId: number,
     timestamp: number,
-    force: number
+    force: number,
+    sessionId: string | null = null
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO force_data (device_id, sensor_id, timestamp, force, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [deviceId, sensorId, timestamp, force, now]
+        `INSERT INTO force_data (device_id, sensor_id, timestamp, force, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [deviceId, sensorId, timestamp, force, now, sessionId]
       );
     } catch (error) {
       console.error('Error inserting force data:', error);
@@ -114,14 +117,14 @@ export class SensorDataRepository {
    * Record heart rate data from a device
    */
   public async recordHeartRateData(
-    data: HeartRateData
+    data: HeartRateData & { sessionId?: string | null }
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO heart_rate_data (device_id, timestamp, heart_rate, created_at)
-         VALUES (?, ?, ?, ?)`,
-        [data.deviceId, data.timestamp, data.heartRate, data.createdAt || now]
+        `INSERT INTO heart_rate_data (device_id, timestamp, heart_rate, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [data.deviceId, data.timestamp, data.heartRate, data.createdAt || now, data.sessionId || null]
       );
     } catch (error) {
       console.error('Error inserting heart rate data:', error);
@@ -144,12 +147,13 @@ export class SensorDataRepository {
     severity?: string,
     durationMs?: number,
     location?: string,
-    notes?: string
+    notes?: string,
+    sessionId: string | null = null
   ): Promise<void> {
     console.warn(`SensorDataRepository: Recording potential impact event: ${magnitude.toFixed(1)}g`);
     await this.db.runAsync(
-      `INSERT INTO impact_events (device_id, athlete_id, timestamp, magnitude, x, y, z, duration_ms, location, processed, severity, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO impact_events (device_id, athlete_id, timestamp, magnitude, x, y, z, duration_ms, location, processed, severity, notes, created_at, session_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         deviceId,
         athleteId ?? null,
@@ -161,7 +165,8 @@ export class SensorDataRepository {
         0, // processed = false
         severity ?? null,
         notes ?? null,
-        createdAt
+        createdAt,
+        sessionId
       ]
     );
     // Emit concussion detected event
@@ -169,16 +174,17 @@ export class SensorDataRepository {
       deviceId,
       timestamp,
       magnitude,
-      athleteId // Pass athleteId if available
+      athleteId, // Pass athleteId if available
+      sessionId // Pass sessionId if available
     });
   }
 
   /**
    * Record a raw Motion Packet and potentially an impact event
    */
-  public async recordMotionPacket(deviceId: string, packet: MotionPacket): Promise<number> {
+  public async recordMotionPacket(deviceId: string, packet: MotionPacket, sessionId: string | null = null): Promise<number> {
     const appTimestamp = Date.now();
-    console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
+    console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}, sessionId: ${sessionId || 'none'}`);
 
     try {
       // Calculate G-forces for impact detection
@@ -196,153 +202,179 @@ export class SensorDataRepository {
           accel16_x, accel16_y, accel16_z,
           accel200_x, accel200_y, accel200_z,
           mag_x, mag_y, mag_z,
-          bite_l, bite_r, app_timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          bite_l, bite_r, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          deviceId, packet.timestamp, // Device timestamp
+          deviceId,
+          packet.timestamp,
           packet.gyro[0], packet.gyro[1], packet.gyro[2],
           packet.accel16[0], packet.accel16[1], packet.accel16[2],
-          packet.accel200[0], packet.accel200[1], packet.accel200[2],
+          packet.accel200[0], packet.accel200[1], packet.accel200[2], 
           packet.mag[0], packet.mag[1], packet.mag[2],
-          packet.bite_l, packet.bite_r, appTimestamp // App timestamp
+          packet.bite_l, packet.bite_r,
+          appTimestamp,
+          sessionId
         ]
       );
 
-      console.log(`[SensorDataRepo] Motion Packet recorded successfully. ID: ${result.lastInsertRowId}, Changes: ${result.changes}`);
-
-      // Check for potential impact event
-      const thresholdG = 80; // 80G threshold for potential concussion
-      if (magnitude > thresholdG) {
+      // Check if this is a potential impact event
+      const IMPACT_THRESHOLD_G = 80; // Example threshold
+      if (magnitude > IMPACT_THRESHOLD_G) {
+        // Create an impact event
         await this.recordImpactEventInternal(
-          deviceId, undefined, packet.timestamp, 
-          magnitude, gForceX, gForceY, gForceZ,
-          appTimestamp
+          deviceId,
+          undefined, // athleteId (could look this up from device)
+          appTimestamp, // use app timestamp for consistent timeline
+          magnitude,
+          gForceX, gForceY, gForceZ,
+          appTimestamp,
+          undefined, undefined, undefined, undefined,
+          sessionId
         );
       }
 
-      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+      // Return the inserted ID
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId, sessionId });
       return result.lastInsertRowId;
     } catch (error) {
-      console.error('[SensorDataRepo] FAILED to insert Motion Packet:', error);
+      console.error('Error inserting motion packet:', error);
       throw error;
     }
   }
 
   /**
-   * Record a raw FSR (bite force) Packet
+   * Record a raw FSR Packet
    */
-  public async recordFSRPacket(deviceId: string, packet: FSRPacket): Promise<number> {
+  public async recordFSRPacket(deviceId: string, packet: FSRPacket, sessionId: string | null = null): Promise<number> {
     const appTimestamp = Date.now();
-    console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
-    
-    // Insert the FSR packet data (storing unscaled forces)
-    const result = await this.db.runAsync(
-      `INSERT INTO fsr_packets (
-        device_id, device_timestamp, left_bite, right_bite, app_timestamp
-      ) VALUES (?, ?, ?, ?, ?)`,
-      [
-        deviceId, packet.timestamp, // Device timestamp
-        packet.left_bite, // Already unscaled in BluetoothService
-        packet.right_bite, // Already unscaled in BluetoothService  
-        appTimestamp
-      ]
-    );
+    console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}, sessionId: ${sessionId || 'none'}`);
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
-    return result.lastInsertRowId;
+    try {
+      const result = await this.db.runAsync(
+        `INSERT INTO fsr_packets (
+          device_id, device_timestamp,
+          left_bite, right_bite, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          deviceId, 
+          packet.timestamp, 
+          packet.left_bite, 
+          packet.right_bite, 
+          appTimestamp,
+          sessionId
+        ]
+      );
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId, sessionId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error inserting FSR packet:', error);
+      throw error;
+    }
   }
 
   /**
-   * Record a Heart Rate Measurement Packet
+   * Record a raw HRM Packet
    */
-  public async recordHRMPacket(deviceId: string, packet: HRMPacket): Promise<number> {
-    console.log(`[SensorDataRepo] Recording HRM Packet for ${deviceId}, HR: ${packet.heartRate}`);
-    
-    // Insert the HRM packet data
-    const result = await this.db.runAsync(
-      `INSERT INTO hrm_packets (
-        device_id, flags, heart_rate, app_timestamp
-      ) VALUES (?, ?, ?, ?)`,
-      [
-        deviceId, 
-        packet.flags,
-        packet.heartRate,
-        packet.appTimestamp
-      ]
-    );
+  public async recordHRMPacket(deviceId: string, packet: HRMPacket, sessionId: string | null = null): Promise<number> {
+    const appTimestamp = packet.appTimestamp || Date.now();
+    console.log(`[SensorDataRepo] Recording HRM Packet for ${deviceId} at ${appTimestamp}, sessionId: ${sessionId || 'none'}`);
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
-    return result.lastInsertRowId;
+    try {
+      const result = await this.db.runAsync(
+        `INSERT INTO hrm_packets (
+          device_id, flags, heart_rate, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?)`,
+        [
+          deviceId,
+          packet.flags,
+          packet.heartRate,
+          appTimestamp,
+          sessionId
+        ]
+      );
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId, sessionId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error inserting HRM packet:', error);
+      throw error;
+    }
   }
 
   /**
-   * Record a Health Thermometer Measurement Packet
+   * Record a raw HTM Packet
    */
-  public async recordHTMPacket(deviceId: string, packet: HTMPacket): Promise<number> {
-    console.log(`[SensorDataRepo] Recording HTM Packet for ${deviceId}, Temp: ${packet.temperature}`);
-    
-    // Insert the HTM packet data
-    const result = await this.db.runAsync(
-      `INSERT INTO htm_packets (
-        device_id, flags, temperature, type, app_timestamp
-      ) VALUES (?, ?, ?, ?, ?)`,
-      [
-        deviceId, 
-        packet.flags,
-        packet.temperature, // Already unscaled in BluetoothService
-        packet.type ?? null,
-        packet.appTimestamp
-      ]
-    );
+  public async recordHTMPacket(deviceId: string, packet: HTMPacket, sessionId: string | null = null): Promise<number> {
+    const appTimestamp = packet.appTimestamp || Date.now();
+    console.log(`[SensorDataRepo] Recording HTM Packet for ${deviceId} at ${appTimestamp}, sessionId: ${sessionId || 'none'}`);
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
-    return result.lastInsertRowId;
+    try {
+      const result = await this.db.runAsync(
+        `INSERT INTO htm_packets (
+          device_id, flags, temperature, type, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          deviceId,
+          packet.flags,
+          packet.temperature,
+          packet.type || null,
+          appTimestamp,
+          sessionId
+        ]
+      );
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId, sessionId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error inserting HTM packet:', error);
+      throw error;
+    }
   }
 
   /**
-   * Get sensor data for a specific device within a time range
+   * Get sensor data with optional session filtering
    */
   public async getSensorData(
     deviceId: string,
     sensorType: 'motion_packets' | 'fsr_packets' | 'hrm_packets' | 'htm_packets' | 'impact_events',
-    startTime: number,
-    endTime: number
-  ): Promise<any[]> {
-    // Use app_timestamp for date range queries for ALL packet types
-    const timestampField = 'app_timestamp';
-
-    // Define the timestamp field for impact_events. If it's named 'timestamp',
-    // ensure recordImpactEventInternal stores app_timestamp there.
-    const impactTimestampField = 'timestamp'; // Or 'app_timestamp' if you add that column
-
-    let query: string;
-
-    // Construct the query based on the sensor type
-    if (sensorType === 'impact_events') {
-         // Make sure the 'timestamp' column in impact_events reliably stores app_timestamp
-         // or add an 'app_timestamp' column to impact_events in a new migration.
-         // For now, assuming 'timestamp' holds app_timestamp for impacts.
-         query = `SELECT * FROM ${sensorType}
-                  WHERE device_id = ? AND ${impactTimestampField} BETWEEN ? AND ?
-                  ORDER BY ${impactTimestampField} ASC`;
-    } else {
-         query = `SELECT * FROM ${sensorType}
-                  WHERE device_id = ? AND ${timestampField} BETWEEN ? AND ?
-                  ORDER BY ${timestampField} ASC`;
+    options: { 
+      startTime?: number;
+      endTime?: number;
+      sessionId?: string;
+      limit?: number;
     }
-
-    console.log(`[SensorDataRepo getSensorData] Querying ${sensorType} for device ${deviceId} between ${new Date(startTime).toISOString()} and ${new Date(endTime).toISOString()}`);
-    console.log(`[SensorDataRepo getSensorData] Query: ${query}`);
-    console.log(`[SensorDataRepo getSensorData] Params: [${deviceId}, ${startTime}, ${endTime}]`);
-
+  ): Promise<any[]> {
+    const { startTime, endTime, sessionId, limit = 1000 } = options;
+    const timestampField = sensorType === 'impact_events' ? 'timestamp' : 'app_timestamp';
+    
+    const params: any[] = [deviceId];
+    let query = `SELECT * FROM ${sensorType} WHERE device_id = ?`;
+    
+    // Add session filter if provided
+    if (sessionId) {
+      query += ` AND session_id = ?`;
+      params.push(sessionId);
+    }
+    
+    // Add time range filter if provided
+    if (startTime !== undefined && endTime !== undefined) {
+      query += ` AND ${timestampField} BETWEEN ? AND ?`;
+      params.push(startTime, endTime);
+    }
+    
+    query += ` ORDER BY ${timestampField} ASC LIMIT ?`;
+    params.push(limit);
+    
+    console.log(`[SensorDataRepo] Executing query: ${query} with params:`, params);
+    
     try {
-        // Execute the query using the new async API
-        const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]);
-        console.log(`[SensorDataRepo getSensorData] Fetched ${results?.length ?? 0} ${sensorType} results.`);
-        return results ?? []; // Return empty array if results are null/undefined
+      const result = await this.db.getAllAsync(query, params);
+      console.log(`[SensorDataRepo] Retrieved ${result?.length || 0} ${sensorType} records`);
+      return result || [];
     } catch (error) {
-        console.error(`[SensorDataRepo getSensorData] Error querying ${sensorType} data:`, error);
-        throw error;
+      console.error(`Error retrieving ${sensorType} data:`, error);
+      throw error;
     }
   }
 

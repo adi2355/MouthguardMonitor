@@ -335,6 +335,20 @@ export default function TabLayout() {
       />
       
       <Tabs.Screen
+        name="sessions"
+        options={{
+          title: 'Sessions',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons 
+              name="calendar-clock" 
+              size={size} 
+              color={color} 
+            />
+          ),
+        }}
+      />
+      
+      <Tabs.Screen
         name="coach"
         options={{
           title: 'Coach View',
@@ -721,8 +735,6 @@ export default function Devices() {
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [connectionInProgress, setConnectionInProgress] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [athleteListVisible, setAthleteListVisible] = useState(false);
   const [athletes, setAthletes] = useState<Athlete[]>([]);
@@ -791,19 +803,11 @@ export default function Devices() {
   // Connect to a device
   const connectToDevice = async (deviceId: string, deviceName: string) => {
     try {
-      setConnectionInProgress(true);
-      setConnectionError(null);
-      
       await bluetoothService.connectToDevice(deviceId);
-      
-      // Success will be reflected via the subscription to device status updates
-      Alert.alert('Success', `Connected to ${deviceName || deviceId}`);
+      // Success state is handled by the status subscription
     } catch (error) {
-      console.error('Error connecting to device:', error);
-      setConnectionError('Failed to connect to device. Please try again.');
-      Alert.alert('Connection Error', 'Failed to connect to device. Please try again.');
-    } finally {
-      setConnectionInProgress(false);
+      // Error state is handled by the status subscription
+      console.log(`[DevicesScreen] Attempted connection for ${deviceId}, status updates will reflect outcome.`);
     }
   };
   
@@ -873,8 +877,10 @@ export default function Devices() {
   
   // Renders saved device
   const renderDevice = ({ item }: { item: DeviceStatus }) => {
-    const isConnected = item.connected;
-    
+    const isConnected = item.connectionState === 'connected';
+    const isConnecting = item.connectionState === 'connecting';
+    const hasFailed = item.connectionState === 'failed';
+
     return (
       <TouchableOpacity 
         style={styles.deviceItem}
@@ -894,8 +900,17 @@ export default function Devices() {
         </LinearGradient>
         <View style={styles.deviceInfo}>
           <Text style={styles.deviceName}>{item.name}</Text>
-          <Text style={[styles.deviceStatus, isConnected ? styles.connectedText : styles.disconnectedText]}>
-            {isConnected ? "Connected" : "Not Connected"}
+          <Text style={[
+            styles.deviceStatus, 
+            isConnected ? styles.connectedText : 
+            isConnecting ? styles.connectingText : 
+            hasFailed ? styles.errorText :
+            styles.disconnectedText
+          ]}>
+            {isConnecting ? "Connecting..." : 
+             isConnected ? "Connected" :
+             hasFailed ? "Failed" : 
+             "Not Connected"}
           </Text>
           {item.batteryLevel !== undefined && (
             <View style={styles.batteryContainer}>
@@ -904,46 +919,47 @@ export default function Devices() {
                 size={14} 
                 color={getBatteryColor(item.batteryLevel)} 
               />
-              <Text style={[styles.batteryText, {color: getBatteryColor(item.batteryLevel)}]}>
-                {item.batteryLevel}%
-              </Text>
+              <Text style={styles.batteryText}>{item.batteryLevel}%</Text>
             </View>
           )}
+          
           {item.athleteInfo && (
-            <Text style={styles.athleteText}>Assigned to: {item.athleteInfo.name}</Text>
+            <View style={styles.athleteInfo}>
+              <MaterialCommunityIcons name="account" size={12} color={THEME.text.tertiary} />
+              <Text style={styles.athleteText}>{item.athleteInfo.name}</Text>
+            </View>
+          )}
+          
+          {hasFailed && item.connectionError && (
+            <Text style={styles.errorTextSmall}>{item.connectionError}</Text>
           )}
         </View>
         <View style={styles.deviceActions}>
-          {connectionInProgress && selectedDeviceId === item.id ? (
+          {isConnecting ? (
             <View style={styles.loadingButton}>
               <ActivityIndicator size="small" color={THEME.primary} />
             </View>
           ) : isConnected ? (
             <TouchableOpacity 
-              onPress={() => disconnectDevice(item.id)}
+              onPress={() => disconnectDevice(item.id)} 
               style={styles.actionButton}
-              disabled={connectionInProgress}
-              activeOpacity={0.7}
-            >
+              activeOpacity={0.7}>
               <MaterialCommunityIcons name="bluetooth-off" size={20} color={THEME.error} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity 
-              onPress={() => connectToDevice(item.id, item.name)}
+              onPress={() => connectToDevice(item.id, item.name)} 
               style={styles.actionButton}
-              disabled={connectionInProgress}
-              activeOpacity={0.7}
-            >
+              activeOpacity={0.7}>
               <MaterialCommunityIcons name="bluetooth-connect" size={20} color={THEME.primary} />
             </TouchableOpacity>
           )}
           
           <TouchableOpacity 
-            onPress={() => openAssignDeviceModal(item.id)}
+            onPress={() => openAssignDeviceModal(item.id)} 
             style={styles.actionButton}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="account-plus" size={20} color={THEME.text.primary} />
+            activeOpacity={0.7}>
+            <MaterialCommunityIcons name="account-plus" size={20} color={THEME.text.secondary} />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -990,7 +1006,6 @@ export default function Devices() {
             <TouchableOpacity 
               onPress={() => connectToDevice(item.id, item.name)}
               style={styles.actionButton}
-              disabled={connectionInProgress}
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons name="bluetooth-connect" size={20} color={THEME.primary} />
@@ -1121,19 +1136,7 @@ export default function Devices() {
   );
 
   // Scan for devices button (bottom)
-  const scanDevicesButton = connectionInProgress ? (
-    <View style={styles.scanButtonContainer}>
-      <TouchableOpacity
-        style={[styles.scanButton, styles.scanningButton]}
-        disabled={true}
-      >
-        <View style={styles.scanButtonInner}>
-          <ActivityIndicator color="#fff" size="small" style={styles.scanningIcon} />
-          <Text style={styles.scanButtonText}>Connecting...</Text>
-        </View>
-      </TouchableOpacity>
-    </View>
-  ) : (
+  const scanDevicesButton = (
     <View style={styles.scanButtonContainer}>
       <TouchableOpacity
         style={styles.scanButton}
@@ -1308,13 +1311,6 @@ export default function Devices() {
             </View>
           </GlassCard>
         </View>
-
-        {connectionError && (
-          <View style={styles.errorContainer}>
-            <MaterialCommunityIcons name="alert-circle" size={20} color={THEME.error} />
-            <Text style={styles.errorText}>{connectionError}</Text>
-          </View>
-        )}
         
         {/* Bottom tab spacer */}
         <View style={{ height: 24 }} />
@@ -1459,7 +1455,10 @@ const styles = StyleSheet.create({
   },
   connectedText: {
     color: THEME.success,
-    fontWeight: '500',
+  },
+  connectingText: {
+    color: THEME.warning,
+    fontStyle: 'italic',
   },
   disconnectedText: {
     color: THEME.text.tertiary,
@@ -1482,14 +1481,13 @@ const styles = StyleSheet.create({
   },
   batteryText: {
     fontSize: 12,
+    color: THEME.text.tertiary,
     marginLeft: 4,
-    fontWeight: '500',
   },
   athleteText: {
     fontSize: 12,
-    color: THEME.primary,
-    fontWeight: '500',
-    letterSpacing: 0.2,
+    color: THEME.text.tertiary,
+    marginLeft: 4,
   },
   deviceActions: {
     flexDirection: 'row',
@@ -1612,6 +1610,11 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
+  errorTextSmall: {
+    color: THEME.error,
+    fontSize: 12, 
+    marginTop: 4,
+  },
   athleteItem: {
     flexDirection: 'row',
     paddingVertical: 14,
@@ -1620,7 +1623,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   athleteInfo: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
   },
   athleteName: {
     fontSize: 16,
@@ -1710,12 +1715,13 @@ import {
   SAMPLE_SENSOR_READINGS,
   playerData,
 } from '@/src/constants';
-import { useBluetoothService, useDeviceService } from '@/src/providers/AppProvider';
+import { useBluetoothService, useDeviceService, useSessionRepository } from '@/src/providers/AppProvider';
 import { LiveDataPoint, SavedDevice, DeviceStatus } from '@/src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LineChart from '../../app/components/charts/LineChart';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSession } from '@/src/contexts/SessionContext';
 
 // Sample data remains the same
 const SAMPLE_DEVICES = [
@@ -1776,14 +1782,14 @@ export default function Dashboard() {
   const router = useRouter();
   const bluetoothService = useBluetoothService();
   const deviceService = useDeviceService();
+  const { activeSession, startNewSession, endCurrentSession, isSessionActive, sessionLoading } = useSession();
+  const sessionRepository = useSessionRepository();
   
-  // Session State
-  const [isSessionActive, setIsSessionActive] = useState(false);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  // Session State - derived from SessionContext
   const [elapsedTime, setElapsedTime] = useState(0);
   
   // Loading & Refreshing State
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
   // Data State 
@@ -1799,21 +1805,31 @@ export default function Dashboard() {
   // Create a ref to track the latest connectedDevices state without triggering effect reruns
   const connectedDevicesRef = useRef<DeviceStatus[]>([]);
   
+  // Add a reference for device history to prevent state updates triggering more renders
+  const deviceHistoryRef = useRef<SavedDevice[]>([]);
+  
+  // Update the history ref when state changes
+  useEffect(() => {
+    deviceHistoryRef.current = deviceHistory;
+  }, [deviceHistory]);
+  
   // Update the ref whenever connectedDevices changes
   useEffect(() => {
     connectedDevicesRef.current = connectedDevices;
   }, [connectedDevices]);
   
-  // Timer interval for session timing remains the same
+  // Timer interval for session timing based on activeSession
   useEffect(() => {
-    let timerInterval = null;
+    let timerInterval: NodeJS.Timeout | null = null;
     
-    if (isSessionActive && sessionStartTime) {
+    if (isSessionActive && activeSession) {
       timerInterval = setInterval(() => {
-        const now = new Date();
-        const elapsed = now.getTime() - sessionStartTime.getTime();
+        const now = Date.now();
+        const elapsed = now - activeSession.startTime;
         setElapsedTime(elapsed);
       }, 1000);
+    } else {
+      setElapsedTime(0);
     }
     
     return () => {
@@ -1821,66 +1837,101 @@ export default function Dashboard() {
         clearInterval(timerInterval);
       }
     };
-  }, [isSessionActive, sessionStartTime]);
+  }, [isSessionActive, activeSession]);
   
-  // Load data function with real data
-  const loadData = useCallback(async () => {
-    console.log("[Dashboard] Loading data...");
-    setLoading(true);
-    try {
-      // Fetch device statuses from bluetooth service
-      const initialStatuses = bluetoothService.getDeviceStatuses();
-      setConnectedDevices(initialStatuses.filter(d => d.connected));
+  // Add a serviceReady state to track when BluetoothService is available
+  const [serviceReady, setServiceReady] = useState(false);
 
-      // Fetch saved device history
-      const saved = await deviceService.getSavedDevices();
-      // Sort by last connected time (most recent first) and take top 5
-      const sortedHistory = saved
-        .filter(d => d.lastConnected)
-        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
-        .slice(0, 5);
-      setDeviceHistory(sortedHistory);
-
-      // For now, keep sample impacts until we implement the repository
-      // const impacts = await sensorDataRepository.getRecentImpacts(5);
-      // setRecentImpacts(impacts);
-
-      console.log("[Dashboard] Initial data loaded");
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      Alert.alert('Error', 'Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [bluetoothService, deviceService]);
-
-  // Modify the useEffect for Bluetooth subscriptions to remove connectedDevices dependency
   useEffect(() => {
-    loadData(); // Initial load
+    // Check if the bluetoothService is available
+    if (bluetoothService) {
+      setServiceReady(true);
+    }
+  }, [bluetoothService]);
 
+  // Use a single effect for initial loading with stable dependencies
+  useEffect(() => {
+    // Skip if services aren't ready
+    if (!serviceReady || sessionLoading) {
+      return;
+    }
+    
+    let isMounted = true;
+    
+    const loadDataAsync = async () => {
+      if (!isMounted) return;
+      
+      console.log('[Dashboard] Loading data...');
+      
+      try {
+        // Get device statuses
+        const statuses = bluetoothService.getDeviceStatuses();
+        if (isMounted) {
+          setConnectedDevices(statuses.filter(d => d.connected));
+        }
+
+        // Fetch saved device history
+        const saved = await deviceService.getSavedDevices();
+        // Sort by last connected time (most recent first) and take top 5
+        const sortedHistory = saved
+          .filter(d => d.lastConnected)
+          .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
+          .slice(0, 5);
+        
+        if (isMounted) {
+          setDeviceHistory(sortedHistory);
+          console.log("[Dashboard] Initial data loaded");
+          setLoading(false);
+          setRefreshing(false);
+        }
+      } catch (err: any) {
+        console.error('Error loading dashboard data:', err);
+        if (isMounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    
+    // Load data once
+    loadDataAsync();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  // Remove unnecessary dependencies to prevent rerenders
+  }, [serviceReady, sessionLoading]); 
+
+  // Use a separate effect for subscriptions
+  useEffect(() => {
+    // Skip if services aren't ready
+    if (!serviceReady || sessionLoading) {
+      return;
+    }
+    
     // Subscribe to device status updates
-    const statusSubscription = bluetoothService.subscribeToDeviceStatusUpdates(deviceStatus => {
-      // Update the list of connected devices
+    const statusSubscription = bluetoothService.subscribeToDeviceStatusUpdates((status) => {
+      // Update the local state when device status changes
       setConnectedDevices(prev => {
-        const existingIndex = prev.findIndex(d => d.id === deviceStatus.id);
-        if (deviceStatus.connected) {
+        const existingIndex = prev.findIndex(d => d.id === status.id);
+        if (status.connected) {
           if (existingIndex > -1) {
             // Update existing
             const updated = [...prev];
-            updated[existingIndex] = deviceStatus;
+            updated[existingIndex] = status;
             return updated;
           } else {
             // Add new connected device
-            return [...prev, deviceStatus];
+            return [...prev, status];
           }
         } else {
           // Remove disconnected device
-          return prev.filter(d => d.id !== deviceStatus.id);
+          return prev.filter(d => d.id !== status.id);
         }
       });
     });
-
+    
     // Subscribe to live sensor data
     const sensorSubscription = bluetoothService.subscribeSensorData((deviceId, dataPoint: LiveDataPoint) => {
       // Use the ref instead of the state to check if device is connected
@@ -1893,57 +1944,107 @@ export default function Dashboard() {
       } else if (dataPoint.type === 'heartRate') {
         const hr = dataPoint.values[0];
         setCurrentHeartRate(hr);
-        // Update session max HR if needed
-        if (isSessionActive) {
-          setMaxHeartRateSession(prevMax => (hr > (prevMax ?? 0) ? hr : prevMax));
-        }
+        
+        // Update max heart rate if higher
+        setMaxHeartRateSession(prev => (prev === null || hr > prev) ? hr : prev);
       }
     });
-
+    
+    // Cleanup subscription on unmount
     return () => {
       statusSubscription.remove();
       sensorSubscription.remove();
     };
-  }, [bluetoothService, loadData, isSessionActive]);
+  // Use a limited set of stable dependencies
+  }, [serviceReady, sessionLoading]);
 
-  // Handle refresh
+  // Define loadData function for refresh with minimal dependencies
+  const loadData = useCallback(async () => {
+    if (!serviceReady || sessionLoading) {
+      setRefreshing(false);
+      return;
+    }
+    
+    try {
+      // Get device statuses
+      const statuses = bluetoothService.getDeviceStatuses();
+      setConnectedDevices(statuses.filter(d => d.connected));
+      
+      // Get device history
+      const saved = await deviceService.getSavedDevices();
+      const sortedHistory = saved
+        .filter(d => d.lastConnected)
+        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
+        .slice(0, 5);
+      setDeviceHistory(sortedHistory);
+      
+      setRefreshing(false);
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+      setRefreshing(false);
+    }
+  // Minimize dependencies to prevent rerenders  
+  }, [serviceReady, sessionLoading]);
+
+  // Pull-to-refresh handler with stable identity
   const onRefresh = useCallback(() => {
-    console.log("[Dashboard] Refresh triggered");
     setRefreshing(true);
     loadData();
   }, [loadData]);
-  
-  // Session control functions remain the same
-  const handleStartSession = () => {
-    setIsSessionActive(true);
-    setSessionStartTime(new Date());
-    setElapsedTime(0);
-    setMaxHeartRateSession(null); // Reset max HR for new session
-    Alert.alert('Session Started', 'Monitoring session has begun. All connected devices will record data.');
-  };
-  
-  const handleStopSession = async () => {
-    if (!isSessionActive || !sessionStartTime) return;
-    
-    const endTime = new Date();
-    const duration = endTime.getTime() - sessionStartTime.getTime();
-    setIsSessionActive(false);
-    
-    try {
-      // Simulate saving session
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+
+  // Session management functions using SessionContext
+  const handleStartSession = async () => {
+    if (connectedDevices.length === 0) {
       Alert.alert(
-        'Session Ended',
-        `Duration: ${formatDuration(duration)}`,
-        [{ text: 'View Report', onPress: () => router.push('/(tabs)/reports') }, { text: 'OK' }]
+        'No Devices Connected',
+        'Please connect at least one device before starting a session.',
+        [{ text: 'OK' }]
       );
+      return;
+    }
+
+    try {
+      const sessionName = `Session ${new Date().toLocaleString()}`;
+      await startNewSession(sessionName);
+      
+      // Reset session stats
+      setMaxHeartRateSession(null);
+      setCurrentAcceleration(null);
+      setCurrentHeartRate(null);
+      
+      console.log(`[Dashboard] Session started: ${sessionName}`);
     } catch (error) {
-      console.error('Error ending session:', error);
-      Alert.alert('Error', 'Failed to end session');
+      console.error('Error starting session:', error);
+      Alert.alert('Error', 'Failed to start session. Please try again.');
     }
   };
-  
+
+  const handleStopSession = async () => {
+    try {
+      // Confirm before stopping
+      Alert.alert(
+        'End Session',
+        'Are you sure you want to end the current session?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'End Session', 
+            style: 'destructive',
+            onPress: async () => {
+              // End the session via context
+              await endCurrentSession();
+              console.log('[Dashboard] Session ended');
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error stopping session:', error);
+      Alert.alert('Error', 'Failed to stop session. Please try again.');
+    }
+  };
+
+  // Format milliseconds into readable duration
   const formatDuration = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -1953,7 +2054,7 @@ export default function Dashboard() {
     // Format: hh:mm:ss
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
-  
+
   // Extract data for the accelerometer magnitude chart
   const magnitudeData = accelerometerData.map(d => {
     // Handle different sensor data types
@@ -1997,6 +2098,16 @@ export default function Dashboard() {
     // Fix navigation path to avoid conflicts
     router.push('/screens/logs');
   };
+
+  // Show loading state until services are ready
+  if (!serviceReady || sessionLoading || loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -2051,7 +2162,7 @@ export default function Dashboard() {
               <Text style={styles.sessionTitle}>
                 {isSessionActive ? 'Session in Progress' : 'Start New Session'}
               </Text>
-              {isSessionActive && sessionStartTime && (
+              {isSessionActive && activeSession && (
                 <Text style={styles.sessionTime}>
                   Duration: {formatDuration(elapsedTime)}
                 </Text>
@@ -2397,6 +2508,33 @@ const styles = StyleSheet.create({
     elevation: 5,
     marginHorizontal: 16,
     marginBottom: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: THEME.primary,
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 20,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorTitle: {
+    color: THEME.error,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 20,
+  },
+  errorText: {
+    color: THEME.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
   },
 });
 
@@ -3800,10 +3938,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
-import { useSensorDataRepository, useDeviceService } from '@/src/providers/AppProvider';
+import { useSensorDataRepository, useDeviceService, useBluetoothService } from '@/src/providers/AppProvider';
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
 import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData, SavedDevice } from '@/src/types';
 import { debounce } from 'lodash';
+import { useLocalSearchParams } from 'expo-router';
+import { useSession } from '@/src/contexts/SessionContext';
+import { useSessionRepository } from '@/src/providers/AppProvider';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
@@ -4000,11 +4141,12 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 
 export default function ReportsDetailedScreen() {
   const sensorDataRepository = useSensorDataRepository();
-
-  // Animation values
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  // Add refreshKey state to force re-renders
-  const [refreshKey, setRefreshKey] = useState(0);
+  const sessionRepository = useSessionRepository();
+  const { activeSession } = useSession();
+  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  
+  // State for current session being viewed
+  const [currentSession, setCurrentSession] = useState<any>(null);
 
   // State for raw data (only when needed for specialized visualization)
   const [impacts, setImpacts] = useState<any[]>([]);
@@ -4041,41 +4183,78 @@ export default function ReportsDetailedScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Instead of hardcoded deviceId, use a state variable
-  const [targetDeviceId, setTargetDeviceId] = useState<string>(DEVICE_ID_SIM);
+  // Initialize targetDeviceId as null to indicate it's not yet determined
+  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(null);
   
-  // Get device service to access device information
+  // Get device and bluetooth services to access device information
   const deviceService = useDeviceService();
+  const bluetoothService = useBluetoothService();
+
+  // Effect to load session data when a session ID is provided
+  useEffect(() => {
+    const loadSession = async () => {
+      if (sessionId) {
+        try {
+          const session = await sessionRepository.getSessionById(sessionId);
+          if (session) {
+            setCurrentSession(session);
+            console.log(`[ReportsDetailed] Loaded session: ${session.id} - ${session.name}`);
+          } else {
+            console.error(`[ReportsDetailed] Session not found: ${sessionId}`);
+            setError(`Session with ID ${sessionId} not found`);
+          }
+        } catch (err) {
+          console.error('[ReportsDetailed] Error loading session:', err);
+          setError('Failed to load session data');
+        }
+      } else if (activeSession) {
+        // If no specific session ID provided, use active session if available
+        setCurrentSession(activeSession);
+        console.log(`[ReportsDetailed] Using active session: ${activeSession.id} - ${activeSession.name}`);
+      }
+    };
+
+    loadSession();
+  }, [sessionId, activeSession, sessionRepository]);
   
   // Effect to find and set the target device ID
   useEffect(() => {
     const findDevice = async () => {
+      let foundId: string | null = null;
       try {
-        // Get list of saved devices
-        const savedDevices = await deviceService.getSavedDevices();
-        console.log(`[ReportsDetailed] Found ${savedDevices.length} saved devices`);
-        
-        // Use BluetoothService to get connected devices
-        const deviceStatuses = await deviceService.getSavedDevices();
-        // In a real app, we would check BluetoothService for actual connected devices
-        // but for now, just use the most recently connected device
-        
-        if (savedDevices.length > 0) {
-          // Sort by lastConnected (most recent first)
-          const sortedDevices = [...savedDevices].sort((a: SavedDevice, b: SavedDevice) => {
-            const aTime = a.lastConnected || 0;
-            const bTime = b.lastConnected || 0;
-            return bTime - aTime;
-          });
-          
-          // Use the most recently connected device
-          console.log(`[ReportsDetailed] Using most recently connected device: ${sortedDevices[0].id}`);
-          setTargetDeviceId(sortedDevices[0].id);
+        // 1. Check actively connected devices first (highest priority)
+        const connectedIds = bluetoothService.getConnectedDeviceIds();
+        if (connectedIds.length > 0) {
+          foundId = connectedIds[0]; // Use the first connected device
+          console.log(`[ReportsDetailed] Using actively connected device: ${foundId}`);
         } else {
-          // If no devices at all, fall back to the simulation device
-          console.log(`[ReportsDetailed] No devices found, falling back to simulation device`);
-          setTargetDeviceId(DEVICE_ID_SIM);
+          // 2. If none connected, check saved devices
+          const savedDevices = await deviceService.getSavedDevices();
+          console.log(`[ReportsDetailed] Found ${savedDevices.length} saved devices`);
+          
+          if (savedDevices.length > 0) {
+            // Sort by lastConnected (most recent first)
+            const sortedDevices = [...savedDevices].sort((a: SavedDevice, b: SavedDevice) => {
+              const aTime = a.lastConnected || 0;
+              const bTime = b.lastConnected || 0;
+              return bTime - aTime;
+            });
+            
+            // Use the most recently connected device
+            foundId = sortedDevices[0].id;
+            console.log(`[ReportsDetailed] Using most recently connected saved device: ${foundId}`);
+          }
         }
+        
+        // 3. Fall back to simulation device only if absolutely nothing else is found
+        if (!foundId) {
+          console.log(`[ReportsDetailed] No connected or saved devices found, falling back to simulation device ID.`);
+          foundId = DEVICE_ID_SIM;
+        }
+        
+        // Set the target device ID
+        setTargetDeviceId(foundId);
+        
       } catch (err) {
         console.error('[ReportsDetailed] Error finding device:', err);
         // Fall back to simulation device on error
@@ -4084,7 +4263,7 @@ export default function ReportsDetailedScreen() {
     };
     
     findDevice();
-  }, [deviceService]);
+  }, [deviceService, bluetoothService]);
 
   const getRiskStyle = (risk: any) => {
     switch (risk?.toLowerCase()) {
@@ -4096,16 +4275,38 @@ export default function ReportsDetailedScreen() {
   };
 
   const fetchData = useCallback(async () => {
+    // Don't attempt to fetch if targetDeviceId is not set yet
+    if (targetDeviceId === null) {
+      console.log('[ReportsDetailed] Cannot fetch data: targetDeviceId is null');
+      return;
+    }
+    
     console.log('[ReportsDetailed] Fetching data...');
     setLoading(true);
     setError(null);
 
     try {
-      // Define time range (e.g., last 24 hours, or all data for sim device)
-      const endTime = Date.now();
-      const startTime = 0; // Fetch all data for simplicity initially
+      // Define query options
+      const options: {
+        startTime?: number;
+        endTime?: number;
+        sessionId?: string;
+      } = {};
 
-      // Fetch all relevant data types
+      // If we have a current session, use its ID for filtering
+      if (currentSession) {
+        options.sessionId = currentSession.id;
+        console.log(`[ReportsDetailed] Fetching data for session: ${currentSession.id}`);
+      } else {
+        // Otherwise use a time range (last 24 hours)
+        const endTime = Date.now();
+        const startTime = endTime - (24 * 60 * 60 * 1000); // 24 hours
+        options.startTime = startTime;
+        options.endTime = endTime;
+        console.log(`[ReportsDetailed] No session specified, fetching data for last 24 hours`);
+      }
+
+      // Fetch all relevant data types with session filtering
       const [
         fetchedImpacts,
         fetchedMotion,
@@ -4113,11 +4314,11 @@ export default function ReportsDetailedScreen() {
         fetchedHrm,
         fetchedHtm
       ] = await Promise.all([
-        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', options),
+        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', options),
       ]);
 
       // Keep raw impact data for direction visualization if needed
@@ -4219,15 +4420,6 @@ export default function ReportsDetailedScreen() {
       setSessionStats(finalStats);
       console.log('[ReportsDetailed] <-- Done Setting Session Stats.');
 
-      // Animate cards in
-      console.log('[ReportsDetailed] --> Starting Animation...');
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        console.log('[ReportsDetailed] <-- Animation Completed.');
-      });
       console.log('[ReportsDetailed] == PROCESSING COMPLETE ==');
 
     } catch (err) {
@@ -4254,12 +4446,38 @@ export default function ReportsDetailedScreen() {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [targetDeviceId, sensorDataRepository, fadeAnim]);
+  }, [targetDeviceId, sensorDataRepository, currentSession]);
 
-  // Fetch data on initial mount
+  // Fetch data whenever targetDeviceId changes from null to a valid value
+  // or when currentSession changes
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (targetDeviceId !== null) {
+      fetchData();
+    }
+  }, [targetDeviceId, fetchData, currentSession]);
+  
+  // Set up event listener for data changes
+  useEffect(() => {
+    if (!targetDeviceId) return;
+    
+    const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
+      // Only refetch for matching device and session
+      if (
+        eventData.deviceId === targetDeviceId && 
+        (!currentSession || !eventData.sessionId || eventData.sessionId === currentSession.id)
+      ) {
+        console.log(`[ReportsDetailed] Data changed event triggered for ${eventData.type} - refreshing charts...`);
+        fetchData();
+      }
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    // Cleanup subscription on unmount
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+    };
+  }, [targetDeviceId, fetchData, currentSession]);
 
   // Create a ref to hold the latest fetchData function
   const fetchDataRef = useRef(fetchData);
@@ -4277,31 +4495,6 @@ export default function ReportsDetailedScreen() {
       fetchDataRef.current();
     }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
   ).current;
-
-  // Subscribe to data changes (using the debounced fetch)
-  useEffect(() => {
-    const handleDataChange = (eventData: { deviceId: string; type: string }) => {
-      // Re-fetch data if the change affects the current device
-      if (eventData.deviceId === targetDeviceId) {
-        console.log(`[ReportsDetailed] Data changed for device ${targetDeviceId} (type: ${eventData.type}), queueing debounced fetch...`);
-        debouncedFetchData(); // Call the debounced function
-        
-        // Force a re-render shortly after data is likely fetched
-        setTimeout(() => {
-          console.log('[ReportsDetailed] Forcing component refresh after data change');
-          setRefreshKey(prev => prev + 1);
-        }, 1200); // Wait slightly longer than the debounce period (1000ms)
-      }
-    };
-
-    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
-    
-    // Cleanup subscription on unmount
-    return () => {
-      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
-      debouncedFetchData.cancel(); // Cancel any pending debounced calls
-    };
-  }, [targetDeviceId, debouncedFetchData]);
 
   // Add detailed chart data logging
   useEffect(() => {
@@ -4334,12 +4527,14 @@ export default function ReportsDetailedScreen() {
     }
   }, [loading, error, hrmChartData, tempChartData, biteForceChartData, motionChartData]);
 
-  // Show loading indicator
-  if (loading) {
+  // Show loading indicator if loading or if targetDeviceId is null
+  if (loading || targetDeviceId === null) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Report Data...</Text>
+        <Text style={styles.loadingText}>
+          {targetDeviceId === null ? 'Finding device...' : 'Loading Report Data...'}
+        </Text>
       </View>
     );
   }
@@ -4367,7 +4562,8 @@ export default function ReportsDetailedScreen() {
     return (
       <View style={styles.emptyContainer}>
         <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
-        <Text style={styles.emptyText}>No Data Available</Text>
+        <Text style={styles.emptyText}>No Data Available for Device</Text>
+        <Text style={styles.emptySubText}>Device ID: {targetDeviceId}</Text>
         <Text style={styles.emptySubText}>Generate test data or connect a device to see reports.</Text>
       </View>
     );
@@ -4378,7 +4574,6 @@ export default function ReportsDetailedScreen() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
-          key={refreshKey} // Add key to force re-render when refreshKey changes
           style={styles.container}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -4397,10 +4592,7 @@ export default function ReportsDetailedScreen() {
           </View>
 
           {/* Session Info Card - Refined */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}]}}>
+          <View>
             <GlassCard style={styles.summaryCard}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Session Report</Text>
@@ -4428,7 +4620,7 @@ export default function ReportsDetailedScreen() {
                 </View>
               </View>
             </GlassCard>
-          </Animated.View>
+          </View>
 
           {/* Heart Rate Card - Modified for iOS compatibility */}
           <View style={[styles.chartCardContainer, {marginTop: 8}]}>
@@ -4925,6 +5117,290 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
 });
+
+================================================================================
+File: app/(tabs)/sessions.tsx
+================================================================================
+
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Session } from '@/src/types';
+import { useSession } from '@/src/contexts/SessionContext';
+import { useSessionRepository } from '@/src/providers/AppProvider';
+import { COLORS } from '@/src/constants';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const SessionCard = ({ session, onSelect, isActive }: { 
+  session: Session; 
+  onSelect: (session: Session) => void;
+  isActive: boolean;
+}) => {
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  const getDuration = (start: number, end?: number) => {
+    if (!end) return 'In progress';
+    
+    const durationMs = end - start;
+    const seconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  return (
+    <TouchableOpacity 
+      style={[styles.card, isActive && styles.activeCard]} 
+      onPress={() => onSelect(session)}
+    >
+      <View style={styles.cardHeader}>
+        <Text style={styles.sessionName}>{session.name}</Text>
+        {isActive && (
+          <View style={styles.activeBadge}>
+            <Text style={styles.activeBadgeText}>ACTIVE</Text>
+          </View>
+        )}
+      </View>
+      
+      <View style={styles.cardDetails}>
+        <View style={styles.detailRow}>
+          <MaterialCommunityIcons name="calendar-clock" size={18} color={COLORS.primary} />
+          <Text style={styles.detailText}>{formatDate(session.startTime)}</Text>
+        </View>
+        
+        <View style={styles.detailRow}>
+          <MaterialCommunityIcons name="timer-outline" size={18} color={COLORS.primary} />
+          <Text style={styles.detailText}>
+            {getDuration(session.startTime, session.endTime)}
+          </Text>
+        </View>
+        
+        {session.team && (
+          <View style={styles.detailRow}>
+            <MaterialCommunityIcons name="account-group" size={18} color={COLORS.primary} />
+            <Text style={styles.detailText}>{session.team}</Text>
+          </View>
+        )}
+      </View>
+      
+      <View style={styles.cardFooter}>
+        <Text style={styles.viewDetailsText}>View Details</Text>
+        <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.primary} />
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+export default function SessionsScreen() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const sessionRepository = useSessionRepository();
+  const { activeSession } = useSession();
+  const router = useRouter();
+
+  const loadSessions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const allSessions = await sessionRepository.getAllSessions(50);
+      setSessions(allSessions);
+    } catch (error) {
+      console.error('Error loading sessions:', error);
+      Alert.alert('Error', 'Failed to load sessions');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [sessionRepository]);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const handleSessionSelect = (session: Session) => {
+    router.push({
+      pathname: '/(tabs)/reportsDetailed',
+      params: { sessionId: session.id }
+    });
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadSessions();
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading sessions...</Text>
+      </View>
+    );
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <View style={styles.centeredContainer}>
+        <MaterialCommunityIcons name="calendar-remove" size={64} color={COLORS.textSecondary} />
+        <Text style={styles.emptyTitle}>No Sessions Yet</Text>
+        <Text style={styles.emptyText}>
+          Start a new session from the dashboard to begin tracking data.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Session History</Text>
+      <Text style={styles.subtitle}>
+        View data from previous monitoring sessions
+      </Text>
+      
+      <FlatList
+        data={sessions}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <SessionCard 
+            session={item} 
+            onSelect={handleSessionSelect}
+            isActive={activeSession?.id === item.id}
+          />
+        )}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+          />
+        }
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: COLORS.background,
+  },
+  centeredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginBottom: 16,
+  },
+  listContent: {
+    paddingBottom: 20,
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  activeCard: {
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sessionName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
+    flex: 1,
+  },
+  activeBadge: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  activeBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  cardDetails: {
+    marginBottom: 16,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  viewDetailsText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    marginRight: 4,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+}); 
 
 ================================================================================
 File: app/(tabs)/settings.tsx
@@ -14623,6 +15099,140 @@ export class BluetoothHandler {
 
 
 ================================================================================
+File: src/contexts/SessionContext.tsx
+================================================================================
+
+import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import { Session } from '../types';
+import { SessionRepository } from '../repositories/SessionRepository';
+import { DatabaseManager } from '../DatabaseManager';
+
+interface SessionContextType {
+  activeSession: Session | null;
+  startNewSession: (name?: string, team?: string) => Promise<Session>;
+  endCurrentSession: () => Promise<void>;
+  isSessionActive: boolean;
+  sessionLoading: boolean;
+}
+
+const SessionContext = createContext<SessionContextType | undefined>(undefined);
+
+interface SessionProviderProps {
+  children: ReactNode;
+}
+
+export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) => {
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [sessionRepository, setSessionRepository] = useState<SessionRepository | null>(null);
+  const [sessionLoading, setSessionLoading] = useState<boolean>(true);
+
+  // Initialize the repository
+  useEffect(() => {
+    const initRepo = async () => {
+      try {
+        // Get database manager instance
+        const dbManager = DatabaseManager.getInstance();
+        // Ensure database is initialized
+        await dbManager.ensureInitialized();
+        // Get database
+        const db = await dbManager.getDatabase('mouthguardMonitor');
+        // Create repository
+        const repo = new SessionRepository(db);
+        setSessionRepository(repo);
+
+        // Check for unfinished session
+        const unfinished = await repo.findUnfinishedSession();
+        if (unfinished) {
+          console.log(`[SessionContext] Found unfinished session: ${unfinished.id}`);
+          setActiveSession(unfinished);
+        }
+        setSessionLoading(false);
+      } catch (error) {
+        console.error('[SessionContext] Error initializing repository:', error);
+        setSessionLoading(false);
+      }
+    };
+
+    initRepo();
+  }, []);
+
+  const startNewSession = useCallback(async (name?: string, team?: string): Promise<Session> => {
+    if (!sessionRepository) {
+      throw new Error('Session repository not initialized');
+    }
+
+    if (activeSession) {
+      console.log(`[SessionContext] Cannot start new session, session ${activeSession.id} is already active`);
+      return activeSession; // Return existing session if already active
+    }
+
+    const now = Date.now();
+    const newSession: Session = {
+      id: `session_${uuidv4()}`,
+      name: name || `Session ${new Date(now).toLocaleString()}`,
+      startTime: now,
+      team: team,
+      createdAt: now,
+    };
+
+    try {
+      await sessionRepository.saveSession(newSession);
+      setActiveSession(newSession);
+      console.log(`[SessionContext] Started new session: ${newSession.id}`);
+      return newSession;
+    } catch (error) {
+      console.error('[SessionContext] Error starting new session:', error);
+      throw error;
+    }
+  }, [activeSession, sessionRepository]);
+
+  const endCurrentSession = useCallback(async (): Promise<void> => {
+    if (!sessionRepository || !activeSession) {
+      console.log('[SessionContext] No active session to end');
+      return;
+    }
+
+    const now = Date.now();
+    const updatedSession: Session = {
+      ...activeSession,
+      endTime: now
+    };
+
+    try {
+      await sessionRepository.updateSession(updatedSession);
+      console.log(`[SessionContext] Ended session: ${activeSession.id}`);
+      setActiveSession(null);
+    } catch (error) {
+      console.error('[SessionContext] Error ending session:', error);
+      throw error;
+    }
+  }, [activeSession, sessionRepository]);
+
+  const contextValue: SessionContextType = {
+    activeSession,
+    startNewSession,
+    endCurrentSession,
+    isSessionActive: !!activeSession,
+    sessionLoading
+  };
+
+  return (
+    <SessionContext.Provider value={contextValue}>
+      {children}
+    </SessionContext.Provider>
+  );
+};
+
+export const useSession = (): SessionContextType => {
+  const context = useContext(SessionContext);
+  if (!context) {
+    throw new Error('useSession must be used within a SessionProvider');
+  }
+  return context;
+}; 
+
+================================================================================
 File: src/DatabaseManager.ts
 ================================================================================
 
@@ -14637,7 +15247,7 @@ import { Platform } from 'react-native';
 
 // Export constants for use by other modules
 export const DB_VERSION_KEY = "dbVersion";
-export const CURRENT_DB_VERSION = 3;
+export const CURRENT_DB_VERSION = 4;
 export const MOUTHGUARD_DB_NAME = "mouthguardMonitor.db";
 
 /**
@@ -15060,6 +15670,7 @@ import * as v1 from './v1';
 // Import future migration versions here
 import * as v2 from './v2';
 import * as v3 from './v3';
+import * as v4 from './v4';
 
 /**
  * Migration module interface
@@ -15078,6 +15689,7 @@ export const migrations: Record<number, MigrationModule> = {
   // Add future migrations here as they are created
   2: v2,
   3: v3,
+  4: v4,
 }; 
 
 ================================================================================
@@ -15513,6 +16125,76 @@ export async function down(db: SQLiteDatabase): Promise<void> {
 } 
 
 ================================================================================
+File: src/migrations/v4.ts
+================================================================================
+
+import { SQLiteDatabase } from 'expo-sqlite';
+
+async function addSessionIdColumn(db: SQLiteDatabase, tableName: string) {
+  try {
+    // Check if column exists first to make migration repeatable
+    const tableInfo = await db.getAllAsync(`PRAGMA table_info(${tableName})`);
+    const columnExists = tableInfo.some((col: any) => col.name === 'session_id');
+    if (!columnExists) {
+      await db.execAsync(`ALTER TABLE ${tableName} ADD COLUMN session_id TEXT;`);
+      await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_${tableName}_session_id ON ${tableName}(session_id);`);
+      console.log(`[Migration V4] Added session_id to ${tableName}`);
+    } else {
+      console.log(`[Migration V4] session_id already exists on ${tableName}`);
+    }
+  } catch (error) {
+    console.error(`[Migration V4] Error adding session_id to ${tableName}:`, error);
+    throw error; // Re-throw to stop migration on critical error
+  }
+}
+
+export async function up(db: SQLiteDatabase): Promise<void> {
+  console.log('[Migration V4] Applying migration: Add session_id to data tables...');
+
+  // Create sessions table first if it doesn't exist (though it should from v1)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      start_time INTEGER NOT NULL,
+      end_time INTEGER,
+      team TEXT,
+      created_at INTEGER NOT NULL,
+      notes TEXT
+    );
+  `);
+  await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_session_start ON sessions(start_time);`);
+  console.log('[Migration V4] Ensured sessions table exists.');
+
+  // Add session_id to relevant tables
+  const tablesToUpdate = [
+    'motion_packets',
+    'fsr_packets',
+    'hrm_packets',
+    'htm_packets',
+    'impact_events',
+    'accelerometer_data',
+    'imu_data',
+    'temperature_data',
+    'force_data',
+    'heart_rate_data'
+  ];
+
+  for (const table of tablesToUpdate) {
+    await addSessionIdColumn(db, table);
+  }
+
+  console.log('[Migration V4] Migration completed successfully.');
+}
+
+// Optional Down Migration (Potentially complex/lossy)
+export async function down(db: SQLiteDatabase): Promise<void> {
+  console.warn('[Migration V4 Down] Down migration not implemented for safety reasons.');
+  // SQLite doesn't easily support dropping columns.
+  // You'd typically need to recreate each table and copy data, which is risky.
+} 
+
+================================================================================
 File: src/providers/AppProvider.tsx
 ================================================================================
 
@@ -15526,7 +16208,9 @@ import { BluetoothService } from '../services/BluetoothService';
 import { AppSetupService } from '../services/AppSetupService';
 import { AthleteRepository } from '../repositories/AthleteRepository';
 import { SensorDataRepository } from '../repositories/SensorDataRepository';
+import { SessionRepository } from '../repositories/SessionRepository';
 import { BluetoothHandler } from '../contexts/BluetoothContext';
+import { SessionProvider, useSession } from '../contexts/SessionContext';
 
 // Define the AppContext type
 interface AppContextType {
@@ -15537,6 +16221,7 @@ interface AppContextType {
   appSetupService: AppSetupService;
   athleteRepository: AthleteRepository;
   sensorDataRepository: SensorDataRepository;
+  sessionRepository: SessionRepository;
   initialized: boolean;
 }
 
@@ -15619,18 +16304,16 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         console.log('[AppProvider] Initializing repositories...');
         const athleteRepository = new AthleteRepository(db);
         const sensorDataRepository = new SensorDataRepository(db);
+        const sessionRepository = new SessionRepository(db);
         console.log('[AppProvider] Repositories initialized');
         
         // Initialize services that depend on repositories
         const deviceService = new DeviceService(storageService);
         
         // Prioritize Bluetooth service creation for background mode
-        const bluetoothService = new BluetoothService(
-          deviceService,
-          sensorDataRepository,
-          athleteRepository,
-          bluetoothHandler
-        );
+        // Note: We'll create the actual bluetooth service after SessionProvider is mounted
+        // For now, set a placeholder for the expected property
+        const bluetoothServicePlaceholder = null as unknown as BluetoothService;
 
         // In background mode, we prioritize getting the Bluetooth service ready
         // and defer other non-critical initializations
@@ -15648,10 +16331,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
             databaseManager,
             storageService,
             deviceService,
-            bluetoothService,
+            bluetoothService: bluetoothServicePlaceholder, // Placeholder
             appSetupService: minimalAppSetupService,
             athleteRepository,
             sensorDataRepository,
+            sessionRepository,
             initialized: true
           });
           
@@ -15663,7 +16347,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
             if (nextAppState === 'active') {
               console.log('[AppProvider] App came to foreground, completing full initialization');
               // Complete remaining setup when app comes to foreground
-              completeSetup(storageService, databaseManager, bluetoothService);
+              completeSetup(storageService, databaseManager, bluetoothServicePlaceholder);
               // Remove listener once we've handled the transition
               subscription.remove();
             }
@@ -15686,10 +16370,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
             databaseManager,
             storageService,
             deviceService,
-            bluetoothService,
+            bluetoothService: bluetoothServicePlaceholder, // Placeholder
             appSetupService,
             athleteRepository,
             sensorDataRepository,
+            sessionRepository,
             initialized: true
           });
           
@@ -15717,68 +16402,103 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         // Ensure app is properly initialized
         await appSetupService.ensureInitialized();
         
-        // Update services with the appSetupService
-        setServices(prevServices => {
-          if (!prevServices) return null;
-          return {
-            ...prevServices,
-            appSetupService
-          };
-        });
-        
-        console.log('[AppProvider] Deferred initialization completed successfully');
+        console.log('[AppProvider] ✅ Full app initialization completed');
       } catch (err: any) {
-        console.error('[AppProvider] Error during deferred initialization:', err);
+        console.error('[AppProvider] Error during full initialization:', err);
+        setError(err.message || 'Failed to complete initialization');
       }
     }
     
+    // Start the initialization process
     setupApp();
     
-    // Cleanup function
-    return () => {
-      // Close database connections when app is unmounted
-      if (services?.databaseManager) {
-        services.databaseManager.cleanup().catch(err => {
-          console.error('[AppProvider] Error cleaning up database connections:', err);
-        });
-      }
-    };
-  }, [bluetoothHandler]);
+  }, [bluetoothHandler, isBackgroundLaunch]);
 
-  // Loading state - don't show this in background mode
-  if ((!initialized || !services) && !isBackgroundLaunch) {
+  // Special component that creates the actual BluetoothService once SessionContext is available
+  const BluetoothServiceInitializer = () => {
+    const sessionContext = useSession();
+    // Use a ref to track if we've already created the service
+    const serviceCreatedRef = React.useRef(false);
+    
+    // Include sessionContext in dependency array to properly update when it changes
+    const getSessionContext = React.useCallback(() => sessionContext, [sessionContext]);
+    
+    useEffect(() => {
+      // Skip if services isn't available yet
+      if (!services) return;
+      
+      // Skip if we've already created the service to prevent infinite loops
+      if (serviceCreatedRef.current) return;
+      
+      // Create the actual bluetoothService now that we have SessionContext
+      const bluetoothService = new BluetoothService(
+        services.deviceService,
+        services.sensorDataRepository,
+        services.athleteRepository,
+        getSessionContext,
+        bluetoothHandler
+      );
+      
+      // Mark that we've created the service
+      serviceCreatedRef.current = true;
+      console.log('[AppProvider] BluetoothService created with SessionContext');
+      
+      // Update the services object with the real bluetoothService - only once
+      setServices(prevServices => {
+        if (prevServices && prevServices.bluetoothService !== bluetoothService) {
+          return {
+            ...prevServices,
+            bluetoothService
+          };
+        }
+        return prevServices; // Return unchanged if no update needed
+      });
+      
+    }, [services, getSessionContext]); // Include services in dependency array
+    
+    return null;
+  };
+
+  if (error) {
+    // Display error state
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#00e676" />
-        <Text style={{ marginTop: 20, color: '#fff' }}>Initializing app...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Text style={{ fontSize: 18, marginBottom: 20, textAlign: 'center' }}>
+          Error initializing app
+        </Text>
+        <Text style={{ color: 'red', marginBottom: 20, textAlign: 'center' }}>
+          {error}
+        </Text>
+        <Text style={{ fontSize: 14, textAlign: 'center' }}>
+          Please restart the app or contact support if the problem persists.
+        </Text>
       </View>
     );
   }
 
-  // Error state - don't show this in background mode
-  if (error && !isBackgroundLaunch) {
+  if (!initialized || !services) {
+    // Display loading state
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: '#ff4444', fontSize: 16, marginBottom: 10 }}>
-          Error: {error}
-        </Text>
-        <Text style={{ color: '#fff', textAlign: 'center', marginHorizontal: 20 }}>
-          Please restart the app or contact support.
-        </Text>
+        <ActivityIndicator size="large" color="#0000ff" />
+        <Text style={{ marginTop: 20 }}>Initializing app dependencies...</Text>
       </View>
     );
   }
 
+  // Provide the context value to children
   return (
-    <AppContext.Provider value={services!}>
-      {children}
+    <AppContext.Provider value={services}>
+      <SessionProvider>
+        <BluetoothServiceInitializer />
+        {children}
+      </SessionProvider>
     </AppContext.Provider>
   );
 };
 
 /**
- * Custom hook to access the app context
- * @throws Error if used outside of AppProvider
+ * Custom hook to use the AppContext
  */
 export function useAppContext(): AppContextType {
   const context = useContext(AppContext);
@@ -15789,7 +16509,7 @@ export function useAppContext(): AppContextType {
 }
 
 /**
- * Custom hook to access the storage service
+ * Custom hook to use the StorageService
  */
 export function useStorageService(): StorageService {
   const { storageService } = useAppContext();
@@ -15797,7 +16517,7 @@ export function useStorageService(): StorageService {
 }
 
 /**
- * Custom hook to access the device service
+ * Custom hook to use the DeviceService
  */
 export function useDeviceService(): DeviceService {
   const { deviceService } = useAppContext();
@@ -15805,7 +16525,7 @@ export function useDeviceService(): DeviceService {
 }
 
 /**
- * Custom hook to access the bluetooth service
+ * Custom hook to use the BluetoothService
  */
 export function useBluetoothService(): BluetoothService {
   const { bluetoothService } = useAppContext();
@@ -15813,7 +16533,7 @@ export function useBluetoothService(): BluetoothService {
 }
 
 /**
- * Custom hook to access the app setup service
+ * Custom hook to use the AppSetupService
  */
 export function useAppSetupService(): AppSetupService {
   const { appSetupService } = useAppContext();
@@ -15821,7 +16541,7 @@ export function useAppSetupService(): AppSetupService {
 }
 
 /**
- * Custom hook to access the athlete repository
+ * Custom hook to use the AthleteRepository
  */
 export function useAthleteRepository(): AthleteRepository {
   const { athleteRepository } = useAppContext();
@@ -15829,11 +16549,19 @@ export function useAthleteRepository(): AthleteRepository {
 }
 
 /**
- * Custom hook to access the sensor data repository
+ * Custom hook to use the SensorDataRepository
  */
 export function useSensorDataRepository(): SensorDataRepository {
   const { sensorDataRepository } = useAppContext();
   return sensorDataRepository;
+}
+
+/**
+ * Custom hook to use the SessionRepository
+ */
+export function useSessionRepository(): SessionRepository {
+  const { sessionRepository } = useAppContext();
+  return sessionRepository;
 } 
 
 ================================================================================
@@ -16248,14 +16976,15 @@ export class SensorDataRepository {
     timestamp: number,
     x: number,
     y: number,
-    z: number
+    z: number,
+    sessionId: string | null = null
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO imu_data (device_id, sensor_id, timestamp, x, y, z, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [deviceId, sensorId, timestamp, x, y, z, now]
+        `INSERT INTO imu_data (device_id, sensor_id, timestamp, x, y, z, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [deviceId, sensorId, timestamp, x, y, z, now, sessionId]
       );
     } catch (error) {
       console.error('Error inserting IMU data:', error);
@@ -16267,7 +16996,7 @@ export class SensorDataRepository {
    * Record accelerometer data from a device
    */
   public async recordAccelerometerData(
-    data: AccelerometerData
+    data: AccelerometerData & { sessionId?: string | null }
   ): Promise<void> {
     const now = Date.now();
     const thresholdG = 80; // Example threshold
@@ -16276,9 +17005,9 @@ export class SensorDataRepository {
     await this.db.withTransactionAsync(async () => {
       try {
         await this.db.runAsync(
-          `INSERT INTO accelerometer_data (device_id, sensor_id, timestamp, x, y, z, magnitude, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [data.deviceId, data.sensorId, data.timestamp, data.x, data.y, data.z, data.magnitude, data.createdAt || now]
+          `INSERT INTO accelerometer_data (device_id, sensor_id, timestamp, x, y, z, magnitude, created_at, session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [data.deviceId, data.sensorId, data.timestamp, data.x, data.y, data.z, data.magnitude, data.createdAt || now, data.sessionId || null]
         );
 
         // Check if this is a potential concussion event (high-g impact)
@@ -16286,7 +17015,8 @@ export class SensorDataRepository {
           await this.recordImpactEventInternal(
             data.deviceId, undefined, data.timestamp, 
             data.magnitude, data.x, data.y, data.z, 
-            data.createdAt || now
+            data.createdAt || now, undefined, undefined, undefined, undefined,
+            data.sessionId || null
           ); // Use internal helper
         }
       } catch (error) {
@@ -16300,14 +17030,14 @@ export class SensorDataRepository {
    * Record temperature data from a device
    */
   public async recordTemperatureData(
-    data: TemperatureData
+    data: TemperatureData & { sessionId?: string | null }
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO temperature_data (device_id, sensor_id, timestamp, temperature, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [data.deviceId, data.sensorId, data.timestamp, data.temperature, data.createdAt || now]
+        `INSERT INTO temperature_data (device_id, sensor_id, timestamp, temperature, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [data.deviceId, data.sensorId, data.timestamp, data.temperature, data.createdAt || now, data.sessionId || null]
       );
     } catch (error) {
       console.error('Error inserting temperature data:', error);
@@ -16322,14 +17052,15 @@ export class SensorDataRepository {
     deviceId: string,
     sensorId: number,
     timestamp: number,
-    force: number
+    force: number,
+    sessionId: string | null = null
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO force_data (device_id, sensor_id, timestamp, force, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [deviceId, sensorId, timestamp, force, now]
+        `INSERT INTO force_data (device_id, sensor_id, timestamp, force, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [deviceId, sensorId, timestamp, force, now, sessionId]
       );
     } catch (error) {
       console.error('Error inserting force data:', error);
@@ -16341,14 +17072,14 @@ export class SensorDataRepository {
    * Record heart rate data from a device
    */
   public async recordHeartRateData(
-    data: HeartRateData
+    data: HeartRateData & { sessionId?: string | null }
   ): Promise<void> {
     const now = Date.now();
     try {
       await this.db.runAsync(
-        `INSERT INTO heart_rate_data (device_id, timestamp, heart_rate, created_at)
-         VALUES (?, ?, ?, ?)`,
-        [data.deviceId, data.timestamp, data.heartRate, data.createdAt || now]
+        `INSERT INTO heart_rate_data (device_id, timestamp, heart_rate, created_at, session_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [data.deviceId, data.timestamp, data.heartRate, data.createdAt || now, data.sessionId || null]
       );
     } catch (error) {
       console.error('Error inserting heart rate data:', error);
@@ -16371,12 +17102,13 @@ export class SensorDataRepository {
     severity?: string,
     durationMs?: number,
     location?: string,
-    notes?: string
+    notes?: string,
+    sessionId: string | null = null
   ): Promise<void> {
     console.warn(`SensorDataRepository: Recording potential impact event: ${magnitude.toFixed(1)}g`);
     await this.db.runAsync(
-      `INSERT INTO impact_events (device_id, athlete_id, timestamp, magnitude, x, y, z, duration_ms, location, processed, severity, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO impact_events (device_id, athlete_id, timestamp, magnitude, x, y, z, duration_ms, location, processed, severity, notes, created_at, session_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         deviceId,
         athleteId ?? null,
@@ -16388,7 +17120,8 @@ export class SensorDataRepository {
         0, // processed = false
         severity ?? null,
         notes ?? null,
-        createdAt
+        createdAt,
+        sessionId
       ]
     );
     // Emit concussion detected event
@@ -16396,16 +17129,17 @@ export class SensorDataRepository {
       deviceId,
       timestamp,
       magnitude,
-      athleteId // Pass athleteId if available
+      athleteId, // Pass athleteId if available
+      sessionId // Pass sessionId if available
     });
   }
 
   /**
    * Record a raw Motion Packet and potentially an impact event
    */
-  public async recordMotionPacket(deviceId: string, packet: MotionPacket): Promise<number> {
+  public async recordMotionPacket(deviceId: string, packet: MotionPacket, sessionId: string | null = null): Promise<number> {
     const appTimestamp = Date.now();
-    console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
+    console.log(`[SensorDataRepo] Recording Motion Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}, sessionId: ${sessionId || 'none'}`);
 
     try {
       // Calculate G-forces for impact detection
@@ -16423,153 +17157,179 @@ export class SensorDataRepository {
           accel16_x, accel16_y, accel16_z,
           accel200_x, accel200_y, accel200_z,
           mag_x, mag_y, mag_z,
-          bite_l, bite_r, app_timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          bite_l, bite_r, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          deviceId, packet.timestamp, // Device timestamp
+          deviceId,
+          packet.timestamp,
           packet.gyro[0], packet.gyro[1], packet.gyro[2],
           packet.accel16[0], packet.accel16[1], packet.accel16[2],
-          packet.accel200[0], packet.accel200[1], packet.accel200[2],
+          packet.accel200[0], packet.accel200[1], packet.accel200[2], 
           packet.mag[0], packet.mag[1], packet.mag[2],
-          packet.bite_l, packet.bite_r, appTimestamp // App timestamp
+          packet.bite_l, packet.bite_r,
+          appTimestamp,
+          sessionId
         ]
       );
 
-      console.log(`[SensorDataRepo] Motion Packet recorded successfully. ID: ${result.lastInsertRowId}, Changes: ${result.changes}`);
-
-      // Check for potential impact event
-      const thresholdG = 80; // 80G threshold for potential concussion
-      if (magnitude > thresholdG) {
+      // Check if this is a potential impact event
+      const IMPACT_THRESHOLD_G = 80; // Example threshold
+      if (magnitude > IMPACT_THRESHOLD_G) {
+        // Create an impact event
         await this.recordImpactEventInternal(
-          deviceId, undefined, packet.timestamp, 
-          magnitude, gForceX, gForceY, gForceZ,
-          appTimestamp
+          deviceId,
+          undefined, // athleteId (could look this up from device)
+          appTimestamp, // use app timestamp for consistent timeline
+          magnitude,
+          gForceX, gForceY, gForceZ,
+          appTimestamp,
+          undefined, undefined, undefined, undefined,
+          sessionId
         );
       }
 
-      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+      // Return the inserted ID
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId, sessionId });
       return result.lastInsertRowId;
     } catch (error) {
-      console.error('[SensorDataRepo] FAILED to insert Motion Packet:', error);
+      console.error('Error inserting motion packet:', error);
       throw error;
     }
   }
 
   /**
-   * Record a raw FSR (bite force) Packet
+   * Record a raw FSR Packet
    */
-  public async recordFSRPacket(deviceId: string, packet: FSRPacket): Promise<number> {
+  public async recordFSRPacket(deviceId: string, packet: FSRPacket, sessionId: string | null = null): Promise<number> {
     const appTimestamp = Date.now();
-    console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}`);
-    
-    // Insert the FSR packet data (storing unscaled forces)
-    const result = await this.db.runAsync(
-      `INSERT INTO fsr_packets (
-        device_id, device_timestamp, left_bite, right_bite, app_timestamp
-      ) VALUES (?, ?, ?, ?, ?)`,
-      [
-        deviceId, packet.timestamp, // Device timestamp
-        packet.left_bite, // Already unscaled in BluetoothService
-        packet.right_bite, // Already unscaled in BluetoothService  
-        appTimestamp
-      ]
-    );
+    console.log(`[SensorDataRepo] Recording FSR Packet for ${deviceId} at ${appTimestamp}, device timestamp: ${packet.timestamp}, sessionId: ${sessionId || 'none'}`);
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
-    return result.lastInsertRowId;
+    try {
+      const result = await this.db.runAsync(
+        `INSERT INTO fsr_packets (
+          device_id, device_timestamp,
+          left_bite, right_bite, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          deviceId, 
+          packet.timestamp, 
+          packet.left_bite, 
+          packet.right_bite, 
+          appTimestamp,
+          sessionId
+        ]
+      );
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId, sessionId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error inserting FSR packet:', error);
+      throw error;
+    }
   }
 
   /**
-   * Record a Heart Rate Measurement Packet
+   * Record a raw HRM Packet
    */
-  public async recordHRMPacket(deviceId: string, packet: HRMPacket): Promise<number> {
-    console.log(`[SensorDataRepo] Recording HRM Packet for ${deviceId}, HR: ${packet.heartRate}`);
-    
-    // Insert the HRM packet data
-    const result = await this.db.runAsync(
-      `INSERT INTO hrm_packets (
-        device_id, flags, heart_rate, app_timestamp
-      ) VALUES (?, ?, ?, ?)`,
-      [
-        deviceId, 
-        packet.flags,
-        packet.heartRate,
-        packet.appTimestamp
-      ]
-    );
+  public async recordHRMPacket(deviceId: string, packet: HRMPacket, sessionId: string | null = null): Promise<number> {
+    const appTimestamp = packet.appTimestamp || Date.now();
+    console.log(`[SensorDataRepo] Recording HRM Packet for ${deviceId} at ${appTimestamp}, sessionId: ${sessionId || 'none'}`);
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
-    return result.lastInsertRowId;
+    try {
+      const result = await this.db.runAsync(
+        `INSERT INTO hrm_packets (
+          device_id, flags, heart_rate, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?)`,
+        [
+          deviceId,
+          packet.flags,
+          packet.heartRate,
+          appTimestamp,
+          sessionId
+        ]
+      );
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId, sessionId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error inserting HRM packet:', error);
+      throw error;
+    }
   }
 
   /**
-   * Record a Health Thermometer Measurement Packet
+   * Record a raw HTM Packet
    */
-  public async recordHTMPacket(deviceId: string, packet: HTMPacket): Promise<number> {
-    console.log(`[SensorDataRepo] Recording HTM Packet for ${deviceId}, Temp: ${packet.temperature}`);
-    
-    // Insert the HTM packet data
-    const result = await this.db.runAsync(
-      `INSERT INTO htm_packets (
-        device_id, flags, temperature, type, app_timestamp
-      ) VALUES (?, ?, ?, ?, ?)`,
-      [
-        deviceId, 
-        packet.flags,
-        packet.temperature, // Already unscaled in BluetoothService
-        packet.type ?? null,
-        packet.appTimestamp
-      ]
-    );
+  public async recordHTMPacket(deviceId: string, packet: HTMPacket, sessionId: string | null = null): Promise<number> {
+    const appTimestamp = packet.appTimestamp || Date.now();
+    console.log(`[SensorDataRepo] Recording HTM Packet for ${deviceId} at ${appTimestamp}, sessionId: ${sessionId || 'none'}`);
 
-    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
-    return result.lastInsertRowId;
+    try {
+      const result = await this.db.runAsync(
+        `INSERT INTO htm_packets (
+          device_id, flags, temperature, type, app_timestamp, session_id
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          deviceId,
+          packet.flags,
+          packet.temperature,
+          packet.type || null,
+          appTimestamp,
+          sessionId
+        ]
+      );
+
+      dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId, sessionId });
+      return result.lastInsertRowId;
+    } catch (error) {
+      console.error('Error inserting HTM packet:', error);
+      throw error;
+    }
   }
 
   /**
-   * Get sensor data for a specific device within a time range
+   * Get sensor data with optional session filtering
    */
   public async getSensorData(
     deviceId: string,
     sensorType: 'motion_packets' | 'fsr_packets' | 'hrm_packets' | 'htm_packets' | 'impact_events',
-    startTime: number,
-    endTime: number
-  ): Promise<any[]> {
-    // Use app_timestamp for date range queries for ALL packet types
-    const timestampField = 'app_timestamp';
-
-    // Define the timestamp field for impact_events. If it's named 'timestamp',
-    // ensure recordImpactEventInternal stores app_timestamp there.
-    const impactTimestampField = 'timestamp'; // Or 'app_timestamp' if you add that column
-
-    let query: string;
-
-    // Construct the query based on the sensor type
-    if (sensorType === 'impact_events') {
-         // Make sure the 'timestamp' column in impact_events reliably stores app_timestamp
-         // or add an 'app_timestamp' column to impact_events in a new migration.
-         // For now, assuming 'timestamp' holds app_timestamp for impacts.
-         query = `SELECT * FROM ${sensorType}
-                  WHERE device_id = ? AND ${impactTimestampField} BETWEEN ? AND ?
-                  ORDER BY ${impactTimestampField} ASC`;
-    } else {
-         query = `SELECT * FROM ${sensorType}
-                  WHERE device_id = ? AND ${timestampField} BETWEEN ? AND ?
-                  ORDER BY ${timestampField} ASC`;
+    options: { 
+      startTime?: number;
+      endTime?: number;
+      sessionId?: string;
+      limit?: number;
     }
-
-    console.log(`[SensorDataRepo getSensorData] Querying ${sensorType} for device ${deviceId} between ${new Date(startTime).toISOString()} and ${new Date(endTime).toISOString()}`);
-    console.log(`[SensorDataRepo getSensorData] Query: ${query}`);
-    console.log(`[SensorDataRepo getSensorData] Params: [${deviceId}, ${startTime}, ${endTime}]`);
-
+  ): Promise<any[]> {
+    const { startTime, endTime, sessionId, limit = 1000 } = options;
+    const timestampField = sensorType === 'impact_events' ? 'timestamp' : 'app_timestamp';
+    
+    const params: any[] = [deviceId];
+    let query = `SELECT * FROM ${sensorType} WHERE device_id = ?`;
+    
+    // Add session filter if provided
+    if (sessionId) {
+      query += ` AND session_id = ?`;
+      params.push(sessionId);
+    }
+    
+    // Add time range filter if provided
+    if (startTime !== undefined && endTime !== undefined) {
+      query += ` AND ${timestampField} BETWEEN ? AND ?`;
+      params.push(startTime, endTime);
+    }
+    
+    query += ` ORDER BY ${timestampField} ASC LIMIT ?`;
+    params.push(limit);
+    
+    console.log(`[SensorDataRepo] Executing query: ${query} with params:`, params);
+    
     try {
-        // Execute the query using the new async API
-        const results = await this.db.getAllAsync(query, [deviceId, startTime, endTime]);
-        console.log(`[SensorDataRepo getSensorData] Fetched ${results?.length ?? 0} ${sensorType} results.`);
-        return results ?? []; // Return empty array if results are null/undefined
+      const result = await this.db.getAllAsync(query, params);
+      console.log(`[SensorDataRepo] Retrieved ${result?.length || 0} ${sensorType} records`);
+      return result || [];
     } catch (error) {
-        console.error(`[SensorDataRepo getSensorData] Error querying ${sensorType} data:`, error);
-        throw error;
+      console.error(`Error retrieving ${sensorType} data:`, error);
+      throw error;
     }
   }
 
@@ -16721,6 +17481,193 @@ export class SensorDataRepository {
       athleteId: event.athleteId // Pass athleteId if available
     });
     return result.lastInsertRowId; // Return the ID
+  }
+} 
+
+================================================================================
+File: src/repositories/SessionRepository.ts
+================================================================================
+
+import { SQLiteDatabase } from 'expo-sqlite';
+import { Session } from '../types';
+import { BaseRepository } from './BaseRepository';
+import { dataChangeEmitter, dbEvents } from '../utils/EventEmitter';
+
+/**
+ * Repository for managing session data
+ */
+export class SessionRepository extends BaseRepository {
+  constructor(db: SQLiteDatabase) {
+    super(db);
+  }
+
+  /**
+   * Save a new session to the database
+   */
+  public async saveSession(session: Session): Promise<void> {
+    console.log(`[SessionRepo] Saving new session: ${session.id} - ${session.name}`);
+    try {
+      await this.db.runAsync(
+        `INSERT INTO sessions (id, name, start_time, end_time, team, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          session.id,
+          session.name,
+          session.startTime,
+          session.endTime || null,
+          session.team || null,
+          session.notes || null,
+          session.createdAt
+        ]
+      );
+      // Emit event for session creation
+      dataChangeEmitter.emit(dbEvents.SESSION_CREATED, { sessionId: session.id });
+    } catch (error) {
+      console.error(`[SessionRepo] Error saving session:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing session
+   */
+  public async updateSession(session: Session): Promise<void> {
+    console.log(`[SessionRepo] Updating session: ${session.id}`);
+    try {
+      await this.db.runAsync(
+        `UPDATE sessions 
+         SET name = ?, start_time = ?, end_time = ?, team = ?, notes = ?
+         WHERE id = ?`,
+        [
+          session.name,
+          session.startTime,
+          session.endTime || null,
+          session.team || null,
+          session.notes || null,
+          session.id
+        ]
+      );
+      // Emit event for session update
+      dataChangeEmitter.emit(dbEvents.SESSION_UPDATED, { sessionId: session.id });
+    } catch (error) {
+      console.error(`[SessionRepo] Error updating session:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a session by ID
+   */
+  public async getSessionById(id: string): Promise<Session | null> {
+    try {
+      const session = await this.db.getFirstAsync<Session>(
+        `SELECT * FROM sessions WHERE id = ?`, 
+        [id]
+      );
+      return session || null;
+    } catch (error) {
+      console.error(`[SessionRepo] Error getting session by ID:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all sessions
+   */
+  public async getAllSessions(limit: number = 50, offset: number = 0): Promise<Session[]> {
+    try {
+      const sessions = await this.db.getAllAsync<Session>(
+        `SELECT * FROM sessions
+         ORDER BY start_time DESC
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      );
+      return sessions || [];
+    } catch (error) {
+      console.error(`[SessionRepo] Error getting all sessions:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find most recent active (unfinished) session if any
+   */
+  public async findUnfinishedSession(): Promise<Session | null> {
+    try {
+      const session = await this.db.getFirstAsync<Session>(
+        `SELECT * FROM sessions
+         WHERE end_time IS NULL
+         ORDER BY start_time DESC
+         LIMIT 1`
+      );
+      return session || null;
+    } catch (error) {
+      console.error(`[SessionRepo] Error finding unfinished session:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a session by ID
+   */
+  public async deleteSession(id: string): Promise<void> {
+    try {
+      await this.db.runAsync(`DELETE FROM sessions WHERE id = ?`, [id]);
+      // Emit event for session deletion
+      dataChangeEmitter.emit(dbEvents.SESSION_DELETED, { sessionId: id });
+    } catch (error) {
+      console.error(`[SessionRepo] Error deleting session:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session summary statistics
+   */
+  public async getSessionStats(sessionId: string): Promise<{
+    impactCount: number,
+    maxImpactMagnitude: number,
+    avgImpactMagnitude: number,
+  }> {
+    try {
+      const stats = await this.db.getFirstAsync<{
+        impactCount: number,
+        maxImpactMagnitude: number,
+        avgImpactMagnitude: number,
+      }>(
+        `SELECT
+          COUNT(*) as impactCount,
+          MAX(magnitude) as maxImpactMagnitude,
+          AVG(magnitude) as avgImpactMagnitude
+         FROM impact_events
+         WHERE session_id = ?`,
+        [sessionId]
+      );
+      
+      return stats || { impactCount: 0, maxImpactMagnitude: 0, avgImpactMagnitude: 0 };
+    } catch (error) {
+      console.error(`[SessionRepo] Error getting session stats:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all sessions for a specific team
+   */
+  public async getSessionsByTeam(team: string, limit: number = 50): Promise<Session[]> {
+    try {
+      const sessions = await this.db.getAllAsync<Session>(
+        `SELECT * FROM sessions
+         WHERE team = ?
+         ORDER BY start_time DESC
+         LIMIT ?`,
+        [team, limit]
+      );
+      return sessions || [];
+    } catch (error) {
+      console.error(`[SessionRepo] Error getting sessions by team:`, error);
+      throw error;
+    }
   }
 } 
 
@@ -16916,7 +17863,7 @@ import { BluetoothHandler, SensorCallbacks } from "../contexts/BluetoothContext"
 import { DeviceService } from "./DeviceService";
 import { SensorDataRepository } from "../repositories/SensorDataRepository";
 import { AthleteRepository } from "../repositories/AthleteRepository";
-import { DeviceStatus, LiveDataPoint, Session, MotionPacket, FSRPacket, HRMPacket, HTMPacket, ConcussionAlert } from "../types";
+import { DeviceStatus, LiveDataPoint, Session, MotionPacket, FSRPacket, HRMPacket, HTMPacket, ConcussionAlert, SavedDevice } from "../types";
 import { dataChangeEmitter, dbEvents } from "../utils/EventEmitter";
 import { v4 as uuidv4 } from 'uuid';
 import { MOUTHGUARD_UUIDS } from '../bleConstants'; // Import the new UUIDs
@@ -16940,6 +17887,12 @@ type SensorDataSubscription = {
   remove: () => void;
 };
 
+type SessionContextGetter = () => { 
+  activeSession: Session | null;
+  startNewSession: (name?: string, team?: string) => Promise<Session>;
+  endCurrentSession: () => Promise<void>;
+};
+
 /**
  * BluetoothService uses composition with BluetoothHandler and integrates with DeviceService
  * for saving connected devices and with SensorDataRepository for recording sensor data
@@ -16950,27 +17903,31 @@ export class BluetoothService {
   private sensorDataRepository: SensorDataRepository;
   private athleteRepository: AthleteRepository;
   private deviceStatusMap: Map<string, DeviceStatus> = new Map();
-  private currentSession: Session | null = null;
+  private getSessionContext: SessionContextGetter;
   private manager: BleManager; // BLE manager instance
   private connectedDevices: Map<string, Device> = new Map(); // Store Device directly
+  private connectionAttempts: Map<string, boolean> = new Map(); // Track connection attempts
 
   /**
    * Constructor
    * @param deviceService Service for saving devices
    * @param sensorDataRepository Repository for recording sensor data
    * @param athleteRepository Repository for athlete data
+   * @param getSessionContext Function to get session context
    * @param bluetoothHandler Optional BluetoothHandler instance (creates one if not provided)
    */
   constructor(
     deviceService: DeviceService, 
     sensorDataRepository: SensorDataRepository,
     athleteRepository: AthleteRepository,
+    getSessionContext: SessionContextGetter,
     bluetoothHandler?: BluetoothHandler
   ) {
     this.bluetoothHandler = bluetoothHandler || new BluetoothHandler();
     this.deviceService = deviceService;
     this.sensorDataRepository = sensorDataRepository;
     this.athleteRepository = athleteRepository;
+    this.getSessionContext = getSessionContext;
     this.manager = new BleManager();
     
     // Set up the callbacks to handle data from bluetooth
@@ -17014,13 +17971,22 @@ export class BluetoothService {
   /**
    * Update status for a specific device
    */
-  private async updateDeviceStatus(deviceId: string, isConnected: boolean): Promise<void> {
+  private async updateDeviceStatus(
+    deviceId: string, 
+    isConnected: boolean,
+    connectionState?: DeviceStatus['connectionState'],
+    errorMessage?: string | null
+  ): Promise<void> {
     try {
       // Get device details
+      const currentState = this.deviceStatusMap.get(deviceId);
+      
       let deviceStatus: DeviceStatus = {
         id: deviceId,
-        name: 'Unknown Device',
+        name: currentState?.name || 'Unknown Device',
         connected: isConnected,
+        connectionState: connectionState || (isConnected ? 'connected' : 'disconnected'),
+        connectionError: errorMessage === undefined ? (currentState?.connectionError || null) : errorMessage,
         lastSeen: Date.now()
       };
       
@@ -17474,61 +18440,74 @@ export class BluetoothService {
   }
 
   /**
-   * Connect to a device by ID and save it to storage
-   * @param deviceId ID of the device to connect to
+   * Connect to a specific device by ID
+   * @param deviceId Device ID to connect to
    */
   public async connectToDevice(deviceId: string): Promise<void> {
+    if (this.connectionAttempts.get(deviceId)) {
+      console.log(`[BluetoothService] Connection attempt already in progress for ${deviceId}`);
+      return; // Prevent concurrent attempts
+    }
+    
+    this.connectionAttempts.set(deviceId, true);
+    
     try {
+      // Update status to 'connecting' IMMEDIATELY
+      await this.updateDeviceStatus(deviceId, false, 'connecting');
+
       console.log(`[BluetoothService] Connecting to device: ${deviceId}`);
       
       // Check if already connected
       if (this.connectedDevices.has(deviceId)) {
-        console.log(`[BluetoothService] Device ${deviceId} already connected`);
-        this.updateDeviceStatus(deviceId, true);
+        console.log(`[BluetoothService] Device ${deviceId} is already connected`);
+        await this.updateDeviceStatus(deviceId, true, 'connected');
         return;
       }
       
-      // Attempt connection
+      // Connect to the device
       const device = await this.manager.connectToDevice(deviceId);
-      console.log(`[BluetoothService] Connected to device: ${deviceId}, Name initially: ${device.name || 'Unknown'}`);
-      
-      // Store in connected devices map
       this.connectedDevices.set(deviceId, device);
       
-      // Update device status immediately to show connected state, even if name is temporary
-      await this.updateDeviceStatus(deviceId, true);
-
+      // Update status to 'connected' AFTER successful connection but BEFORE discovery
+      await this.updateDeviceStatus(deviceId, true, 'connected');
+      
       // Discover services and characteristics
       console.log(`[BluetoothService] Discovering services for device: ${deviceId}`);
       await device.discoverAllServicesAndCharacteristics();
-      console.log(`[BluetoothService] Services discovered for device: ${deviceId}, Name after discovery: ${device.name || 'Unknown'}`);
       
-      // --- MOVED: Save/update device AFTER service discovery to ensure name is available ---
+      // Save the device
       const savedDevices = await this.deviceService.getSavedDevices();
-      const savedDevice = savedDevices.find(d => d.id === deviceId);
+      const existingDevice = savedDevices.find(d => d.id === deviceId);
       
-      if (savedDevice) {
-        // Pass the potentially updated name to updateDeviceLastConnected
-        console.log(`[BluetoothService] Device ${deviceId} already saved, updating last connected and name. Current name: ${device.name || 'Unknown'}, Saved name: ${savedDevice.name}`);
-        await this.deviceService.updateDeviceLastConnected(deviceId, device.name);
+      if (existingDevice) {
+        // Update last connected timestamp
+        await this.deviceService.updateDeviceLastConnected(deviceId);
       } else {
-        // Save the device after discovery (name should be more likely available)
-        console.log(`[BluetoothService] Device ${deviceId} not saved yet, saving now with name: ${device.name || 'Unknown'}`);
+        // Save new device using the device object directly
         await this.deviceService.saveDevice(device);
       }
       
-      // Setup monitoring for relevant characteristics
+      // Set up monitoring for the device
       this.setupMonitoringForDevice(deviceId);
       
-      // Re-update device status AFTER saving/updating to ensure the latest name from storage is used
-      await this.updateDeviceStatus(deviceId, true);
+      // Final update
+      await this.updateDeviceStatus(deviceId, true, 'connected');
       
+      console.log(`[BluetoothService] Successfully connected to device: ${deviceId}`);
     } catch (error) {
       console.error(`[BluetoothService] Error connecting to device ${deviceId}:`, error);
-      // Update status to disconnected on error
-      await this.updateDeviceStatus(deviceId, false);
-      this.connectedDevices.delete(deviceId); // Remove from live map
-      throw error;
+      
+      const errorMessage = error instanceof BleError 
+        ? `${error.message} (Code: ${error.errorCode})` 
+        : String(error);
+      
+      // Update status to 'failed' and include the error message
+      await this.updateDeviceStatus(deviceId, false, 'failed', errorMessage);
+      
+      this.connectedDevices.delete(deviceId);
+      // No need to rethrow if UI updates via status events
+    } finally {
+      this.connectionAttempts.delete(deviceId); // Clear attempt flag
     }
   }
 
@@ -17604,6 +18583,14 @@ export class BluetoothService {
   }
 
   /**
+   * Get IDs of currently connected devices
+   * @returns Array of device IDs that are currently connected
+   */
+  public getConnectedDeviceIds(): string[] {
+    return Array.from(this.connectedDevices.keys());
+  }
+
+  /**
    * Get all connected devices
    * @returns Map of connected devices
    */
@@ -17648,44 +18635,27 @@ export class BluetoothService {
   }
 
   /**
-   * Start a monitoring session
-   * Creates a new session in the database
+   * Start a new monitoring session
+   * @param name Optional session name
+   * @param team Optional team name
+   * @returns Session ID
    */
-  public async startSession(): Promise<string> {
-    if (this.currentSession) {
+  public async startSession(name?: string, team?: string): Promise<string> {
+    if (this.getSessionContext().activeSession) {
       throw new Error('A session is already active. Stop it before starting a new one.');
     }
     
     try {
-      // Create session ID
-      const sessionId = `session_${uuidv4()}`;
-      const now = Date.now();
+      // Start a new session using SessionContext
+      const session = await this.getSessionContext().startNewSession(
+        name || `Session ${new Date().toLocaleString()}`,
+        team
+      );
       
-      // Create session object
-      this.currentSession = {
-        id: sessionId,
-        name: `Session ${new Date(now).toLocaleString()}`,
-        startTime: now,
-        createdAt: now
-      };
+      console.log(`[BluetoothService] Started new session: ${session.id}`);
       
-      // Save session to database
-      // TODO: Implement SessionRepository and save session
-      console.log(`[BluetoothService] Started session ${sessionId}`);
-      
-      // Get all connected devices with athletes
-      const connectedDevices = Array.from(this.deviceStatusMap.values())
-        .filter(device => device.connected && device.athleteInfo);
-      
-      // Record session-athlete associations
-      for (const device of connectedDevices) {
-        if (device.athleteInfo) {
-          // TODO: Save session-athlete relationship in database
-          console.log(`[BluetoothService] Added athlete ${device.athleteInfo.id} to session ${sessionId}`);
-        }
-      }
-      
-      return sessionId;
+      // Return the session ID
+      return session.id;
     } catch (error) {
       console.error('[BluetoothService] Error starting session:', error);
       throw error;
@@ -17693,28 +18663,31 @@ export class BluetoothService {
   }
 
   /**
-   * Stop the current monitoring session
+   * Stop a monitoring session and save data
    */
   public async stopSession(): Promise<void> {
-    if (!this.currentSession) {
+    if (!this.getSessionContext().activeSession) {
       throw new Error('No active session to stop.');
     }
     
     try {
       const now = Date.now();
       
+      // Get a copy of the active session to use locally
+      const activeSession = { ...this.getSessionContext().activeSession };
+      
       // Update session with end time
-      this.currentSession.endTime = now;
+      activeSession.endTime = now;
       
       // Save updated session to database
       // TODO: Implement SessionRepository and update session
-      console.log(`[BluetoothService] Stopped session ${this.currentSession.id}`);
+      console.log(`[BluetoothService] Stopped session ${activeSession.id}`);
       
       // Update session-athlete records with end time
       // TODO: Implement SessionAthleteRepository and update records
       
       // Clear current session
-      this.currentSession = null;
+      await this.getSessionContext().endCurrentSession();
     } catch (error) {
       console.error('[BluetoothService] Error stopping session:', error);
       throw error;
@@ -17790,6 +18763,9 @@ export class BluetoothService {
         // Decode Base64 value to a Buffer
         const buffer = Buffer.from(characteristic.value, 'base64');
         const appTimestamp = Date.now(); // Timestamp when app received data
+        
+        // Get the current session ID if any
+        const activeSessionId = this.getSessionContext().activeSession?.id || null;
 
         // Make UUID comparisons case-insensitive for robustness
         const lowerCharUuid = characteristicUuid.toLowerCase();
@@ -17808,10 +18784,10 @@ export class BluetoothService {
                     flags: 0, // Flags aren't in your custom struct, set default or derive if needed
                     appTimestamp: appTimestamp
                 };
-                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}`);
-                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
+                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}, SessionID=${activeSessionId || 'none'}`);
+                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket, activeSessionId); // Pass session ID
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'heartRate', deviceId, timestamp: appTimestamp, values: [hrmPacket.heartRate] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId, sessionId: activeSessionId });
             } else {
                  console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HRM_LENGTH})`);
             }
@@ -17832,10 +18808,10 @@ export class BluetoothService {
                      flags: 0, // Flags aren't in your custom struct
                      appTimestamp: appTimestamp
                 };
-                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}`);
-                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
+                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}, SessionID=${activeSessionId || 'none'}`);
+                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket, activeSessionId); // Pass session ID
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'temperature', deviceId, timestamp: appTimestamp, values: [htmPacket.temperature] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId, sessionId: activeSessionId });
             } else {
                  console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HTM_LENGTH})`);
             }
@@ -17859,11 +18835,11 @@ export class BluetoothService {
                     bite_r: 0,
                     timestamp: appTimestamp // Use app timestamp as device timestamp is missing
                 };
-                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}`);
+                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}, SessionID=${activeSessionId || 'none'}`);
 
                 try {
                     // No need to adapt the packet since we've already created it with the correct types
-                    await this.sensorDataRepository.recordMotionPacket(deviceId, partialMotionPacket);
+                    await this.sensorDataRepository.recordMotionPacket(deviceId, partialMotionPacket, activeSessionId); // Pass session ID
 
                     // Emit live data for UI updates
                     const SENSITIVITY_200G = 16384 / 200; // Example sensitivity factor
@@ -17872,7 +18848,7 @@ export class BluetoothService {
                     const gForceZ = partialMotionPacket.accel200[2] / SENSITIVITY_200G;
                     const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
                     dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
-                    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId, sessionId: activeSessionId });
                 } catch (saveError) {
                     console.error(`[BluetoothService] Error saving partial IMU packet:`, saveError);
                 }
@@ -17902,12 +18878,12 @@ export class BluetoothService {
                 };
                 
                 // Log detailed info for debugging
-                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}`);
+                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}, SessionID=${activeSessionId || 'none'}`);
                 console.log(`[BluetoothService] Raw FSR Int16 values: Left=${rawLeftBite}, Right=${rawRightBite}`);
                 
-                await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
+                await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket, activeSessionId); // Pass session ID
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'force', deviceId, timestamp: appTimestamp, values: [fsrPacket.left_bite, fsrPacket.right_bite] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
+                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId, sessionId: activeSessionId });
             } else {
                  console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_FSR_LENGTH})`);
             }
@@ -18668,6 +19644,8 @@ export interface DeviceStatus {
         id: string;
         name: string;
     }
+    connectionState?: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'failed';
+    connectionError?: string | null;
 }
 
 // Concussion alert/detection
@@ -19437,7 +20415,10 @@ export const dataChangeEmitter = new EventEmitter();
 // Define common event names
 export const dbEvents = {
   DATA_CHANGED: 'dataChanged',
-  CONCUSSION_DETECTED: 'concussionDetected'
+  CONCUSSION_DETECTED: 'concussionDetected',
+  SESSION_CREATED: 'sessionCreated',
+  SESSION_UPDATED: 'sessionUpdated',
+  SESSION_DELETED: 'sessionDeleted'
 }; 
 
 ================================================================================
