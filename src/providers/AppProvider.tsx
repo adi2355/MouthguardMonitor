@@ -177,12 +177,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
     useEffect(() => {
       // Update the BluetoothService with the latest context whenever it changes
       if (bluetoothServiceRef.current) {
-        console.log('[AppProvider] Updating BluetoothService with new SessionContext value.');
+        console.log(`[AppProvider SessionContextUpdater Effect] Updating BluetoothService. Current activeSession ID: ${sessionContext.activeSession?.id ?? 'null'}`);
         bluetoothServiceRef.current.setSessionContext(sessionContext);
       } else {
-        console.warn('[AppProvider] Attempted to update SessionContext in BluetoothService, but service ref is null.');
+        console.warn('[AppProvider SessionContextUpdater Effect] BluetoothService ref is null, cannot update context yet.');
       }
-    }, [sessionContext]); // Re-run whenever sessionContext changes
+    }, [sessionContext.activeSession, bluetoothServiceRef.current]); // Now depends directly on activeSession changing and the ref being set
     
     return null; // This component doesn't render anything
   };

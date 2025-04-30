@@ -44,18 +44,23 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
     ]).start();
   }, []);
 
-  // More comprehensive check for valid data
-  if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
-    return (
-      <View style={[styles.container, { height, width }]}>
-        <Text style={styles.emptyText}>No bite force data available</Text>
-      </View>
-    );
-  }
+  // Enhanced validation - check if we have valid data with enough points for bezier curves
+  const isValidData = data &&
+                     data.datasets &&
+                     Array.isArray(data.datasets) &&
+                     data.datasets.length > 0;
 
-  // Ensure that the first dataset has data
-  const firstDataset = data.datasets[0];
-  if (!firstDataset || !firstDataset.data || !Array.isArray(firstDataset.data) || firstDataset.data.length === 0) {
+  // Check if any dataset has valid data with at least 2 points
+  const hasValidDataPoints = isValidData &&
+                           data.datasets.some(dataset => 
+                             dataset &&
+                             dataset.data &&
+                             Array.isArray(dataset.data) &&
+                             dataset.data.length >= 2 &&
+                             dataset.data.some(val => typeof val === 'number' && !isNaN(val))
+                           );
+
+  if (!isValidData || !hasValidDataPoints) {
     return (
       <View style={[styles.container, { height, width }]}>
         <Text style={styles.emptyText}>No bite force data available</Text>
@@ -73,8 +78,13 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
         strokeWidth: 0
       };
       
+      // Filter out NaN or non-numeric values
+      const safeValues = Array.isArray(dataset.data) 
+        ? dataset.data.filter(val => typeof val === 'number' && !isNaN(val))
+        : [];
+      
       return {
-        data: Array.isArray(dataset.data) ? dataset.data : [],
+        data: safeValues,
         color: typeof dataset.color === 'function' ? dataset.color : 
           (opacity = 1) => index === 0 ? 
             `rgba(50, 215, 75, ${opacity * 0.8})` :  // Apple Green with transparency

@@ -24,6 +24,10 @@ interface LineChartProps {
 
 const screenWidth = Dimensions.get('window').width;
 
+// Minimum points needed to render chart reliably
+const MIN_DATA_POINTS_FOR_LINE = 2;
+const MIN_DATA_POINTS_FOR_BEZIER = 2;
+
 const LineChart: React.FC<LineChartProps> = ({
   data,
   width = screenWidth - 64,
@@ -56,25 +60,30 @@ const LineChart: React.FC<LineChartProps> = ({
   }
   
   // Create safe datasets - ensure each dataset has a valid data array and color function
+  // AND filter out any NaN values to prevent SVG path errors
   const safeDatasets = data.datasets.map((dataset, index) => {
     if (!dataset) return { data: [], color: () => 'rgba(0, 230, 118, 1)', strokeWidth: 2 };
     
+    // Filter out NaN and non-numeric values
+    const safeData = dataset.data && Array.isArray(dataset.data) 
+      ? dataset.data.filter(val => typeof val === 'number' && !isNaN(val))
+      : [];
+      
     return {
-      data: dataset.data && Array.isArray(dataset.data) ? dataset.data : [],
+      data: safeData,
       color: typeof dataset.color === 'function' ? dataset.color : () => 'rgba(0, 230, 118, 1)',
       strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2,
     };
   });
   
-  // Check if any dataset has valid data
-  const hasDataPoints = safeDatasets.some(ds => 
-    ds.data.length > 0 && ds.data.some(val => typeof val === 'number')
-  );
+  // Check if any dataset has enough valid data points based on chart type
+  const minPointsRequired = bezier ? MIN_DATA_POINTS_FOR_BEZIER : MIN_DATA_POINTS_FOR_LINE;
+  const hasEnoughDataPoints = safeDatasets.some(ds => ds.data.length >= minPointsRequired);
   
-  if (!hasDataPoints) {
+  if (!hasEnoughDataPoints) {
     return (
       <View style={[styles.container, { height, width, justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={styles.noDataText}>No data available</Text>
+        <Text style={styles.noDataText}>Insufficient data points</Text>
       </View>
     );
   }
@@ -133,7 +142,7 @@ const LineChart: React.FC<LineChartProps> = ({
         withVerticalLabels={true}
         withDots={true}
         segments={5}
-        fromZero={true}
+        fromZero={alwaysShowZero}
       />
     </View>
   );

@@ -16,6 +16,22 @@ const BarChart: React.FC<BarChartProps> = ({
   maxValue: propMaxValue, 
   barColor = COLORS.primary
 }) => {
+  // Validate data and labels
+  const isValidData = data && Array.isArray(data) && data.length > 0;
+  const isValidLabels = labels && Array.isArray(labels) && labels.length > 0;
+  
+  // Check if data contains only valid numbers (no NaN or undefined)
+  const hasValidNumbers = isValidData && data.every(val => typeof val === 'number' && !isNaN(val));
+  
+  // Show message if data is invalid
+  if (!isValidData || !isValidLabels || !hasValidNumbers || data.length !== labels.length) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={styles.noDataText}>No valid data available</Text>
+      </View>
+    );
+  }
+  
   // Calculate maxValue if not provided
   const maxValue = propMaxValue || Math.max(...data) * 1.2; // Add 20% padding
   const chartHeight = 220;
@@ -153,6 +169,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 8,
   },
+  noDataText: {
+    color: COLORS.text.secondary,
+    fontSize: 16,
+    textAlign: 'center',
+  }
 });
 
 export default BarChart; 
