@@ -31,11 +31,15 @@ type SensorDataSubscription = {
   remove: () => void;
 };
 
-type SessionContextGetter = () => { 
+// Define SessionContextType for strong typing
+export interface SessionContextType {
   activeSession: Session | null;
   startNewSession: (name?: string, team?: string) => Promise<Session>;
   endCurrentSession: () => Promise<void>;
-};
+  isSessionActive: boolean;
+  sessionLoading: boolean;
+  sessionInitError: string | null;
+}
 
 /**
  * BluetoothService uses composition with BluetoothHandler and integrates with DeviceService
@@ -47,7 +51,7 @@ export class BluetoothService {
   private sensorDataRepository: SensorDataRepository;
   private athleteRepository: AthleteRepository;
   private deviceStatusMap: Map<string, DeviceStatus> = new Map();
-  private getSessionContext: SessionContextGetter;
+  private sessionContextRef: { current: SessionContextType | null } = { current: null };
   private manager: BleManager; // BLE manager instance
   private connectedDevices: Map<string, Device> = new Map(); // Store Device directly
   private connectionAttempts: Map<string, boolean> = new Map(); // Track connection attempts
@@ -57,21 +61,18 @@ export class BluetoothService {
    * @param deviceService Service for saving devices
    * @param sensorDataRepository Repository for recording sensor data
    * @param athleteRepository Repository for athlete data
-   * @param getSessionContext Function to get session context
    * @param bluetoothHandler Optional BluetoothHandler instance (creates one if not provided)
    */
   constructor(
     deviceService: DeviceService, 
     sensorDataRepository: SensorDataRepository,
     athleteRepository: AthleteRepository,
-    getSessionContext: SessionContextGetter,
     bluetoothHandler?: BluetoothHandler
   ) {
     this.bluetoothHandler = bluetoothHandler || new BluetoothHandler();
     this.deviceService = deviceService;
     this.sensorDataRepository = sensorDataRepository;
     this.athleteRepository = athleteRepository;
-    this.getSessionContext = getSessionContext;
     this.manager = new BleManager();
     
     // Set up the callbacks to handle data from bluetooth
@@ -79,6 +80,24 @@ export class BluetoothService {
     
     // Listen for app state changes to manage connections
     AppState.addEventListener('change', this.handleAppStateChange);
+  }
+
+  /**
+   * Sets the session context reference to use the latest context value
+   * @param context The current session context
+   */
+  public setSessionContext(context: SessionContextType | null) {
+    console.log(`[BluetoothService] SessionContext ${context ? 'Set/Updated' : 'Cleared'}. Active Session ID: ${context?.activeSession?.id ?? 'none'}`);
+    this.sessionContextRef.current = context;
+  }
+
+  /**
+   * Gets the currently active session ID, if any
+   * @returns The session ID or null if no session is active
+   */
+  private getActiveSessionId(): string | null {
+    const sessionId = this.sessionContextRef.current?.activeSession?.id ?? null;
+    return sessionId;
   }
 
   /**
@@ -779,26 +798,32 @@ export class BluetoothService {
   }
 
   /**
-   * Start a new monitoring session
-   * @param name Optional session name
-   * @param team Optional team name
-   * @returns Session ID
+   * Gets the active session context
+   * @returns The session context or throws an error if not set
+   */
+  private getActiveSessionContext(): SessionContextType {
+    if (!this.sessionContextRef.current) {
+      throw new Error('Session context not set. Make sure setSessionContext was called.');
+    }
+    return this.sessionContextRef.current;
+  }
+
+  /**
+   * Start a new session
    */
   public async startSession(name?: string, team?: string): Promise<string> {
-    if (this.getSessionContext().activeSession) {
+    if (this.getActiveSessionId()) {
       throw new Error('A session is already active. Stop it before starting a new one.');
     }
     
     try {
       // Start a new session using SessionContext
-      const session = await this.getSessionContext().startNewSession(
+      const session = await this.getActiveSessionContext().startNewSession(
         name || `Session ${new Date().toLocaleString()}`,
         team
       );
       
       console.log(`[BluetoothService] Started new session: ${session.id}`);
-      
-      // Return the session ID
       return session.id;
     } catch (error) {
       console.error('[BluetoothService] Error starting session:', error);
@@ -807,31 +832,28 @@ export class BluetoothService {
   }
 
   /**
-   * Stop a monitoring session and save data
+   * Stop the current session
    */
   public async stopSession(): Promise<void> {
-    if (!this.getSessionContext().activeSession) {
+    if (!this.getActiveSessionId()) {
       throw new Error('No active session to stop.');
     }
     
     try {
-      const now = Date.now();
+      // Sync all uncommitted data
+      //await this.bluetoothHandler.syncAllData();
+      console.log('[BluetoothService] Session stop requested');
       
       // Get a copy of the active session to use locally
-      const activeSession = { ...this.getSessionContext().activeSession };
+      const activeSession = { ...this.getActiveSessionContext().activeSession };
       
       // Update session with end time
-      activeSession.endTime = now;
-      
-      // Save updated session to database
-      // TODO: Implement SessionRepository and update session
-      console.log(`[BluetoothService] Stopped session ${activeSession.id}`);
-      
-      // Update session-athlete records with end time
-      // TODO: Implement SessionAthleteRepository and update records
+      activeSession.endTime = Date.now();
       
       // Clear current session
-      await this.getSessionContext().endCurrentSession();
+      await this.getActiveSessionContext().endCurrentSession();
+      
+      console.log(`[BluetoothService] Stopped session: ${activeSession.id}`);
     } catch (error) {
       console.error('[BluetoothService] Error stopping session:', error);
       throw error;
@@ -908,8 +930,8 @@ export class BluetoothService {
         const buffer = Buffer.from(characteristic.value, 'base64');
         const appTimestamp = Date.now(); // Timestamp when app received data
         
-        // Get the current session ID if any
-        const activeSessionId = this.getSessionContext().activeSession?.id || null;
+        // Get the current session ID if any - UPDATED to use the new method
+        const activeSessionId = this.getActiveSessionId();
 
         // --- >>> Session Active Check <<< ---
         if (!activeSessionId) {

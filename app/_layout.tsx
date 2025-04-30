@@ -1,3 +1,4 @@
+import 'react-native-get-random-values'; // Must be imported before any UUID usage
 import { clearAppData } from '../src/utils/resetAppData';
 import { Stack } from "expo-router";
 import { useState, useEffect } from "react";

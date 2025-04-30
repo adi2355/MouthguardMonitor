@@ -40,7 +40,7 @@ interface AppProviderProps {
  */
 export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHandler }) => {
   const [initialized, setInitialized] = useState(false);
-  const [services, setServices] = useState<Omit<AppContextType, 'bluetoothServiceRef'> | null>(null);
+  const [servicesCore, setServicesCore] = useState<Omit<AppContextType, 'bluetoothServiceRef'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBackgroundLaunch, setIsBackgroundLaunch] = useState<boolean>(false);
   
@@ -113,180 +113,111 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children, bluetoothHan
         // Initialize services that depend on repositories
         const deviceService = new DeviceService(storageService);
         
-        // In background mode, we prioritize getting the Bluetooth service ready
-        // and defer other non-critical initializations
-        if (isBackgroundLaunch) {
-          console.log('[AppProvider] Background launch detected, prioritizing Bluetooth service initialization');
-          
-          // Create minimal appSetupService to avoid null references
-          const minimalAppSetupService = new AppSetupService(
-            storageService,
-            databaseManager
-          );
-          
-          // Set core services needed for Bluetooth background operation
-          setServices({
-            databaseManager,
-            storageService,
+        // Create BluetoothService instance - without session context for now
+        // It will be updated by the SessionContextUpdater component
+        if (!bluetoothServiceRef.current) {
+          console.log('[AppProvider] Creating BluetoothService instance...');
+          bluetoothServiceRef.current = new BluetoothService(
             deviceService,
-            appSetupService: minimalAppSetupService,
-            athleteRepository,
             sensorDataRepository,
-            sessionRepository,
-            initialized: true
-          });
-          
-          setInitialized(true);
-          console.log('[AppProvider] Core services initialized for background operation');
-          
-          // Listen for app coming to foreground to complete remaining setup
-          const subscription = AppState.addEventListener('change', (nextAppState) => {
-            if (nextAppState === 'active') {
-              console.log('[AppProvider] App came to foreground, completing full initialization');
-              // Complete remaining setup when app comes to foreground
-              completeSetup(storageService, databaseManager);
-              // Remove listener once we've handled the transition
-              subscription.remove();
-            }
-          });
-        } else {
-          // Normal foreground launch - complete full setup immediately
-          const appSetupService = new AppSetupService(
-            storageService,
-            databaseManager
+            athleteRepository,
+            bluetoothHandler
           );
-          
-          // Check if this is first launch and perform setup if needed
-          console.log('[AppProvider] BEFORE appSetupService.ensureInitialized()');
-          await appSetupService.ensureInitialized();
-          console.log('[AppProvider] AFTER appSetupService.ensureInitialized()');
-          
-          // Set all services in state for context (WITHOUT BluetoothService)
-          console.log('[AppProvider] Setting services and initialized state...');
-          setServices({
-            databaseManager,
-            storageService,
-            deviceService,
-            appSetupService,
-            athleteRepository,
-            sensorDataRepository,
-            sessionRepository,
-            initialized: true
-          });
-          
-          setInitialized(true);
-          console.log('[AppProvider] App dependencies setup complete');
+          console.log('[AppProvider] BluetoothService instance CREATED.');
         }
+
+        const appSetupService = new AppSetupService(
+          storageService,
+          databaseManager
+        );
+        
+        // Check if this is first launch and perform setup if needed
+        console.log('[AppProvider] BEFORE appSetupService.ensureInitialized()');
+        await appSetupService.ensureInitialized();
+        console.log('[AppProvider] AFTER appSetupService.ensureInitialized()');
+        
+        // Set all services in state for context
+        console.log('[AppProvider] Setting services and initialized state...');
+        setServicesCore({
+          databaseManager,
+          storageService,
+          deviceService,
+          appSetupService,
+          athleteRepository,
+          sensorDataRepository,
+          sessionRepository,
+          initialized: true
+        });
+        
+        setInitialized(true);
+        console.log('[AppProvider] App dependencies setup complete');
       } catch (err: any) {
         console.error('[AppProvider] DETAILED setup error:', err, err.stack);
         setError(err.message || 'Failed to initialize app');
       }
     }
     
-    // Helper function to complete setup when app comes to foreground
-    async function completeSetup(
-      storageService: StorageService,
-      databaseManager: DatabaseManager
-    ) {
-      try {
-        const appSetupService = new AppSetupService(
-          storageService,
-          databaseManager
-        );
-        
-        // Ensure app is properly initialized
-        await appSetupService.ensureInitialized();
-        
-        console.log('[AppProvider] ✅ Full app initialization completed');
-      } catch (err: any) {
-        console.error('[AppProvider] Error during full initialization:', err);
-        setError(err.message || 'Failed to complete initialization');
-      }
-    }
-    
     // Start the initialization process
     setupApp();
-    
-  }, [isBackgroundLaunch]);
+  }, [bluetoothHandler]);
 
   // Create the context value with memoization
   const contextValue = useMemo(() => {
-    if (!services) return null;
+    if (!servicesCore) return null;
     return {
-      ...services,
+      ...servicesCore,
       bluetoothServiceRef,
     };
-  }, [services]);
+  }, [servicesCore]);
 
-  // Special component that creates the actual BluetoothService once SessionContext is available
-  const BluetoothServiceInitializer = () => {
+  // Component to update BluetoothService with latest SessionContext
+  const SessionContextUpdater = () => {
     const sessionContext = useSession();
-    // Use a ref to track if we've already created the service
-    const serviceCreatedRef = React.useRef(false);
-    
-    // Include sessionContext in dependency array to properly update when it changes
-    const getSessionContext = React.useCallback(() => sessionContext, [sessionContext]);
     
     useEffect(() => {
-      // Skip if services isn't available yet
-      if (!services) return;
-      
-      // Skip if we've already created the service to prevent infinite loops
-      if (serviceCreatedRef.current || bluetoothServiceRef.current) return;
-      
-      // Create the actual bluetoothService now that we have SessionContext
-      const bluetoothService = new BluetoothService(
-        services.deviceService,
-        services.sensorDataRepository,
-        services.athleteRepository,
-        getSessionContext,
-        bluetoothHandler
-      );
-      
-      // Store the service in the ref instead of in state
-      bluetoothServiceRef.current = bluetoothService;
-      
-      // Mark that we've created the service
-      serviceCreatedRef.current = true;
-      console.log('[AppProvider] BluetoothService created with SessionContext');
-      
-    }, [services, getSessionContext]); // No longer updating services in this effect
+      // Update the BluetoothService with the latest context whenever it changes
+      if (bluetoothServiceRef.current) {
+        console.log('[AppProvider] Updating BluetoothService with new SessionContext value.');
+        bluetoothServiceRef.current.setSessionContext(sessionContext);
+      } else {
+        console.warn('[AppProvider] Attempted to update SessionContext in BluetoothService, but service ref is null.');
+      }
+    }, [sessionContext]); // Re-run whenever sessionContext changes
     
-    return null;
+    return null; // This component doesn't render anything
   };
 
   if (error) {
-    // Display error state
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <Text style={{ fontSize: 18, marginBottom: 20, textAlign: 'center' }}>
-          Error initializing app
+        <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10, color: 'red' }}>
+          Error Initializing App
         </Text>
-        <Text style={{ color: 'red', marginBottom: 20, textAlign: 'center' }}>
+        <Text style={{ textAlign: 'center', marginBottom: 20 }}>
           {error}
         </Text>
-        <Text style={{ fontSize: 14, textAlign: 'center' }}>
-          Please restart the app or contact support if the problem persists.
+        <Text style={{ fontSize: 14, color: '#666', textAlign: 'center' }}>
+          Please restart the app. If the problem persists, try reinstalling the application.
         </Text>
       </View>
     );
   }
 
   if (!initialized || !contextValue) {
-    // Display loading state
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#0000ff" />
-        <Text style={{ marginTop: 20 }}>Initializing app dependencies...</Text>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ marginTop: 20 }}>Loading...</Text>
       </View>
     );
   }
 
-  // Provide the context value to children
+  // Provide the context value
   return (
     <AppContext.Provider value={contextValue}>
       <SessionProvider>
-        <BluetoothServiceInitializer />
+        {/* Add the SessionContextUpdater inside SessionProvider to access context */}
+        <SessionContextUpdater />
         {children}
       </SessionProvider>
     </AppContext.Provider>
