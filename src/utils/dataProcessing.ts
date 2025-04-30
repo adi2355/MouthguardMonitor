@@ -196,15 +196,17 @@ export function processFsrForChart(packets: FSRPacket[]): {
     };
   }
 
-  // Filter and sort by timestamp
+  // Filter and sort by app_timestamp when available, fallback to device_timestamp
   const validPackets = packets
     .filter(p => (
       (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
       (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
     ))
     .sort((a, b) => {
-      // Use timestamp from FSRPacket
-      return a.timestamp - b.timestamp;
+      // Prefer app_timestamp over device_timestamp
+      const aTime = (a as any).appTimestamp || (a as any).app_timestamp || a.timestamp;
+      const bTime = (b as any).appTimestamp || (b as any).app_timestamp || b.timestamp;
+      return aTime - bTime;
     });
 
   if (validPackets.length === 0) {
@@ -220,8 +222,16 @@ export function processFsrForChart(packets: FSRPacket[]): {
   // Subsample for better chart performance
   const subsampled = subsampleData(validPackets);
   
-  // Format data for chart
-  const labels = subsampled.map(p => formatChartTimestamp(p.timestamp));
+  // Format data for chart - use app_timestamp for labels when available
+  const labels = subsampled.map(p => {
+    const timestamp = (p as any).appTimestamp || (p as any).app_timestamp || p.timestamp;
+    // Only use formatChartTimestamp if this is likely a valid epoch timestamp
+    if (timestamp > 1000000000) { // Basic sanity check for reasonable epoch timestamp
+      return formatChartTimestamp(timestamp);
+    }
+    return ''; // For invalid timestamps, return empty string
+  });
+  
   const leftData = subsampled.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
   const rightData = subsampled.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
 
@@ -248,14 +258,14 @@ export function processFsrForChart(packets: FSRPacket[]): {
 
   const datasets: ChartDataset[] = [
     { 
-      data: leftData, 
+      data: leftData.map(v => isNaN(v) ? 0 : v), // Ensure no NaN values
       color: (opacity = 1) => `rgba(0, 176, 118, ${opacity})`, // Green for Left
-      strokeWidth: 2 
+      strokeWidth: 2,
     },
     { 
-      data: rightData, 
+      data: rightData.map(v => isNaN(v) ? 0 : v), // Ensure no NaN values
       color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`, // Blue for Right
-      strokeWidth: 2 
+      strokeWidth: 2,
     }
   ];
 
@@ -282,79 +292,90 @@ export function processMotionForChart(packets: MotionPacket[]): {
     };
   }
 
-  // Sort by timestamp
+  // Sort by app_timestamp first if available
   const sortedPackets = packets.sort((a, b) => {
-    // Use appTimestamp if available, fallback to device timestamp
-    const aTime = (a as any).appTimestamp || a.timestamp;
-    const bTime = (b as any).appTimestamp || b.timestamp;
+    const aTime = (a as any).appTimestamp || (a as any).app_timestamp || a.timestamp;
+    const bTime = (b as any).appTimestamp || (b as any).app_timestamp || b.timestamp;
     return aTime - bTime;
   });
 
-  // Calculate G-force magnitudes
-  const magnitudes = sortedPackets.map(p => {
-    try {
-      // First, handle the case where accel200 is an array as defined in the type
-      if (p.accel200 && Array.isArray(p.accel200) && p.accel200.length >= 3) {
-        // Use the array directly
-        const gx = (p.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gy = (p.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gz = (p.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
-        return Math.sqrt(gx*gx + gy*gy + gz*gz);
+  // Calculate magnitude for each packet
+  const magnitudes: number[] = [];
+  let maxMagnitude = 0;
+
+  for (const packet of sortedPackets) {
+    let magnitude = 0;
+
+    // Prefer accel200 data from array if available
+    if (packet.accel200 && Array.isArray(packet.accel200) && packet.accel200.length >= 3) {
+      const gx = (packet.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
+      const gy = (packet.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
+      const gz = (packet.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
+      magnitude = Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+    // Try component approach if accel200 array isn't available
+    else if (
+      typeof (packet as any).accel200_x === 'number' && 
+      typeof (packet as any).accel200_y === 'number' && 
+      typeof (packet as any).accel200_z === 'number'
+    ) {
+      const gx = (packet as any).accel200_x / ACCEL_200G_SENSITIVITY;
+      const gy = (packet as any).accel200_y / ACCEL_200G_SENSITIVITY;
+      const gz = (packet as any).accel200_z / ACCEL_200G_SENSITIVITY;
+      magnitude = Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+    // Fallback to accel16 if accel200 isn't available
+    else if (
+      typeof (packet as any).accel16_x === 'number' && 
+      typeof (packet as any).accel16_y === 'number' && 
+      typeof (packet as any).accel16_z === 'number'
+    ) {
+      // Adjust sensitivity for accel16 range
+      const gx = (packet as any).accel16_x / (16384 / 16); // 16g range with 16-bit precision
+      const gy = (packet as any).accel16_y / (16384 / 16);
+      const gz = (packet as any).accel16_z / (16384 / 16);
+      magnitude = Math.sqrt(gx*gx + gy*gy + gz*gz);
       }
       
-      // Next, try handling as possible object notation (p.accel200.x)
-      if (p.accel200 && typeof p.accel200 === 'object' && 'x' in p.accel200 && 'y' in p.accel200 && 'z' in p.accel200) {
-        const gx = ((p.accel200 as any).x ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gy = ((p.accel200 as any).y ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gz = ((p.accel200 as any).z ?? 0) / ACCEL_200G_SENSITIVITY;
-        return Math.sqrt(gx*gx + gy*gy + gz*gz);
-      }
-      
-      // Finally, try accessing as individual properties (p.accel200_x)
-      const accel200X = (p as any).accel200_x ?? (p as any).accel200x ?? 0;
-      const accel200Y = (p as any).accel200_y ?? (p as any).accel200y ?? 0;
-      const accel200Z = (p as any).accel200_z ?? (p as any).accel200z ?? 0;
-      
-      if (accel200X !== 0 || accel200Y !== 0 || accel200Z !== 0) {
-        const gx = accel200X / ACCEL_200G_SENSITIVITY;
-        const gy = accel200Y / ACCEL_200G_SENSITIVITY;
-        const gz = accel200Z / ACCEL_200G_SENSITIVITY;
-        return Math.sqrt(gx*gx + gy*gy + gz*gz);
-      }
-      
-      // If none of the above worked, return 0
-      return 0;
-    } catch (error) {
-      console.warn('Error processing motion packet:', error);
-      return 0; // Fallback to 0 on error
+    // If all else fails, just push 0
+    magnitudes.push(isNaN(magnitude) ? 0 : magnitude);
+    
+    if (!isNaN(magnitude) && magnitude > maxMagnitude) {
+      maxMagnitude = magnitude;
     }
-  });
+  }
 
-  // Find peak acceleration
-  const peakAccel = magnitudes.length > 0 ? 
-    parseFloat(Math.max(...magnitudes).toFixed(2)) : null;
-
-  // Subsample for better chart performance
+  // Subsample for chart display
   const subsampled = subsampleData(sortedPackets);
   
-  // Format data for chart
-  const labels = subsampled.map(p => 
-    formatChartTimestamp((p as any).appTimestamp || p.timestamp));
-    
+  // Format data for chart - use app_timestamp for labels when available
+  const labels = subsampled.map(p => {
+    const timestamp = (p as any).appTimestamp || (p as any).app_timestamp || p.timestamp;
+    // Only use formatChartTimestamp if this is likely a valid epoch timestamp
+    if (timestamp > 1000000000) { // Basic sanity check for reasonable epoch timestamp
+      return formatChartTimestamp(timestamp);
+    }
+    return ''; // For invalid timestamps, return empty string
+  });
+
+  // Calculate subsampled magnitudes
   const subsampledMagnitudes = subsampled.map((_, i) => {
-    const originalIndex = Math.floor(i * (sortedPackets.length / subsampled.length));
-    return magnitudes[originalIndex];
+    const originalIndex = Math.min(
+      Math.floor(i * (sortedPackets.length / subsampled.length)),
+      magnitudes.length - 1
+    );
+    return magnitudes[originalIndex] || 0;
   });
 
   const datasets: ChartDataset[] = [{
-    data: subsampledMagnitudes,
-    color: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`, // Gray for magnitude
+    data: subsampledMagnitudes.map(v => isNaN(v) ? 0 : v), // Ensure no NaN
+    color: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
     strokeWidth: 2,
   }];
 
   return { 
     accelMagnitudeChart: { labels, datasets }, 
-    peakAccel 
+    peakAccel: maxMagnitude > 0 ? Math.round(maxMagnitude * 10) / 10 : null
   };
 }
 

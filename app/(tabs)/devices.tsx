@@ -382,6 +382,147 @@ export default function Devices() {
     );
   };
 
+  // Connected Devices section
+  const connectedDevicesSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Connected Devices</Text>
+      <GlassCard style={styles.sectionCard}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+          style={styles.cardGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+        <View style={styles.cardInner}>
+          {loading ? (
+            <ActivityIndicator color={THEME.primary} />
+          ) : savedDevices.filter(device => device.connected).length > 0 ? (
+            <FlatList
+              data={savedDevices.filter(device => device.connected)}
+              keyExtractor={(item) => item.id}
+              renderItem={renderDevice}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+              extraData={savedDevices} // Add extraData to ensure updates
+            />
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <LinearGradient
+                colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                style={[styles.emptyStateIcon, { borderRadius: 30 }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
+              </LinearGradient>
+              <Text style={styles.emptyStateText}>No connected devices</Text>
+              <Text style={styles.emptyStateSubtext}>Connect to a mouthguard device to monitor impacts</Text>
+            </View>
+          )}
+        </View>
+      </GlassCard>
+    </View>
+  );
+  
+  // Available Devices section
+  const availableDevicesSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Available Devices</Text>
+      <GlassCard style={styles.sectionCard}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+          style={styles.cardGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+        <View style={styles.cardInner}>
+          {loading ? (
+            <ActivityIndicator color={THEME.primary} />
+          ) : savedDevices.filter(device => !device.connected).length > 0 ? (
+            <FlatList
+              data={savedDevices.filter(device => !device.connected)}
+              keyExtractor={(item) => item.id}
+              renderItem={renderDevice}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+              extraData={savedDevices} // Add extraData to ensure updates
+            />
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <LinearGradient
+                colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                style={[styles.emptyStateIcon, { borderRadius: 30 }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
+              </LinearGradient>
+              <Text style={styles.emptyStateText}>No available devices</Text>
+              <Text style={styles.emptyStateSubtext}>All saved devices are currently connected</Text>
+            </View>
+          )}
+        </View>
+      </GlassCard>
+    </View>
+  );
+
+  // Scan for devices button (bottom)
+  const scanDevicesButton = connectionInProgress ? (
+    <View style={styles.scanButtonContainer}>
+      <TouchableOpacity
+        style={[styles.scanButton, styles.scanningButton]}
+        disabled={true}
+      >
+        <View style={styles.scanButtonInner}>
+          <ActivityIndicator color="#fff" size="small" style={styles.scanningIcon} />
+          <Text style={styles.scanButtonText}>Connecting...</Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <View style={styles.scanButtonContainer}>
+      <TouchableOpacity
+        style={styles.scanButton}
+        onPress={scanDevices}
+        disabled={scanning}
+      >
+        <View style={styles.scanButtonInner}>
+          {scanning ? (
+            <ActivityIndicator color="#fff" size="small" style={styles.scanningIcon} />
+          ) : (
+            <MaterialCommunityIcons name="bluetooth-connect" size={24} color="#fff" />
+          )}
+          <Text style={styles.scanButtonText}>{scanning ? 'Scanning...' : 'Scan for Devices'}</Text>
+        </View>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.addDeviceButton}
+        onPress={() => router.push('/')}
+      >
+        <LinearGradient
+          colors={['rgba(0,176,118,0.1)', 'rgba(0,176,118,0.05)']}
+          style={styles.addDeviceButton}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <MaterialCommunityIcons name="account-plus" size={24} color={THEME.primary} />
+        </LinearGradient>
+        <View style={styles.addDeviceText}>
+          <Text style={styles.addDeviceTitle}>Athlete Management</Text>
+          <Text style={styles.addDeviceDescription}>Manage athletes and assign devices</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addDeviceAction}
+          onPress={() => router.push('/')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="chevron-right" size={24} color={THEME.primary} />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaProvider>
       <ScrollView 
@@ -411,102 +552,14 @@ export default function Devices() {
           </View>
         </View>
 
-        {/* Connected Devices Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Connected Devices</Text>
-          <GlassCard style={styles.sectionCard}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
-              style={styles.cardGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-            />
-            <View style={styles.cardInner}>
-              {savedDevices.filter(device => device.connected).length > 0 ? (
-                <FlatList
-                  data={savedDevices.filter(device => device.connected)}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderDevice}
-                  scrollEnabled={false}
-                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
-                />
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
-                  </LinearGradient>
-                  <Text style={styles.emptyStateText}>No connected devices</Text>
-                  <Text style={styles.emptyStateSubtext}>Connect to a mouthguard device to monitor impacts</Text>
-                </View>
-              )}
-            </View>
-          </GlassCard>
-        </View>
-
-        {/* Available Devices Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Available Devices</Text>
-          <GlassCard style={styles.sectionCard}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
-              style={styles.cardGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-            />
-            <View style={styles.cardInner}>
-              {savedDevices.filter(device => !device.connected).length > 0 ? (
-                <FlatList
-                  data={savedDevices.filter(device => !device.connected)}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderDevice}
-                  scrollEnabled={false}
-                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
-                />
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
-                  </LinearGradient>
-                  <Text style={styles.emptyStateText}>No available devices</Text>
-                  <Text style={styles.emptyStateSubtext}>All saved devices are currently connected</Text>
-                </View>
-              )}
-            </View>
-          </GlassCard>
-        </View>
+        {connectedDevicesSection}
+        {availableDevicesSection}
 
         {/* Scan Devices Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Discover New Devices</Text>
-            <TouchableOpacity 
-              style={styles.scanButton}
-              onPress={scanDevices}
-              disabled={scanning}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#00d68f', '#00b076']}
-                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              />
-              <MaterialCommunityIcons name="bluetooth-connect" size={20} color="#fff" />
-              <Text style={styles.scanButtonText}>
-                {scanning ? 'Scanning...' : 'Scan'}
-              </Text>
-              {scanning && <ActivityIndicator color="#fff" style={{ marginLeft: 8 }} />}
-            </TouchableOpacity>
+            {scanDevicesButton}
           </View>
           
           <GlassCard style={styles.sectionCard}>
@@ -554,7 +607,7 @@ export default function Devices() {
             <Text style={styles.sectionTitle}>Athletes & Assignments</Text>
             <TouchableOpacity 
               style={styles.addButton}
-              onPress={() => router.push('/(tabs)/athletes')}
+              onPress={() => router.push('/')}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -931,5 +984,50 @@ const styles = StyleSheet.create({
   },
   athleteItemDisabled: {
     opacity: 0.7,
-  }
+  },
+  emptyMessage: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: THEME.text.tertiary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  scanButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  scanningButton: {
+    opacity: 0.5,
+  },
+  scanButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scanningIcon: {
+    marginRight: 8,
+  },
+  addDeviceButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: THEME.primary,
+  },
+  addDeviceText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  addDeviceTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: THEME.text.onPrimary,
+  },
+  addDeviceDescription: {
+    fontSize: 14,
+    color: THEME.text.onPrimary,
+  },
+  addDeviceAction: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: THEME.primary,
+  },
 });

@@ -6,7 +6,8 @@ import {
   ScrollView, 
   Pressable, 
   TouchableOpacity,
-  Animated
+  Animated,
+  Dimensions
 } from 'react-native';
 import LineChart from './LineChart';
 import { COLORS } from '../../../src/constants';
@@ -21,6 +22,7 @@ const TIME_RANGES = [
   { id: '1w', label: 'All' }
 ];
 const chartWidth = 1500; // Make chart scrollable with larger width
+const screenWidth = Dimensions.get('window').width;
 
 interface HeartRateDataPoint {
   value: number;
@@ -48,6 +50,8 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
 }) => {
   // State for selected time range
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>('12h');
+  // Reference to the scroll view to scroll to end (newest data) on mount
+  const scrollViewRef = useRef<ScrollView>(null);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -67,6 +71,13 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
         useNativeDriver: true,
       })
     ]).start();
+    
+    // Scroll to the right end (newest data) after a short delay to ensure rendering is complete
+    setTimeout(() => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollToEnd({ animated: false });
+      }
+    }, 100);
   }, []);
 
   // Check if we have valid data to display
@@ -79,13 +90,15 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
   
   // Calculate min/max heart rate values from dataset if not provided
   const derivedRangeData = rangeData || (hasValidData ? {
-    min: Math.min(...data.datasets[0].data),
-    max: Math.max(...data.datasets[0].data),
+    min: Math.min(...data.datasets[0].data.filter(val => !isNaN(val))),
+    max: Math.max(...data.datasets[0].data.filter(val => !isNaN(val))),
     timeRange: "Today"
   } : { min: 0, max: 0, timeRange: "No data available" });
   
   // Calculate current value if not provided
-  const derivedCurrentValue = currentValue || (hasValidData ? data.datasets[0].data[data.datasets[0].data.length - 1] : 0);
+  const derivedCurrentValue = currentValue || (hasValidData ? 
+    (isNaN(data.datasets[0].data[data.datasets[0].data.length - 1]) ? 
+      0 : data.datasets[0].data[data.datasets[0].data.length - 1]) : 0);
   
   // Get current timestamp if not provided
   const derivedTimestamp = timestamp || (hasValidData ? data.labels[data.labels.length - 1] : "--:--");
@@ -137,37 +150,41 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
     // Get the most recent data based on percentage
     const startIndex = Math.max(0, totalPoints - pointsToInclude);
     
-    // Create filtered dataset
+    // Create filtered dataset with NaN check
     const filteredData = {
       labels: data.labels.slice(startIndex),
       datasets: [{
         ...data.datasets[0],
-        data: data.datasets[0].data.slice(startIndex)
+        data: data.datasets[0].data.slice(startIndex).map(val => isNaN(val) ? 0 : val) // Add NaN check
       }]
     };
     
     // Generate more meaningful labels if all timestamps are the same
     if (allTimestampsSame) {
       const filteredLength = filteredData.labels.length;
-      const now = new Date();
       
-      // Create time labels based on relative position
+      // Create time labels based on relative position - reversed to show newest data on right
       filteredData.labels = filteredData.labels.map((_, index) => {
+        const reversedIndex = filteredLength - index - 1;
         // For equally spaced time labels
-        if (index === 0) return "Start";
-        if (index === filteredLength - 1) return "Now";
+        if (reversedIndex === 0) return "Now";
+        if (reversedIndex === filteredLength - 1) return "Start";
         
         // For selected points in the middle
         if (
-          index === Math.floor(filteredLength * 0.25) || 
-          index === Math.floor(filteredLength * 0.5) || 
-          index === Math.floor(filteredLength * 0.75)
+          reversedIndex === Math.floor(filteredLength * 0.25) || 
+          reversedIndex === Math.floor(filteredLength * 0.5) || 
+          reversedIndex === Math.floor(filteredLength * 0.75)
         ) {
-          return `${Math.round((index / filteredLength) * 100)}%`;
+          return `${Math.round(((filteredLength - reversedIndex) / filteredLength) * 100)}%`;
         }
         
         return "";
       });
+      
+      // Reverse the data array to show newest data on right with NaN checks
+      filteredData.datasets[0].data = [...filteredData.datasets[0].data].reverse().map(val => isNaN(val) ? 0 : val);
+      filteredData.labels = [...filteredData.labels].reverse();
     } else {
       // Determine appropriate label spacing for regular timestamps
       const filteredLength = filteredData.labels.length;
@@ -184,22 +201,39 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
       }
       
       // Create sparse labels with empty strings for non-shown labels
-      filteredData.labels = filteredData.labels.map((label, index) => 
+      // We'll reverse them to show newest on right
+      const tempLabels = filteredData.labels.map((label, index) => 
         index % labelStep === 0 ? label : ""
       );
+      
+      // Reverse data and labels to show newest data on right with NaN checks
+      filteredData.datasets[0].data = [...filteredData.datasets[0].data].reverse().map(val => isNaN(val) ? 0 : val);
+      filteredData.labels = [...tempLabels].reverse();
     }
     
     return filteredData;
   };
   
-  // Calculate average heart rate from filtered data
+  // Calculate average heart rate from filtered data with NaN protection
   const getAverageHeartRate = () => {
     if (!hasValidData) return 0;
     
-    // Get currently filtered data
-    const filteredDataset = getFilteredData().datasets[0].data;
+    // Get currently filtered data (before reversal to ensure we're using the right data)
+    const totalPoints = data.datasets[0].data.length;
+    const percentToShow = selectedTimeRange === '1h' ? 0.1 : 
+                          selectedTimeRange === '3h' ? 0.25 :
+                          selectedTimeRange === '12h' ? 0.5 :
+                          selectedTimeRange === '1d' ? 0.75 : 1;
     
-    // Calculate average
+    const pointsToInclude = Math.max(Math.round(totalPoints * percentToShow), 2);
+    const startIndex = Math.max(0, totalPoints - pointsToInclude);
+    
+    // Get filtered data with NaN check
+    const filteredDataset = data.datasets[0].data.slice(startIndex).filter(val => !isNaN(val));
+    
+    // Calculate average with protection against empty array
+    if (filteredDataset.length === 0) return 0;
+    
     const sum = filteredDataset.reduce((acc, val) => acc + val, 0);
     return Math.round(sum / filteredDataset.length);
   };
@@ -237,70 +271,75 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
         ))}
       </View>
       
-      {/* Range information */}
-      <View style={styles.rangeInfo}>
-        <View style={styles.rangeRow}>
+      {/* Chart container with fixed range info and scrollable chart */}
+      <View style={styles.chartContainer}>
+        {/* Static range information - always visible */}
+        <View style={styles.staticRangeContainer}>
           <View>
             <Text style={styles.rangeTitle}>RANGE</Text>
             <Text style={styles.rangeValue}>
               {derivedRangeData.min}–{derivedRangeData.max} <Text style={styles.rangeUnit}>BPM</Text>
             </Text>
+            <Text style={styles.dateRange}>{derivedRangeData.timeRange}</Text>
           </View>
           <View style={styles.averageContainer}>
             <Text style={styles.avgTitle}>AVG</Text>
             <Text style={styles.avgValue}>{getAverageHeartRate()} <Text style={styles.rangeUnit}>BPM</Text></Text>
           </View>
         </View>
-        <Text style={styles.dateRange}>{derivedRangeData.timeRange}</Text>
-      </View>
-      
-      {/* Scrollable chart */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingRight: 20 }}
-        style={styles.scrollView}
-        decelerationRate="normal"
-      >
-        {hasValidData ? (
-          <LineChart
-            data={getFilteredData()}
-            width={chartWidth}
-            height={height}
-            bezier={true}
-            chartConfig={{
-              backgroundColor: 'transparent',
-              backgroundGradientFrom: 'transparent',
-              backgroundGradientTo: 'transparent',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`,
-              labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
-              style: {
+        
+        {/* Scrollable chart area */}
+        <ScrollView 
+          ref={scrollViewRef}
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollViewContent}
+          style={styles.scrollView}
+          decelerationRate="normal"
+        >
+          {hasValidData ? (
+            <LineChart
+              data={getFilteredData()}
+              width={chartWidth}
+              height={height - 100} // Reduce height to account for static range display
+              bezier={true}
+              chartConfig={{
+                backgroundColor: 'transparent',
+                backgroundGradientFrom: 'transparent',
+                backgroundGradientTo: 'transparent',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(255, 69, 58, 1)`, // Full opacity for the line
+                labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
+                style: {
+                  borderRadius: 0,
+                },
+                propsForDots: {
+                  r: "3.5",
+                  strokeWidth: "0",
+                  stroke: "transparent",
+                  fill: "rgba(255, 69, 58, 1)", // Full opacity for dots
+                },
+                propsForBackgroundLines: {
+                  strokeDasharray: '5, 5',
+                  strokeWidth: 0.5,
+                  stroke: 'rgba(150, 150, 150, 0.15)',
+                },
+                strokeWidth: 2.5, // Increase line thickness
+                fillShadowGradient: 'rgba(255, 69, 58, 0.4)', // Semi-transparent gradient fill
+                fillShadowGradientOpacity: 0.3, // Reduced opacity for the fill
+              }}
+              style={{
+                marginVertical: 8,
                 borderRadius: 0,
-              },
-              propsForDots: {
-                r: "3",
-                strokeWidth: "0",
-                stroke: "transparent",
-                fill: "rgba(255, 69, 58, 0.8)",
-              },
-              propsForBackgroundLines: {
-                strokeDasharray: '5, 5',
-                strokeWidth: 0.5,
-                stroke: 'rgba(150, 150, 150, 0.15)',
-              },
-            }}
-            style={{
-              marginVertical: 8,
-              borderRadius: 0,
-            }}
-          />
-        ) : (
-          <View style={[styles.emptyChart, { width: chartWidth, height }]}>
-            <Text style={styles.emptyChartText}>No heart rate data available</Text>
-          </View>
-        )}
-      </ScrollView>
+              }}
+            />
+          ) : (
+            <View style={[styles.emptyChart, { width: chartWidth, height: height - 100 }]}>
+              <Text style={styles.emptyChartText}>No heart rate data available</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
       
       {/* Current value indicator */}
       <View style={styles.currentValueContainer}>
@@ -343,9 +382,21 @@ const styles = StyleSheet.create({
   selectedTimeRangeText: {
     color: '#FFFFFF',
   },
-  rangeInfo: {
+  chartContainer: {
+    position: 'relative',
+    height: 240, // Fixed height for the chart area
+  },
+  staticRangeContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 16,
     paddingTop: 16,
+    zIndex: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.5)', // Semi-transparent background
   },
   rangeRow: {
     flexDirection: 'row',
@@ -390,7 +441,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollView: {
-    marginTop: 8,
+    marginTop: 80, // Give space for the static range display
+  },
+  scrollViewContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
   currentValueContainer: {
     flexDirection: 'row',
@@ -399,7 +454,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF453A',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    marginTop: 16,
   },
   currentValueLabel: {
     color: '#FFFFFF',

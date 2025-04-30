@@ -581,35 +581,44 @@ export class BluetoothService {
       
       // Attempt connection
       const device = await this.manager.connectToDevice(deviceId);
-      console.log(`[BluetoothService] Connected to device: ${deviceId}`);
+      console.log(`[BluetoothService] Connected to device: ${deviceId}, Name initially: ${device.name || 'Unknown'}`);
       
       // Store in connected devices map
       this.connectedDevices.set(deviceId, device);
       
-      // Update device status
-      this.updateDeviceStatus(deviceId, true);
+      // Update device status immediately to show connected state, even if name is temporary
+      await this.updateDeviceStatus(deviceId, true);
 
       // Discover services and characteristics
       console.log(`[BluetoothService] Discovering services for device: ${deviceId}`);
       await device.discoverAllServicesAndCharacteristics();
-      console.log(`[BluetoothService] Services discovered for device: ${deviceId}`);
+      console.log(`[BluetoothService] Services discovered for device: ${deviceId}, Name after discovery: ${device.name || 'Unknown'}`);
       
-      // Setup monitoring for relevant characteristics
-      this.setupMonitoringForDevice(deviceId);
-      
-      // Update saved device with lastConnected
+      // --- MOVED: Save/update device AFTER service discovery to ensure name is available ---
       const savedDevices = await this.deviceService.getSavedDevices();
       const savedDevice = savedDevices.find(d => d.id === deviceId);
       
       if (savedDevice) {
-        await this.deviceService.updateDeviceLastConnected(deviceId);
+        // Pass the potentially updated name to updateDeviceLastConnected
+        console.log(`[BluetoothService] Device ${deviceId} already saved, updating last connected and name. Current name: ${device.name || 'Unknown'}, Saved name: ${savedDevice.name}`);
+        await this.deviceService.updateDeviceLastConnected(deviceId, device.name);
       } else {
-        // Save the actual Device object
+        // Save the device after discovery (name should be more likely available)
+        console.log(`[BluetoothService] Device ${deviceId} not saved yet, saving now with name: ${device.name || 'Unknown'}`);
         await this.deviceService.saveDevice(device);
       }
       
+      // Setup monitoring for relevant characteristics
+      this.setupMonitoringForDevice(deviceId);
+      
+      // Re-update device status AFTER saving/updating to ensure the latest name from storage is used
+      await this.updateDeviceStatus(deviceId, true);
+      
     } catch (error) {
       console.error(`[BluetoothService] Error connecting to device ${deviceId}:`, error);
+      // Update status to disconnected on error
+      await this.updateDeviceStatus(deviceId, false);
+      this.connectedDevices.delete(deviceId); // Remove from live map
       throw error;
     }
   }
@@ -683,6 +692,14 @@ export class BluetoothService {
     } catch (error) {
       console.error(`[BluetoothService] Error disconnecting from device ${deviceId}:`, error);
     }
+  }
+
+  /**
+   * Get IDs of currently connected devices
+   * @returns Array of device IDs that are currently connected
+   */
+  public getConnectedDeviceIds(): string[] {
+    return Array.from(this.connectedDevices.keys());
   }
 
   /**

@@ -78,27 +78,34 @@ export function formatChartTimestamp(timestamp: number): string {
     return '';
   }
   
-  const date = new Date(timestamp);
-  
-  // Check if date is valid (catches the 1970 issue)
-  if (date.getFullYear() <= 1970 && timestamp > 0) {
-    // If timestamp seems to be in seconds rather than milliseconds, convert
-    const dateFromSeconds = new Date(timestamp * 1000);
-    if (dateFromSeconds.getFullYear() > 1970) {
-      return dateFromSeconds.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false 
-      });
-    }
+  // Check if this is likely a valid epoch timestamp (Jan 1, 2010 or later)
+  // This helps distinguish between device timestamps (boot time in ms) and 
+  // actual date timestamps (ms since epoch)
+  if (timestamp < 1262304000000) { // Jan 1, 2010 timestamp
+    // This is likely a device uptime timestamp, not suitable for date formatting
+    // Return empty string or possibly a relative format (e.g. "+2.5s")
+    return '';
   }
   
-  // Standard formatting for valid dates
+  const date = new Date(timestamp);
+  
+  // Check if date is valid
+  if (date.getFullYear() <= 1970) {
+    return '';
+  }
+  
+  try {
+    // Standard formatting for valid dates, now including seconds for uniqueness
   return date.toLocaleTimeString([], { 
     hour: '2-digit', 
     minute: '2-digit',
+      second: '2-digit', // Added seconds for uniqueness in chart labels
     hour12: false 
   });
+  } catch (e) {
+    console.error(`[formatChartTimestamp] Error formatting timestamp ${timestamp}:`, e);
+    return ''; // Return empty string on any error
+  }
 }
 
 /**

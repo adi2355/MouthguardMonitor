@@ -59,7 +59,7 @@ export default function LogsScreen() {
       switch (type) {
         case 'motion':
           query = `
-            SELECT id, device_timestamp as timestamp, 
+            SELECT id, device_timestamp as timestamp, app_timestamp,
             'motion' as type,
             json_object(
               'accel16_x', accel16_x,
@@ -84,14 +84,14 @@ export default function LogsScreen() {
           break;
         case 'fsr':
           query = `
-            SELECT id, device_timestamp as timestamp, 
+            SELECT id, device_timestamp as timestamp, app_timestamp,
             'fsr' as type,
             json_object(
               'left_bite', left_bite,
               'right_bite', right_bite
             ) as data
             FROM fsr_packets
-            ORDER BY device_timestamp DESC
+            ORDER BY app_timestamp DESC
             LIMIT 100
           `;
           break;
@@ -132,7 +132,8 @@ export default function LogsScreen() {
           return resultRows.map((row: any) => ({
             id: row.id,
             // Ensure timestamp exists, fallback if necessary
-            timestamp: row.timestamp ?? row.app_timestamp ?? row.device_timestamp ?? new Date().toISOString(),
+            timestamp: row.timestamp ?? row.device_timestamp ?? new Date().toISOString(),
+            app_timestamp: row.app_timestamp,
             type: row.type,
             data: row.data // Assuming 'data' is correctly formed by the JSON_OBJECT function
           }));
@@ -197,26 +198,61 @@ export default function LogsScreen() {
   const renderLogItem = (log: LogItem) => {
     const formattedData = formatLogData(log.data, log.type);
     
-    // Parse timestamp correctly based on format:
-    // If it's just a number that represents seconds, multiply by 1000
-    // Otherwise, assume it's already milliseconds
-    let timestampMs;
+    // Use app_timestamp for FSR and motion logs when available
+    let displayTimestampMs;
+    
+    if (log.type === 'fsr' || log.type === 'motion') {
+      // For FSR and motion, prefer app_timestamp over device_timestamp for display
+      if ((log as any).app_timestamp && typeof (log as any).app_timestamp === 'number') {
+        displayTimestampMs = (log as any).app_timestamp;
+      } else {
+        // If no app_timestamp, show device uptime instead of incorrect date
+        const deviceTimestamp = typeof log.timestamp === 'string' ? 
+          parseInt(log.timestamp, 10) : log.timestamp;
+        
+        // Don't construct Date if displayTimestampMs is undefined
+        const formattedTime = `Device Uptime: ${deviceTimestamp}ms`;
+        const formattedDate = "";
+        
+        // Check if this is a recent entry (within the last minute)
+        const isRecent = Date.now() - ((log as any).app_timestamp || 0) < 60000; // 60 seconds
+        
+        return (
+          <View key={`${log.type}_${log.id}`} style={[
+            styles.logItem, 
+            isRecent && styles.recentLogItem
+          ]}>
+            <View style={styles.logHeader}>
+              <Text style={styles.logType}>
+                {log.type.toUpperCase()}
+                {isRecent && " (NEW)"}
+              </Text>
+              <Text style={styles.logTime}>{formattedTime}</Text>
+            </View>
+            <Text style={styles.logData}>{formattedData}</Text>
+          </View>
+        );
+      }
+    } else {
+      // For other logs, use the existing timestamp logic
     if (typeof log.timestamp === 'string') {
       const parsedTimestamp = parseInt(log.timestamp, 10);
       // Check if this looks like a seconds-based epoch (10 digits) or millisecond epoch (13 digits)
-      timestampMs = parsedTimestamp < 10000000000 
+        displayTimestampMs = parsedTimestamp < 10000000000 
         ? parsedTimestamp * 1000  // Convert seconds to milliseconds
         : parsedTimestamp;        // Already milliseconds
     } else {
-      timestampMs = log.timestamp;
+        displayTimestampMs = log.timestamp;
+      }
     }
     
-    const logDate = new Date(timestampMs);
+    // Only try to format as date if we have a valid app_timestamp
+    const logDate = new Date(displayTimestampMs);
     const formattedTime = logDate.toLocaleTimeString();
     const formattedDate = logDate.toLocaleDateString();
     
     // Check if this is a recent entry (within the last minute)
-    const isRecent = Date.now() - timestampMs < 60000; // 60 seconds
+    const isRecent = Date.now() - displayTimestampMs < 60000; // 60 seconds
     
     return (
       <View key={`${log.type}_${log.id}`} style={[

@@ -1036,6 +1036,147 @@ export default function Devices() {
     );
   };
 
+  // Connected Devices section
+  const connectedDevicesSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Connected Devices</Text>
+      <GlassCard style={styles.sectionCard}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+          style={styles.cardGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+        <View style={styles.cardInner}>
+          {loading ? (
+            <ActivityIndicator color={THEME.primary} />
+          ) : savedDevices.filter(device => device.connected).length > 0 ? (
+            <FlatList
+              data={savedDevices.filter(device => device.connected)}
+              keyExtractor={(item) => item.id}
+              renderItem={renderDevice}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+              extraData={savedDevices} // Add extraData to ensure updates
+            />
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <LinearGradient
+                colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                style={[styles.emptyStateIcon, { borderRadius: 30 }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
+              </LinearGradient>
+              <Text style={styles.emptyStateText}>No connected devices</Text>
+              <Text style={styles.emptyStateSubtext}>Connect to a mouthguard device to monitor impacts</Text>
+            </View>
+          )}
+        </View>
+      </GlassCard>
+    </View>
+  );
+  
+  // Available Devices section
+  const availableDevicesSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Available Devices</Text>
+      <GlassCard style={styles.sectionCard}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
+          style={styles.cardGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        />
+        <View style={styles.cardInner}>
+          {loading ? (
+            <ActivityIndicator color={THEME.primary} />
+          ) : savedDevices.filter(device => !device.connected).length > 0 ? (
+            <FlatList
+              data={savedDevices.filter(device => !device.connected)}
+              keyExtractor={(item) => item.id}
+              renderItem={renderDevice}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
+              extraData={savedDevices} // Add extraData to ensure updates
+            />
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <LinearGradient
+                colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+                style={[styles.emptyStateIcon, { borderRadius: 30 }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
+              </LinearGradient>
+              <Text style={styles.emptyStateText}>No available devices</Text>
+              <Text style={styles.emptyStateSubtext}>All saved devices are currently connected</Text>
+            </View>
+          )}
+        </View>
+      </GlassCard>
+    </View>
+  );
+
+  // Scan for devices button (bottom)
+  const scanDevicesButton = connectionInProgress ? (
+    <View style={styles.scanButtonContainer}>
+      <TouchableOpacity
+        style={[styles.scanButton, styles.scanningButton]}
+        disabled={true}
+      >
+        <View style={styles.scanButtonInner}>
+          <ActivityIndicator color="#fff" size="small" style={styles.scanningIcon} />
+          <Text style={styles.scanButtonText}>Connecting...</Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <View style={styles.scanButtonContainer}>
+      <TouchableOpacity
+        style={styles.scanButton}
+        onPress={scanDevices}
+        disabled={scanning}
+      >
+        <View style={styles.scanButtonInner}>
+          {scanning ? (
+            <ActivityIndicator color="#fff" size="small" style={styles.scanningIcon} />
+          ) : (
+            <MaterialCommunityIcons name="bluetooth-connect" size={24} color="#fff" />
+          )}
+          <Text style={styles.scanButtonText}>{scanning ? 'Scanning...' : 'Scan for Devices'}</Text>
+        </View>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.addDeviceButton}
+        onPress={() => router.push('/')}
+      >
+        <LinearGradient
+          colors={['rgba(0,176,118,0.1)', 'rgba(0,176,118,0.05)']}
+          style={styles.addDeviceButton}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <MaterialCommunityIcons name="account-plus" size={24} color={THEME.primary} />
+        </LinearGradient>
+        <View style={styles.addDeviceText}>
+          <Text style={styles.addDeviceTitle}>Athlete Management</Text>
+          <Text style={styles.addDeviceDescription}>Manage athletes and assign devices</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addDeviceAction}
+          onPress={() => router.push('/')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="chevron-right" size={24} color={THEME.primary} />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaProvider>
       <ScrollView 
@@ -1065,102 +1206,14 @@ export default function Devices() {
           </View>
         </View>
 
-        {/* Connected Devices Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Connected Devices</Text>
-          <GlassCard style={styles.sectionCard}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
-              style={styles.cardGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-            />
-            <View style={styles.cardInner}>
-              {savedDevices.filter(device => device.connected).length > 0 ? (
-                <FlatList
-                  data={savedDevices.filter(device => device.connected)}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderDevice}
-                  scrollEnabled={false}
-                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
-                />
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <MaterialCommunityIcons name="bluetooth-off" size={36} color={THEME.text.tertiary} />
-                  </LinearGradient>
-                  <Text style={styles.emptyStateText}>No connected devices</Text>
-                  <Text style={styles.emptyStateSubtext}>Connect to a mouthguard device to monitor impacts</Text>
-                </View>
-              )}
-            </View>
-          </GlassCard>
-        </View>
-
-        {/* Available Devices Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Available Devices</Text>
-          <GlassCard style={styles.sectionCard}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.75)']}
-              style={styles.cardGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-            />
-            <View style={styles.cardInner}>
-              {savedDevices.filter(device => !device.connected).length > 0 ? (
-                <FlatList
-                  data={savedDevices.filter(device => !device.connected)}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderDevice}
-                  scrollEnabled={false}
-                  ItemSeparatorComponent={() => <View style={styles.deviceSeparator} />}
-                />
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <LinearGradient
-                    colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
-                    style={[styles.emptyStateIcon, { borderRadius: 30 }]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                  >
-                    <MaterialCommunityIcons name="bluetooth-settings" size={36} color={THEME.text.tertiary} />
-                  </LinearGradient>
-                  <Text style={styles.emptyStateText}>No available devices</Text>
-                  <Text style={styles.emptyStateSubtext}>All saved devices are currently connected</Text>
-                </View>
-              )}
-            </View>
-          </GlassCard>
-        </View>
+        {connectedDevicesSection}
+        {availableDevicesSection}
 
         {/* Scan Devices Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Discover New Devices</Text>
-            <TouchableOpacity 
-              style={styles.scanButton}
-              onPress={scanDevices}
-              disabled={scanning}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#00d68f', '#00b076']}
-                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              />
-              <MaterialCommunityIcons name="bluetooth-connect" size={20} color="#fff" />
-              <Text style={styles.scanButtonText}>
-                {scanning ? 'Scanning...' : 'Scan'}
-              </Text>
-              {scanning && <ActivityIndicator color="#fff" style={{ marginLeft: 8 }} />}
-            </TouchableOpacity>
+            {scanDevicesButton}
           </View>
           
           <GlassCard style={styles.sectionCard}>
@@ -1208,7 +1261,7 @@ export default function Devices() {
             <Text style={styles.sectionTitle}>Athletes & Assignments</Text>
             <TouchableOpacity 
               style={styles.addButton}
-              onPress={() => router.push('/(tabs)/athletes')}
+              onPress={() => router.push('/')}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -1585,7 +1638,52 @@ const styles = StyleSheet.create({
   },
   athleteItemDisabled: {
     opacity: 0.7,
-  }
+  },
+  emptyMessage: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: THEME.text.tertiary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  scanButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  scanningButton: {
+    opacity: 0.5,
+  },
+  scanButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scanningIcon: {
+    marginRight: 8,
+  },
+  addDeviceButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: THEME.primary,
+  },
+  addDeviceText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  addDeviceTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: THEME.text.onPrimary,
+  },
+  addDeviceDescription: {
+    fontSize: 14,
+    color: THEME.text.onPrimary,
+  },
+  addDeviceAction: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: THEME.primary,
+  },
 });
 
 ================================================================================
@@ -3702,14 +3800,16 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
-import { useSensorDataRepository } from '@/src/providers/AppProvider';
+import { useSensorDataRepository, useDeviceService } from '@/src/providers/AppProvider';
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
-import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types';
+import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData, SavedDevice } from '@/src/types';
 import { debounce } from 'lodash';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
 import BarChart from '../components/charts/BarChart';
+// Import direct chart library for testing
+import { LineChart as RNLineChart, BarChart as RNBarChart } from 'react-native-chart-kit';
 
 // Import new data processing utilities
 import { 
@@ -3856,11 +3956,55 @@ const GlassCard = ({
   );
 };
 
+// Add ErrorBoundary for catching render errors
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null, errorInfo: React.ErrorInfo | null}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    // Update state so the next render will show the fallback UI
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log the error to console for debugging
+    console.error('React Error Boundary caught an error:', error, errorInfo);
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // Render fallback UI
+      return (
+        <View style={styles.errorContainer}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.error} />
+          <Text style={styles.errorTitle}>Something went wrong rendering this screen</Text>
+          <Text style={styles.errorText}>
+            {this.state.error?.toString()}
+          </Text>
+          <TouchableOpacity 
+            style={styles.retryButton} 
+            onPress={() => this.setState({ hasError: false, error: null, errorInfo: null })}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function ReportsDetailedScreen() {
   const sensorDataRepository = useSensorDataRepository();
 
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  // Add refreshKey state to force re-renders
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // State for raw data (only when needed for specialized visualization)
   const [impacts, setImpacts] = useState<any[]>([]);
@@ -3897,7 +4041,50 @@ export default function ReportsDetailedScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const deviceId = DEVICE_ID_SIM;
+  // Instead of hardcoded deviceId, use a state variable
+  const [targetDeviceId, setTargetDeviceId] = useState<string>(DEVICE_ID_SIM);
+  
+  // Get device service to access device information
+  const deviceService = useDeviceService();
+  
+  // Effect to find and set the target device ID
+  useEffect(() => {
+    const findDevice = async () => {
+      try {
+        // Get list of saved devices
+        const savedDevices = await deviceService.getSavedDevices();
+        console.log(`[ReportsDetailed] Found ${savedDevices.length} saved devices`);
+        
+        // Use BluetoothService to get connected devices
+        const deviceStatuses = await deviceService.getSavedDevices();
+        // In a real app, we would check BluetoothService for actual connected devices
+        // but for now, just use the most recently connected device
+        
+        if (savedDevices.length > 0) {
+          // Sort by lastConnected (most recent first)
+          const sortedDevices = [...savedDevices].sort((a: SavedDevice, b: SavedDevice) => {
+            const aTime = a.lastConnected || 0;
+            const bTime = b.lastConnected || 0;
+            return bTime - aTime;
+          });
+          
+          // Use the most recently connected device
+          console.log(`[ReportsDetailed] Using most recently connected device: ${sortedDevices[0].id}`);
+          setTargetDeviceId(sortedDevices[0].id);
+        } else {
+          // If no devices at all, fall back to the simulation device
+          console.log(`[ReportsDetailed] No devices found, falling back to simulation device`);
+          setTargetDeviceId(DEVICE_ID_SIM);
+        }
+      } catch (err) {
+        console.error('[ReportsDetailed] Error finding device:', err);
+        // Fall back to simulation device on error
+        setTargetDeviceId(DEVICE_ID_SIM);
+      }
+    };
+    
+    findDevice();
+  }, [deviceService]);
 
   const getRiskStyle = (risk: any) => {
     switch (risk?.toLowerCase()) {
@@ -3926,11 +4113,11 @@ export default function ReportsDetailedScreen() {
         fetchedHrm,
         fetchedHtm
       ] = await Promise.all([
-        sensorDataRepository.getSensorData(deviceId, 'impact_events', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'motion_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'fsr_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'hrm_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'htm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', startTime, endTime),
       ]);
 
       // Keep raw impact data for direction visualization if needed
@@ -4067,7 +4254,7 @@ export default function ReportsDetailedScreen() {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [deviceId, sensorDataRepository, fadeAnim]);
+  }, [targetDeviceId, sensorDataRepository, fadeAnim]);
 
   // Fetch data on initial mount
   useEffect(() => {
@@ -4095,9 +4282,15 @@ export default function ReportsDetailedScreen() {
   useEffect(() => {
     const handleDataChange = (eventData: { deviceId: string; type: string }) => {
       // Re-fetch data if the change affects the current device
-      if (eventData.deviceId === deviceId) {
-        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), queueing debounced fetch...`);
+      if (eventData.deviceId === targetDeviceId) {
+        console.log(`[ReportsDetailed] Data changed for device ${targetDeviceId} (type: ${eventData.type}), queueing debounced fetch...`);
         debouncedFetchData(); // Call the debounced function
+        
+        // Force a re-render shortly after data is likely fetched
+        setTimeout(() => {
+          console.log('[ReportsDetailed] Forcing component refresh after data change');
+          setRefreshKey(prev => prev + 1);
+        }, 1200); // Wait slightly longer than the debounce period (1000ms)
       }
     };
 
@@ -4108,7 +4301,38 @@ export default function ReportsDetailedScreen() {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
       debouncedFetchData.cancel(); // Cancel any pending debounced calls
     };
-  }, [deviceId, debouncedFetchData]);
+  }, [targetDeviceId, debouncedFetchData]);
+
+  // Add detailed chart data logging
+  useEffect(() => {
+    if (!loading && !error) {
+      // Only log if not in production
+      if (__DEV__) {
+        console.log('--- CHART DATA SUMMARY ---');
+        
+        // Log data dimensions
+        console.log('Chart dimensions:', {
+          hrm: hrmChartData ? `${hrmChartData.labels?.length || 0}x${hrmChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+          temp: tempChartData ? `${tempChartData.labels?.length || 0}x${tempChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+          fsr: biteForceChartData ? `${biteForceChartData.labels?.length || 0}x${biteForceChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+          motion: motionChartData ? `${motionChartData.labels?.length || 0}x${motionChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+        });
+        
+        // Check for empty label percentages
+        if (biteForceChartData?.labels?.length) {
+          const emptyLabels = biteForceChartData.labels.filter(label => !label).length;
+          const pct = (emptyLabels / biteForceChartData.labels.length * 100).toFixed(1);
+          console.log(`FSR empty labels: ${emptyLabels}/${biteForceChartData.labels.length} (${pct}%)`);
+        }
+        
+        if (motionChartData?.labels?.length) {
+          const emptyLabels = motionChartData.labels.filter(label => !label).length;
+          const pct = (emptyLabels / motionChartData.labels.length * 100).toFixed(1);
+          console.log(`Motion empty labels: ${emptyLabels}/${motionChartData.labels.length} (${pct}%)`);
+        }
+      }
+    }
+  }, [loading, error, hrmChartData, tempChartData, biteForceChartData, motionChartData]);
 
   // Show loading indicator
   if (loading) {
@@ -4150,9 +4374,11 @@ export default function ReportsDetailedScreen() {
   }
 
   return (
+    <ErrorBoundary>
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
+          key={refreshKey} // Add key to force re-render when refreshKey changes
           style={styles.container}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -4178,7 +4404,7 @@ export default function ReportsDetailedScreen() {
             <GlassCard style={styles.summaryCard}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Session Report</Text>
-                <Text style={styles.deviceId}>({deviceId})</Text>
+                <Text style={styles.deviceId}>({targetDeviceId})</Text>
               </View>
               
               <View style={styles.metricsRow}>
@@ -4204,249 +4430,225 @@ export default function ReportsDetailedScreen() {
             </GlassCard>
           </Animated.View>
 
-          {/* Heart Rate Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.heartRateCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
-                  <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Heart Rate</Text>
+          {/* Heart Rate Card - Modified for iOS compatibility */}
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
+                <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
               </View>
-              
-              <View style={styles.scrollableChartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : hrmChartData ? (
-                  <ScrollableHeartRateChart
-                    data={hrmChartData}
-                    currentValue={sessionStats?.avgHr ?? 0}
-                    timestamp={hrmChartData?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
-                    height={280}
-                    rangeData={{
-                      min: sessionStats?.minHr ?? 0,
-                      max: sessionStats?.maxHr ?? 0,
-                      timeRange: hrmChartData?.timeRangeLabel || "Today"
-                    }}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No heart rate data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Heart Rate</Text>
+            </View>
+            
+            <View style={styles.scrollableChartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : hrmChartData ? (
+                <ScrollableHeartRateChart
+                  data={hrmChartData}
+                  currentValue={sessionStats?.avgHr ?? 0}
+                  timestamp={(hrmChartData as any)?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                  height={280}
+                  rangeData={{
+                    min: sessionStats?.minHr ?? 0,
+                    max: sessionStats?.maxHr ?? 0,
+                    timeRange: (hrmChartData as any)?.timeRangeLabel || "Today"
+                  }}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No heart rate data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Temperature Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
-                  <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Temperature</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
+                <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : tempChartData ? (
-                  <TemperatureStabilityGraph
-                    data={tempChartData}
-                    currentTemp={sessionStats?.currentTemp}
-                    avgTemp={sessionStats?.avgTemp}
-                    maxTemp={sessionStats?.maxTemp}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No temperature data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Temperature</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : tempChartData ? (
+                <TemperatureStabilityGraph
+                  data={tempChartData}
+                  currentTemp={sessionStats?.currentTemp}
+                  avgTemp={sessionStats?.avgTemp}
+                  maxTemp={sessionStats?.maxTemp}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No temperature data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Bite Force Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
-                  <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Bite Force</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : biteForceChartData ? (
-                  <BiteForceDynamicsChart
-                    data={biteForceChartData}
-                    avgLeft={sessionStats?.avgBiteLeft}
-                    avgRight={sessionStats?.avgBiteRight}
-                    avgTotal={sessionStats?.avgBiteTotal}
-                    maxForce={sessionStats?.maxBiteForce}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No bite force data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Bite Force</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : biteForceChartData ? (
+                <BiteForceDynamicsChart
+                  data={biteForceChartData}
+                  avgLeft={sessionStats?.avgBiteLeft}
+                  avgRight={sessionStats?.avgBiteRight}
+                  avgTotal={sessionStats?.avgBiteTotal}
+                  maxForce={sessionStats?.maxBiteForce}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No bite force data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Motion Overview Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(80, 80, 80, 0.1)'}]}>
-                  <MaterialCommunityIcons name="axis-arrow" size={20} color="rgba(80, 80, 80, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Motion Overview</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(88, 86, 214, 0.1)'}]}>
+                <MaterialCommunityIcons name="wave" size={20} color="rgba(88, 86, 214, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : motionChartData ? (
-                  <MotionOverviewGraph
-                    data={motionChartData}
-                    peakAccel={sessionStats?.peakAccel}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No motion data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
-
-          {/* Concussion Risk Card - Refined */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={[styles.dataCard, styles.riskCard]}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: `${getRiskStyle(sessionStats?.concussionRisk).color}15`}]}>
-                  <MaterialCommunityIcons 
-                    name="shield-alert-outline" 
-                    size={20} 
-                    color={getRiskStyle(sessionStats?.concussionRisk).color} 
-                  />
-                </View>
-                <Text style={styles.cardTitle}>Concussion Risk</Text>
-              </View>
-              
-              <ConcussionRiskGauge risk={sessionStats?.concussionRisk} />
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Motion Overview</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : motionChartData ? (
+                <MotionOverviewGraph 
+                  data={motionChartData}
+                  peakAccel={sessionStats?.peakAccel}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No motion data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Impact Timeline Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
-                  <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={COLORS.primary} />
-                </View>
-                <Text style={styles.cardTitle}>Impact Timeline</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 45, 85, 0.1)'}]}>
+                <MaterialCommunityIcons name="chart-timeline-variant" size={20} color="rgba(255, 45, 85, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : impactTimelineData ? (
-                  <ImpactTimelineGraph
-                    data={impactTimelineData}
-                    totalImpacts={sessionStats?.totalImpacts}
-                    maxG={sessionStats?.maxG}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No impact data available</Text>
-                )}
+              <Text style={styles.cardTitle}>Impact Timeline</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : impactTimelineData && impactTimelineData.datasets?.[0]?.data?.length ? (
+                <ImpactTimelineGraph 
+                  data={impactTimelineData}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No impact data available</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Concussion Risk Card */}
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(175, 82, 222, 0.1)'}]}>
+                <MaterialCommunityIcons name="brain" size={20} color="rgba(175, 82, 222, 1)" />
               </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Concussion Risk Assessment</Text>
+            </View>
+            
+            <View style={styles.gaugeContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : (sessionStats?.totalImpacts !== null && sessionStats?.totalImpacts !== undefined) ? (
+                <ConcussionRiskGauge 
+                  risk={sessionStats.concussionRisk || 'Low'}
+                  width={Dimensions.get('window').width - 40}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No impact risk data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Severity Distribution Card - Refined */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
-                  <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
-                </View>
-                <Text style={styles.cardTitle}>Severity Distribution</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : severityDistData ? (
-                  <SeverityDistributionGraph data={severityDistData} />
-                ) : (
-                  <Text style={styles.emptyChartText}>No impact data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Severity Distribution</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : severityDistData ? (
+                <SeverityDistributionGraph data={severityDistData} />
+              ) : (
+                <Text style={styles.emptyChartText}>No impact data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* CHIE Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
-                  <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : chieData ? (
-                  <CumulativeExposureGraph data={chieData} />
-                ) : (
-                  <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : chieData ? (
+                <CumulativeExposureGraph data={chieData} />
+              ) : (
+                <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Bottom Spacer */}
           <View style={{ height: 24 }} />
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -4702,6 +4904,25 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  chartCardContainer: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  gaugeContainer: {
+    alignItems: 'center',
+    marginTop: 16,
   },
 });
 
@@ -6912,7 +7133,8 @@ import {
   ScrollView, 
   Pressable, 
   TouchableOpacity,
-  Animated
+  Animated,
+  Dimensions
 } from 'react-native';
 import LineChart from './LineChart';
 import { COLORS } from '../../../src/constants';
@@ -6927,6 +7149,7 @@ const TIME_RANGES = [
   { id: '1w', label: 'All' }
 ];
 const chartWidth = 1500; // Make chart scrollable with larger width
+const screenWidth = Dimensions.get('window').width;
 
 interface HeartRateDataPoint {
   value: number;
@@ -6954,6 +7177,8 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
 }) => {
   // State for selected time range
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>('12h');
+  // Reference to the scroll view to scroll to end (newest data) on mount
+  const scrollViewRef = useRef<ScrollView>(null);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -6973,6 +7198,13 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
         useNativeDriver: true,
       })
     ]).start();
+    
+    // Scroll to the right end (newest data) after a short delay to ensure rendering is complete
+    setTimeout(() => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollToEnd({ animated: false });
+      }
+    }, 100);
   }, []);
 
   // Check if we have valid data to display
@@ -6985,13 +7217,15 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
   
   // Calculate min/max heart rate values from dataset if not provided
   const derivedRangeData = rangeData || (hasValidData ? {
-    min: Math.min(...data.datasets[0].data),
-    max: Math.max(...data.datasets[0].data),
+    min: Math.min(...data.datasets[0].data.filter(val => !isNaN(val))),
+    max: Math.max(...data.datasets[0].data.filter(val => !isNaN(val))),
     timeRange: "Today"
   } : { min: 0, max: 0, timeRange: "No data available" });
   
   // Calculate current value if not provided
-  const derivedCurrentValue = currentValue || (hasValidData ? data.datasets[0].data[data.datasets[0].data.length - 1] : 0);
+  const derivedCurrentValue = currentValue || (hasValidData ? 
+    (isNaN(data.datasets[0].data[data.datasets[0].data.length - 1]) ? 
+      0 : data.datasets[0].data[data.datasets[0].data.length - 1]) : 0);
   
   // Get current timestamp if not provided
   const derivedTimestamp = timestamp || (hasValidData ? data.labels[data.labels.length - 1] : "--:--");
@@ -7043,37 +7277,41 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
     // Get the most recent data based on percentage
     const startIndex = Math.max(0, totalPoints - pointsToInclude);
     
-    // Create filtered dataset
+    // Create filtered dataset with NaN check
     const filteredData = {
       labels: data.labels.slice(startIndex),
       datasets: [{
         ...data.datasets[0],
-        data: data.datasets[0].data.slice(startIndex)
+        data: data.datasets[0].data.slice(startIndex).map(val => isNaN(val) ? 0 : val) // Add NaN check
       }]
     };
     
     // Generate more meaningful labels if all timestamps are the same
     if (allTimestampsSame) {
       const filteredLength = filteredData.labels.length;
-      const now = new Date();
       
-      // Create time labels based on relative position
+      // Create time labels based on relative position - reversed to show newest data on right
       filteredData.labels = filteredData.labels.map((_, index) => {
+        const reversedIndex = filteredLength - index - 1;
         // For equally spaced time labels
-        if (index === 0) return "Start";
-        if (index === filteredLength - 1) return "Now";
+        if (reversedIndex === 0) return "Now";
+        if (reversedIndex === filteredLength - 1) return "Start";
         
         // For selected points in the middle
         if (
-          index === Math.floor(filteredLength * 0.25) || 
-          index === Math.floor(filteredLength * 0.5) || 
-          index === Math.floor(filteredLength * 0.75)
+          reversedIndex === Math.floor(filteredLength * 0.25) || 
+          reversedIndex === Math.floor(filteredLength * 0.5) || 
+          reversedIndex === Math.floor(filteredLength * 0.75)
         ) {
-          return `${Math.round((index / filteredLength) * 100)}%`;
+          return `${Math.round(((filteredLength - reversedIndex) / filteredLength) * 100)}%`;
         }
         
         return "";
       });
+      
+      // Reverse the data array to show newest data on right with NaN checks
+      filteredData.datasets[0].data = [...filteredData.datasets[0].data].reverse().map(val => isNaN(val) ? 0 : val);
+      filteredData.labels = [...filteredData.labels].reverse();
     } else {
       // Determine appropriate label spacing for regular timestamps
       const filteredLength = filteredData.labels.length;
@@ -7090,22 +7328,39 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
       }
       
       // Create sparse labels with empty strings for non-shown labels
-      filteredData.labels = filteredData.labels.map((label, index) => 
+      // We'll reverse them to show newest on right
+      const tempLabels = filteredData.labels.map((label, index) => 
         index % labelStep === 0 ? label : ""
       );
+      
+      // Reverse data and labels to show newest data on right with NaN checks
+      filteredData.datasets[0].data = [...filteredData.datasets[0].data].reverse().map(val => isNaN(val) ? 0 : val);
+      filteredData.labels = [...tempLabels].reverse();
     }
     
     return filteredData;
   };
   
-  // Calculate average heart rate from filtered data
+  // Calculate average heart rate from filtered data with NaN protection
   const getAverageHeartRate = () => {
     if (!hasValidData) return 0;
     
-    // Get currently filtered data
-    const filteredDataset = getFilteredData().datasets[0].data;
+    // Get currently filtered data (before reversal to ensure we're using the right data)
+    const totalPoints = data.datasets[0].data.length;
+    const percentToShow = selectedTimeRange === '1h' ? 0.1 : 
+                          selectedTimeRange === '3h' ? 0.25 :
+                          selectedTimeRange === '12h' ? 0.5 :
+                          selectedTimeRange === '1d' ? 0.75 : 1;
     
-    // Calculate average
+    const pointsToInclude = Math.max(Math.round(totalPoints * percentToShow), 2);
+    const startIndex = Math.max(0, totalPoints - pointsToInclude);
+    
+    // Get filtered data with NaN check
+    const filteredDataset = data.datasets[0].data.slice(startIndex).filter(val => !isNaN(val));
+    
+    // Calculate average with protection against empty array
+    if (filteredDataset.length === 0) return 0;
+    
     const sum = filteredDataset.reduce((acc, val) => acc + val, 0);
     return Math.round(sum / filteredDataset.length);
   };
@@ -7143,70 +7398,75 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
         ))}
       </View>
       
-      {/* Range information */}
-      <View style={styles.rangeInfo}>
-        <View style={styles.rangeRow}>
+      {/* Chart container with fixed range info and scrollable chart */}
+      <View style={styles.chartContainer}>
+        {/* Static range information - always visible */}
+        <View style={styles.staticRangeContainer}>
           <View>
             <Text style={styles.rangeTitle}>RANGE</Text>
             <Text style={styles.rangeValue}>
               {derivedRangeData.min}–{derivedRangeData.max} <Text style={styles.rangeUnit}>BPM</Text>
             </Text>
+            <Text style={styles.dateRange}>{derivedRangeData.timeRange}</Text>
           </View>
           <View style={styles.averageContainer}>
             <Text style={styles.avgTitle}>AVG</Text>
             <Text style={styles.avgValue}>{getAverageHeartRate()} <Text style={styles.rangeUnit}>BPM</Text></Text>
           </View>
         </View>
-        <Text style={styles.dateRange}>{derivedRangeData.timeRange}</Text>
-      </View>
-      
-      {/* Scrollable chart */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingRight: 20 }}
-        style={styles.scrollView}
-        decelerationRate="normal"
-      >
-        {hasValidData ? (
-          <LineChart
-            data={getFilteredData()}
-            width={chartWidth}
-            height={height}
-            bezier={true}
-            chartConfig={{
-              backgroundColor: 'transparent',
-              backgroundGradientFrom: 'transparent',
-              backgroundGradientTo: 'transparent',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`,
-              labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
-              style: {
+        
+        {/* Scrollable chart area */}
+        <ScrollView 
+          ref={scrollViewRef}
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollViewContent}
+          style={styles.scrollView}
+          decelerationRate="normal"
+        >
+          {hasValidData ? (
+            <LineChart
+              data={getFilteredData()}
+              width={chartWidth}
+              height={height - 100} // Reduce height to account for static range display
+              bezier={true}
+              chartConfig={{
+                backgroundColor: 'transparent',
+                backgroundGradientFrom: 'transparent',
+                backgroundGradientTo: 'transparent',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(255, 69, 58, 1)`, // Full opacity for the line
+                labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
+                style: {
+                  borderRadius: 0,
+                },
+                propsForDots: {
+                  r: "3.5",
+                  strokeWidth: "0",
+                  stroke: "transparent",
+                  fill: "rgba(255, 69, 58, 1)", // Full opacity for dots
+                },
+                propsForBackgroundLines: {
+                  strokeDasharray: '5, 5',
+                  strokeWidth: 0.5,
+                  stroke: 'rgba(150, 150, 150, 0.15)',
+                },
+                strokeWidth: 2.5, // Increase line thickness
+                fillShadowGradient: 'rgba(255, 69, 58, 0.4)', // Semi-transparent gradient fill
+                fillShadowGradientOpacity: 0.3, // Reduced opacity for the fill
+              }}
+              style={{
+                marginVertical: 8,
                 borderRadius: 0,
-              },
-              propsForDots: {
-                r: "3",
-                strokeWidth: "0",
-                stroke: "transparent",
-                fill: "rgba(255, 69, 58, 0.8)",
-              },
-              propsForBackgroundLines: {
-                strokeDasharray: '5, 5',
-                strokeWidth: 0.5,
-                stroke: 'rgba(150, 150, 150, 0.15)',
-              },
-            }}
-            style={{
-              marginVertical: 8,
-              borderRadius: 0,
-            }}
-          />
-        ) : (
-          <View style={[styles.emptyChart, { width: chartWidth, height }]}>
-            <Text style={styles.emptyChartText}>No heart rate data available</Text>
-          </View>
-        )}
-      </ScrollView>
+              }}
+            />
+          ) : (
+            <View style={[styles.emptyChart, { width: chartWidth, height: height - 100 }]}>
+              <Text style={styles.emptyChartText}>No heart rate data available</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
       
       {/* Current value indicator */}
       <View style={styles.currentValueContainer}>
@@ -7249,9 +7509,21 @@ const styles = StyleSheet.create({
   selectedTimeRangeText: {
     color: '#FFFFFF',
   },
-  rangeInfo: {
+  chartContainer: {
+    position: 'relative',
+    height: 240, // Fixed height for the chart area
+  },
+  staticRangeContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 16,
     paddingTop: 16,
+    zIndex: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.5)', // Semi-transparent background
   },
   rangeRow: {
     flexDirection: 'row',
@@ -7296,7 +7568,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollView: {
-    marginTop: 8,
+    marginTop: 80, // Give space for the static range display
+  },
+  scrollViewContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
   currentValueContainer: {
     flexDirection: 'row',
@@ -7305,7 +7581,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF453A',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    marginTop: 16,
   },
   currentValueLabel: {
     color: '#FFFFFF',
@@ -8562,7 +8837,7 @@ export default function LogsScreen() {
       switch (type) {
         case 'motion':
           query = `
-            SELECT id, device_timestamp as timestamp, 
+            SELECT id, device_timestamp as timestamp, app_timestamp,
             'motion' as type,
             json_object(
               'accel16_x', accel16_x,
@@ -8587,14 +8862,14 @@ export default function LogsScreen() {
           break;
         case 'fsr':
           query = `
-            SELECT id, device_timestamp as timestamp, 
+            SELECT id, device_timestamp as timestamp, app_timestamp,
             'fsr' as type,
             json_object(
               'left_bite', left_bite,
               'right_bite', right_bite
             ) as data
             FROM fsr_packets
-            ORDER BY device_timestamp DESC
+            ORDER BY app_timestamp DESC
             LIMIT 100
           `;
           break;
@@ -8635,7 +8910,8 @@ export default function LogsScreen() {
           return resultRows.map((row: any) => ({
             id: row.id,
             // Ensure timestamp exists, fallback if necessary
-            timestamp: row.timestamp ?? row.app_timestamp ?? row.device_timestamp ?? new Date().toISOString(),
+            timestamp: row.timestamp ?? row.device_timestamp ?? new Date().toISOString(),
+            app_timestamp: row.app_timestamp,
             type: row.type,
             data: row.data // Assuming 'data' is correctly formed by the JSON_OBJECT function
           }));
@@ -8700,26 +8976,61 @@ export default function LogsScreen() {
   const renderLogItem = (log: LogItem) => {
     const formattedData = formatLogData(log.data, log.type);
     
-    // Parse timestamp correctly based on format:
-    // If it's just a number that represents seconds, multiply by 1000
-    // Otherwise, assume it's already milliseconds
-    let timestampMs;
+    // Use app_timestamp for FSR and motion logs when available
+    let displayTimestampMs;
+    
+    if (log.type === 'fsr' || log.type === 'motion') {
+      // For FSR and motion, prefer app_timestamp over device_timestamp for display
+      if ((log as any).app_timestamp && typeof (log as any).app_timestamp === 'number') {
+        displayTimestampMs = (log as any).app_timestamp;
+      } else {
+        // If no app_timestamp, show device uptime instead of incorrect date
+        const deviceTimestamp = typeof log.timestamp === 'string' ? 
+          parseInt(log.timestamp, 10) : log.timestamp;
+        
+        // Don't construct Date if displayTimestampMs is undefined
+        const formattedTime = `Device Uptime: ${deviceTimestamp}ms`;
+        const formattedDate = "";
+        
+        // Check if this is a recent entry (within the last minute)
+        const isRecent = Date.now() - ((log as any).app_timestamp || 0) < 60000; // 60 seconds
+        
+        return (
+          <View key={`${log.type}_${log.id}`} style={[
+            styles.logItem, 
+            isRecent && styles.recentLogItem
+          ]}>
+            <View style={styles.logHeader}>
+              <Text style={styles.logType}>
+                {log.type.toUpperCase()}
+                {isRecent && " (NEW)"}
+              </Text>
+              <Text style={styles.logTime}>{formattedTime}</Text>
+            </View>
+            <Text style={styles.logData}>{formattedData}</Text>
+          </View>
+        );
+      }
+    } else {
+      // For other logs, use the existing timestamp logic
     if (typeof log.timestamp === 'string') {
       const parsedTimestamp = parseInt(log.timestamp, 10);
       // Check if this looks like a seconds-based epoch (10 digits) or millisecond epoch (13 digits)
-      timestampMs = parsedTimestamp < 10000000000 
+        displayTimestampMs = parsedTimestamp < 10000000000 
         ? parsedTimestamp * 1000  // Convert seconds to milliseconds
         : parsedTimestamp;        // Already milliseconds
     } else {
-      timestampMs = log.timestamp;
+        displayTimestampMs = log.timestamp;
+      }
     }
     
-    const logDate = new Date(timestampMs);
+    // Only try to format as date if we have a valid app_timestamp
+    const logDate = new Date(displayTimestampMs);
     const formattedTime = logDate.toLocaleTimeString();
     const formattedDate = logDate.toLocaleDateString();
     
     // Check if this is a recent entry (within the last minute)
-    const isRecent = Date.now() - timestampMs < 60000; // 60 seconds
+    const isRecent = Date.now() - displayTimestampMs < 60000; // 60 seconds
     
     return (
       <View key={`${log.type}_${log.id}`} style={[
@@ -17179,35 +17490,44 @@ export class BluetoothService {
       
       // Attempt connection
       const device = await this.manager.connectToDevice(deviceId);
-      console.log(`[BluetoothService] Connected to device: ${deviceId}`);
+      console.log(`[BluetoothService] Connected to device: ${deviceId}, Name initially: ${device.name || 'Unknown'}`);
       
       // Store in connected devices map
       this.connectedDevices.set(deviceId, device);
       
-      // Update device status
-      this.updateDeviceStatus(deviceId, true);
+      // Update device status immediately to show connected state, even if name is temporary
+      await this.updateDeviceStatus(deviceId, true);
 
       // Discover services and characteristics
       console.log(`[BluetoothService] Discovering services for device: ${deviceId}`);
       await device.discoverAllServicesAndCharacteristics();
-      console.log(`[BluetoothService] Services discovered for device: ${deviceId}`);
+      console.log(`[BluetoothService] Services discovered for device: ${deviceId}, Name after discovery: ${device.name || 'Unknown'}`);
       
-      // Setup monitoring for relevant characteristics
-      this.setupMonitoringForDevice(deviceId);
-      
-      // Update saved device with lastConnected
+      // --- MOVED: Save/update device AFTER service discovery to ensure name is available ---
       const savedDevices = await this.deviceService.getSavedDevices();
       const savedDevice = savedDevices.find(d => d.id === deviceId);
       
       if (savedDevice) {
-        await this.deviceService.updateDeviceLastConnected(deviceId);
+        // Pass the potentially updated name to updateDeviceLastConnected
+        console.log(`[BluetoothService] Device ${deviceId} already saved, updating last connected and name. Current name: ${device.name || 'Unknown'}, Saved name: ${savedDevice.name}`);
+        await this.deviceService.updateDeviceLastConnected(deviceId, device.name);
       } else {
-        // Save the actual Device object
+        // Save the device after discovery (name should be more likely available)
+        console.log(`[BluetoothService] Device ${deviceId} not saved yet, saving now with name: ${device.name || 'Unknown'}`);
         await this.deviceService.saveDevice(device);
       }
       
+      // Setup monitoring for relevant characteristics
+      this.setupMonitoringForDevice(deviceId);
+      
+      // Re-update device status AFTER saving/updating to ensure the latest name from storage is used
+      await this.updateDeviceStatus(deviceId, true);
+      
     } catch (error) {
       console.error(`[BluetoothService] Error connecting to device ${deviceId}:`, error);
+      // Update status to disconnected on error
+      await this.updateDeviceStatus(deviceId, false);
+      this.connectedDevices.delete(deviceId); // Remove from live map
       throw error;
     }
   }
@@ -17471,11 +17791,16 @@ export class BluetoothService {
         const buffer = Buffer.from(characteristic.value, 'base64');
         const appTimestamp = Date.now(); // Timestamp when app received data
 
+        // Make UUID comparisons case-insensitive for robustness
+        const lowerCharUuid = characteristicUuid.toLowerCase();
+        const lowerServiceUuid = serviceUuid.toLowerCase();
+
         // --- PARSING LOGIC BASED ON CHARACTERISTIC UUID ---
 
         // --- HRM Data ---
-        if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.hrmData.toLowerCase()) {
-            if (buffer.length >= 5) { // Expected size: 1 byte HR + 4 bytes timestamp
+        if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.hrmData.toLowerCase()) {
+            const EXPECTED_HRM_LENGTH = 5; // Expected size: 1 byte HR + 4 bytes timestamp
+            if (buffer.length >= EXPECTED_HRM_LENGTH) {
                 const hrmPacket: HRMPacket = {
                     heartRate: buffer.readUInt8(0),
                     // Assuming device_timestamp is uint32_t LE at offset 1
@@ -17484,17 +17809,18 @@ export class BluetoothService {
                     appTimestamp: appTimestamp
                 };
                 console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}`);
-                this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
+                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'heartRate', deviceId, timestamp: appTimestamp, values: [hrmPacket.heartRate] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
             } else {
-                 console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes`);
+                 console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HRM_LENGTH})`);
             }
         }
 
         // --- HTM Data ---
-        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.htmData.toLowerCase()) {
-             if (buffer.length >= 6) { // Expected size: 2 bytes temp + 4 bytes timestamp
+        else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.htmData.toLowerCase()) {
+            const EXPECTED_HTM_LENGTH = 6; // Expected size: 2 bytes temp + 4 bytes timestamp
+            if (buffer.length >= EXPECTED_HTM_LENGTH) {
                 // Read temperature (int16_t, scaled by 100)
                 const rawTempValue = buffer.readInt16LE(0);
                 const temperatureCelsius = rawTempValue / 100.0; // Reverse the scaling
@@ -17507,49 +17833,61 @@ export class BluetoothService {
                      appTimestamp: appTimestamp
                 };
                 console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}`);
-                this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
+                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'temperature', deviceId, timestamp: appTimestamp, values: [htmPacket.temperature] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
             } else {
-                 console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes`);
+                 console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HTM_LENGTH})`);
             }
         }
 
         // --- IMU Data ---
-        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
-            const EXPECTED_IMU_LENGTH = 32; // Define expected length
+        // ***** UPDATED PARSING FOR 20 BYTES *****
+        else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
+            const EXPECTED_IMU_LENGTH = 20; // UPDATED expected length based on observed behavior
             if (buffer.length >= EXPECTED_IMU_LENGTH) {
-                // Parse only if length is sufficient
-                const motionPacket: MotionPacket = {
-                    gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)],
-                    accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)],
-                    accel200: [buffer.readInt16LE(12), buffer.readInt16LE(14), buffer.readInt16LE(16)],
-                    mag: [buffer.readInt16LE(18), buffer.readInt16LE(20), buffer.readInt16LE(22)],
-                    bite_l: buffer.readUInt16LE(24),
-                    bite_r: buffer.readUInt16LE(26),
-                    timestamp: buffer.readUInt32LE(28) // Device timestamp
+                // Create a partial motion packet based on the 20 bytes received
+                // Initialize with required properties to avoid 'possibly undefined' errors
+                const partialMotionPacket = {
+                    gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)] as [number, number, number],
+                    accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)] as [number, number, number],
+                    accel200: [buffer.readInt16LE(12), buffer.readInt16LE(14), buffer.readInt16LE(16)] as [number, number, number],
+                    // Only read the first mag value
+                    mag: [buffer.readInt16LE(18), 0, 0] as [number, number, number], 
+                    // BITE and DEVICE TIMESTAMP ARE MISSING in the 20-byte packet
+                    bite_l: 0,
+                    bite_r: 0,
+                    timestamp: appTimestamp // Use app timestamp as device timestamp is missing
                 };
-                console.log(`[BluetoothService] Parsed IMU: Gyro=${motionPacket.gyro[0]}, Acc16=${motionPacket.accel16[0]}, Acc200=${motionPacket.accel200[0]}, Mag=${motionPacket.mag[0]}, BiteL=${motionPacket.bite_l}, DevTS=${motionPacket.timestamp}`);
-                // Use await here to catch potential errors from the repository
-                await this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket);
-                // Emit specific live data points as needed (e.g., high-G accel)
-                const SENSITIVITY_200G = 16384 / 200; // Example, adjust as needed
-                const gForceX = motionPacket.accel200[0] / SENSITIVITY_200G;
-                const gForceY = motionPacket.accel200[1] / SENSITIVITY_200G;
-                const gForceZ = motionPacket.accel200[2] / SENSITIVITY_200G;
-                const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
-                dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}`);
+
+                try {
+                    // No need to adapt the packet since we've already created it with the correct types
+                    await this.sensorDataRepository.recordMotionPacket(deviceId, partialMotionPacket);
+
+                    // Emit live data for UI updates
+                    const SENSITIVITY_200G = 16384 / 200; // Example sensitivity factor
+                    const gForceX = partialMotionPacket.accel200[0] / SENSITIVITY_200G;
+                    const gForceY = partialMotionPacket.accel200[1] / SENSITIVITY_200G;
+                    const gForceZ = partialMotionPacket.accel200[2] / SENSITIVITY_200G;
+                    const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
+                    dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
+                    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                } catch (saveError) {
+                    console.error(`[BluetoothService] Error saving partial IMU packet:`, saveError);
+                }
             } else {
-                // Log the warning and skip processing this packet
                 console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_IMU_LENGTH}). Skipping packet.`);
-                // DO NOT attempt to parse or save incomplete data
             }
         }
 
         // --- FSR (Bite Force) Data ---
-        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.fsrData.toLowerCase()) {
-            if (buffer.length >= 8) { // Expected size: 2 bytes left + 2 bytes right + 4 bytes timestamp
+        else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.fsrData.toLowerCase()) {
+            const EXPECTED_FSR_LENGTH = 8; // Expected size: 2 bytes left + 2 bytes right + 4 bytes timestamp
+            if (buffer.length >= EXPECTED_FSR_LENGTH) {
+                // Log raw bytes for debugging
+                console.log(`[BluetoothService] Raw FSR bytes received: ${buffer.toString('hex')}`);
+                
                 // Read bite forces (int16_t, scaled by 100)
                 const rawLeftBite = buffer.readInt16LE(0);
                 const rawRightBite = buffer.readInt16LE(2);
@@ -17562,19 +17900,27 @@ export class BluetoothService {
                     right_bite: rightBiteForce, // Store actual force
                     timestamp: deviceTimestamp // Device timestamp
                 };
+                
+                // Log detailed info for debugging
                 console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}`);
-                this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
+                console.log(`[BluetoothService] Raw FSR Int16 values: Left=${rawLeftBite}, Right=${rawRightBite}`);
+                
+                await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'force', deviceId, timestamp: appTimestamp, values: [fsrPacket.left_bite, fsrPacket.right_bite] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
             } else {
-                 console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes`);
+                 console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_FSR_LENGTH})`);
             }
         }
 
         // --- Battery Level ---
-         else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.batteryLevel.toLowerCase()) {
-            const level = buffer.readUInt8(0);
-            this.handleBatteryLevel(deviceId, level); // Use existing handler
+         else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.batteryLevel.toLowerCase()) {
+            if (buffer.length >= 1) { // Battery level is usually 1 byte
+                const level = buffer.readUInt8(0);
+                this.handleBatteryLevel(deviceId, level); // Use existing handler
+            } else {
+                console.warn(`[BluetoothService] Battery level data has unexpected length: ${buffer.length} bytes`);
+            }
         }
 
         // --- Add other characteristic handling if needed ---
@@ -17822,22 +18168,31 @@ export class DeviceService {
   /**
    * Update the last connected timestamp for a device
    * @param deviceId ID of the device to update
+   * @param currentName Optional current name of the device
    */
-  public async updateDeviceLastConnected(deviceId: string): Promise<void> {
+  public async updateDeviceLastConnected(deviceId: string, currentName?: string | null): Promise<void> {
     try {
       const devices = await this.getSavedDevices();
       const deviceIndex = devices.findIndex(d => d.id === deviceId);
 
       if (deviceIndex !== -1) {
-        // Update the lastConnected timestamp
-        devices[deviceIndex] = {
+        // Update the lastConnected timestamp AND name if provided
+        const updatedDevice = {
           ...devices[deviceIndex],
           lastConnected: Date.now() // Set to current time
         };
 
+        // Update name only if a valid currentName is provided and different from existing
+        if (currentName && currentName !== 'Unknown Device' && currentName !== updatedDevice.name) {
+          console.log(`[DeviceService] Updating device name from "${updatedDevice.name}" to "${currentName}"`);
+          updatedDevice.name = currentName;
+        }
+
+        devices[deviceIndex] = updatedDevice;
+
         // Save updated list back to storage
         await this.storageService.setValue(SAVED_DEVICES_KEY, devices);
-        console.log(`[DeviceService] Updated lastConnected for device ${deviceId}`);
+        console.log(`[DeviceService] Updated lastConnected for device ${deviceId}, name: ${updatedDevice.name}`);
       } else {
         console.warn(`[DeviceService] Device ${deviceId} not found when trying to update lastConnected`);
       }
@@ -17867,7 +18222,16 @@ export class StorageService {
   public async setValue<T>(key: string, value: T, retries: number = 3): Promise<void> {
     try {
       const jsonValue = JSON.stringify(value);
-      console.log(`[StorageService] Attempting to set key: '${key}' with value: ${jsonValue}`);
+      
+      // Special logging for savedDevices
+      if (key === 'savedDevices') {
+        const devices = value as any[];
+        console.log(`[StorageService] Setting '${key}'. Size: ${jsonValue.length} bytes, ${devices.length} devices.`);
+        console.log(`[StorageService] Devices preview:`, devices.map(d => ({id: d.id, name: d.name, lastConnected: d.lastConnected ? new Date(d.lastConnected).toISOString() : 'none'})));
+      } else {
+        console.log(`[StorageService] Attempting to set key: '${key}'`);
+      }
+      
       await AsyncStorage.setItem(key, jsonValue);
       
       // Verify the value was actually set
@@ -17884,7 +18248,11 @@ export class StorageService {
         }
       }
       
-      console.log(`[StorageService] Successfully set and verified key: '${key}'`);
+      if (key === 'savedDevices') {
+        console.log(`[StorageService] Successfully verified '${key}' with size ${verifyValue?.length || 0} bytes`);
+      } else {
+        console.log(`[StorageService] Successfully set and verified key: '${key}'`);
+      }
     } catch (error) {
       console.error(`[StorageService] Error setting value for key '${key}':`, error);
       
@@ -18720,15 +19088,17 @@ export function processFsrForChart(packets: FSRPacket[]): {
     };
   }
 
-  // Filter and sort by timestamp
+  // Filter and sort by app_timestamp when available, fallback to device_timestamp
   const validPackets = packets
     .filter(p => (
       (typeof p.left_bite === 'number' && !isNaN(p.left_bite)) || 
       (typeof p.right_bite === 'number' && !isNaN(p.right_bite))
     ))
     .sort((a, b) => {
-      // Use timestamp from FSRPacket
-      return a.timestamp - b.timestamp;
+      // Prefer app_timestamp over device_timestamp
+      const aTime = (a as any).appTimestamp || (a as any).app_timestamp || a.timestamp;
+      const bTime = (b as any).appTimestamp || (b as any).app_timestamp || b.timestamp;
+      return aTime - bTime;
     });
 
   if (validPackets.length === 0) {
@@ -18744,8 +19114,16 @@ export function processFsrForChart(packets: FSRPacket[]): {
   // Subsample for better chart performance
   const subsampled = subsampleData(validPackets);
   
-  // Format data for chart
-  const labels = subsampled.map(p => formatChartTimestamp(p.timestamp));
+  // Format data for chart - use app_timestamp for labels when available
+  const labels = subsampled.map(p => {
+    const timestamp = (p as any).appTimestamp || (p as any).app_timestamp || p.timestamp;
+    // Only use formatChartTimestamp if this is likely a valid epoch timestamp
+    if (timestamp > 1000000000) { // Basic sanity check for reasonable epoch timestamp
+      return formatChartTimestamp(timestamp);
+    }
+    return ''; // For invalid timestamps, return empty string
+  });
+  
   const leftData = subsampled.map(p => typeof p.left_bite === 'number' ? p.left_bite : 0);
   const rightData = subsampled.map(p => typeof p.right_bite === 'number' ? p.right_bite : 0);
 
@@ -18772,14 +19150,14 @@ export function processFsrForChart(packets: FSRPacket[]): {
 
   const datasets: ChartDataset[] = [
     { 
-      data: leftData, 
+      data: leftData.map(v => isNaN(v) ? 0 : v), // Ensure no NaN values
       color: (opacity = 1) => `rgba(0, 176, 118, ${opacity})`, // Green for Left
-      strokeWidth: 2 
+      strokeWidth: 2,
     },
     { 
-      data: rightData, 
+      data: rightData.map(v => isNaN(v) ? 0 : v), // Ensure no NaN values
       color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`, // Blue for Right
-      strokeWidth: 2 
+      strokeWidth: 2,
     }
   ];
 
@@ -18806,79 +19184,90 @@ export function processMotionForChart(packets: MotionPacket[]): {
     };
   }
 
-  // Sort by timestamp
+  // Sort by app_timestamp first if available
   const sortedPackets = packets.sort((a, b) => {
-    // Use appTimestamp if available, fallback to device timestamp
-    const aTime = (a as any).appTimestamp || a.timestamp;
-    const bTime = (b as any).appTimestamp || b.timestamp;
+    const aTime = (a as any).appTimestamp || (a as any).app_timestamp || a.timestamp;
+    const bTime = (b as any).appTimestamp || (b as any).app_timestamp || b.timestamp;
     return aTime - bTime;
   });
 
-  // Calculate G-force magnitudes
-  const magnitudes = sortedPackets.map(p => {
-    try {
-      // First, handle the case where accel200 is an array as defined in the type
-      if (p.accel200 && Array.isArray(p.accel200) && p.accel200.length >= 3) {
-        // Use the array directly
-        const gx = (p.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gy = (p.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gz = (p.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
-        return Math.sqrt(gx*gx + gy*gy + gz*gz);
+  // Calculate magnitude for each packet
+  const magnitudes: number[] = [];
+  let maxMagnitude = 0;
+
+  for (const packet of sortedPackets) {
+    let magnitude = 0;
+
+    // Prefer accel200 data from array if available
+    if (packet.accel200 && Array.isArray(packet.accel200) && packet.accel200.length >= 3) {
+      const gx = (packet.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
+      const gy = (packet.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
+      const gz = (packet.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
+      magnitude = Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+    // Try component approach if accel200 array isn't available
+    else if (
+      typeof (packet as any).accel200_x === 'number' && 
+      typeof (packet as any).accel200_y === 'number' && 
+      typeof (packet as any).accel200_z === 'number'
+    ) {
+      const gx = (packet as any).accel200_x / ACCEL_200G_SENSITIVITY;
+      const gy = (packet as any).accel200_y / ACCEL_200G_SENSITIVITY;
+      const gz = (packet as any).accel200_z / ACCEL_200G_SENSITIVITY;
+      magnitude = Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+    // Fallback to accel16 if accel200 isn't available
+    else if (
+      typeof (packet as any).accel16_x === 'number' && 
+      typeof (packet as any).accel16_y === 'number' && 
+      typeof (packet as any).accel16_z === 'number'
+    ) {
+      // Adjust sensitivity for accel16 range
+      const gx = (packet as any).accel16_x / (16384 / 16); // 16g range with 16-bit precision
+      const gy = (packet as any).accel16_y / (16384 / 16);
+      const gz = (packet as any).accel16_z / (16384 / 16);
+      magnitude = Math.sqrt(gx*gx + gy*gy + gz*gz);
       }
       
-      // Next, try handling as possible object notation (p.accel200.x)
-      if (p.accel200 && typeof p.accel200 === 'object' && 'x' in p.accel200 && 'y' in p.accel200 && 'z' in p.accel200) {
-        const gx = ((p.accel200 as any).x ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gy = ((p.accel200 as any).y ?? 0) / ACCEL_200G_SENSITIVITY;
-        const gz = ((p.accel200 as any).z ?? 0) / ACCEL_200G_SENSITIVITY;
-        return Math.sqrt(gx*gx + gy*gy + gz*gz);
-      }
-      
-      // Finally, try accessing as individual properties (p.accel200_x)
-      const accel200X = (p as any).accel200_x ?? (p as any).accel200x ?? 0;
-      const accel200Y = (p as any).accel200_y ?? (p as any).accel200y ?? 0;
-      const accel200Z = (p as any).accel200_z ?? (p as any).accel200z ?? 0;
-      
-      if (accel200X !== 0 || accel200Y !== 0 || accel200Z !== 0) {
-        const gx = accel200X / ACCEL_200G_SENSITIVITY;
-        const gy = accel200Y / ACCEL_200G_SENSITIVITY;
-        const gz = accel200Z / ACCEL_200G_SENSITIVITY;
-        return Math.sqrt(gx*gx + gy*gy + gz*gz);
-      }
-      
-      // If none of the above worked, return 0
-      return 0;
-    } catch (error) {
-      console.warn('Error processing motion packet:', error);
-      return 0; // Fallback to 0 on error
+    // If all else fails, just push 0
+    magnitudes.push(isNaN(magnitude) ? 0 : magnitude);
+    
+    if (!isNaN(magnitude) && magnitude > maxMagnitude) {
+      maxMagnitude = magnitude;
     }
-  });
+  }
 
-  // Find peak acceleration
-  const peakAccel = magnitudes.length > 0 ? 
-    parseFloat(Math.max(...magnitudes).toFixed(2)) : null;
-
-  // Subsample for better chart performance
+  // Subsample for chart display
   const subsampled = subsampleData(sortedPackets);
   
-  // Format data for chart
-  const labels = subsampled.map(p => 
-    formatChartTimestamp((p as any).appTimestamp || p.timestamp));
-    
+  // Format data for chart - use app_timestamp for labels when available
+  const labels = subsampled.map(p => {
+    const timestamp = (p as any).appTimestamp || (p as any).app_timestamp || p.timestamp;
+    // Only use formatChartTimestamp if this is likely a valid epoch timestamp
+    if (timestamp > 1000000000) { // Basic sanity check for reasonable epoch timestamp
+      return formatChartTimestamp(timestamp);
+    }
+    return ''; // For invalid timestamps, return empty string
+  });
+
+  // Calculate subsampled magnitudes
   const subsampledMagnitudes = subsampled.map((_, i) => {
-    const originalIndex = Math.floor(i * (sortedPackets.length / subsampled.length));
-    return magnitudes[originalIndex];
+    const originalIndex = Math.min(
+      Math.floor(i * (sortedPackets.length / subsampled.length)),
+      magnitudes.length - 1
+    );
+    return magnitudes[originalIndex] || 0;
   });
 
   const datasets: ChartDataset[] = [{
-    data: subsampledMagnitudes,
-    color: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`, // Gray for magnitude
+    data: subsampledMagnitudes.map(v => isNaN(v) ? 0 : v), // Ensure no NaN
+    color: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
     strokeWidth: 2,
   }];
 
   return { 
     accelMagnitudeChart: { labels, datasets }, 
-    peakAccel 
+    peakAccel: maxMagnitude > 0 ? Math.round(maxMagnitude * 10) / 10 : null
   };
 }
 
@@ -19618,27 +20007,34 @@ export function formatChartTimestamp(timestamp: number): string {
     return '';
   }
   
-  const date = new Date(timestamp);
-  
-  // Check if date is valid (catches the 1970 issue)
-  if (date.getFullYear() <= 1970 && timestamp > 0) {
-    // If timestamp seems to be in seconds rather than milliseconds, convert
-    const dateFromSeconds = new Date(timestamp * 1000);
-    if (dateFromSeconds.getFullYear() > 1970) {
-      return dateFromSeconds.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false 
-      });
-    }
+  // Check if this is likely a valid epoch timestamp (Jan 1, 2010 or later)
+  // This helps distinguish between device timestamps (boot time in ms) and 
+  // actual date timestamps (ms since epoch)
+  if (timestamp < 1262304000000) { // Jan 1, 2010 timestamp
+    // This is likely a device uptime timestamp, not suitable for date formatting
+    // Return empty string or possibly a relative format (e.g. "+2.5s")
+    return '';
   }
   
-  // Standard formatting for valid dates
+  const date = new Date(timestamp);
+  
+  // Check if date is valid
+  if (date.getFullYear() <= 1970) {
+    return '';
+  }
+  
+  try {
+    // Standard formatting for valid dates, now including seconds for uniqueness
   return date.toLocaleTimeString([], { 
     hour: '2-digit', 
     minute: '2-digit',
+      second: '2-digit', // Added seconds for uniqueness in chart labels
     hour12: false 
   });
+  } catch (e) {
+    console.error(`[formatChartTimestamp] Error formatting timestamp ${timestamp}:`, e);
+    return ''; // Return empty string on any error
+  }
 }
 
 /**

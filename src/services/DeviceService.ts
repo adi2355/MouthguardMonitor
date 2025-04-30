@@ -222,22 +222,31 @@ export class DeviceService {
   /**
    * Update the last connected timestamp for a device
    * @param deviceId ID of the device to update
+   * @param currentName Optional current name of the device
    */
-  public async updateDeviceLastConnected(deviceId: string): Promise<void> {
+  public async updateDeviceLastConnected(deviceId: string, currentName?: string | null): Promise<void> {
     try {
       const devices = await this.getSavedDevices();
       const deviceIndex = devices.findIndex(d => d.id === deviceId);
 
       if (deviceIndex !== -1) {
-        // Update the lastConnected timestamp
-        devices[deviceIndex] = {
+        // Update the lastConnected timestamp AND name if provided
+        const updatedDevice = {
           ...devices[deviceIndex],
           lastConnected: Date.now() // Set to current time
         };
 
+        // Update name only if a valid currentName is provided and different from existing
+        if (currentName && currentName !== 'Unknown Device' && currentName !== updatedDevice.name) {
+          console.log(`[DeviceService] Updating device name from "${updatedDevice.name}" to "${currentName}"`);
+          updatedDevice.name = currentName;
+        }
+
+        devices[deviceIndex] = updatedDevice;
+
         // Save updated list back to storage
         await this.storageService.setValue(SAVED_DEVICES_KEY, devices);
-        console.log(`[DeviceService] Updated lastConnected for device ${deviceId}`);
+        console.log(`[DeviceService] Updated lastConnected for device ${deviceId}, name: ${updatedDevice.name}`);
       } else {
         console.warn(`[DeviceService] Device ${deviceId} not found when trying to update lastConnected`);
       }

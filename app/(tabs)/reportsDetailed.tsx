@@ -5,14 +5,16 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
-import { useSensorDataRepository } from '@/src/providers/AppProvider';
+import { useSensorDataRepository, useDeviceService, useBluetoothService } from '@/src/providers/AppProvider';
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
-import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData } from '@/src/types';
+import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData, SavedDevice } from '@/src/types';
 import { debounce } from 'lodash';
 
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
 import BarChart from '../components/charts/BarChart';
+// Import direct chart library for testing
+import { LineChart as RNLineChart, BarChart as RNBarChart } from 'react-native-chart-kit';
 
 // Import new data processing utilities
 import { 
@@ -159,11 +161,55 @@ const GlassCard = ({
   );
 };
 
+// Add ErrorBoundary for catching render errors
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null, errorInfo: React.ErrorInfo | null}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    // Update state so the next render will show the fallback UI
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log the error to console for debugging
+    console.error('React Error Boundary caught an error:', error, errorInfo);
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // Render fallback UI
+      return (
+        <View style={styles.errorContainer}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.error} />
+          <Text style={styles.errorTitle}>Something went wrong rendering this screen</Text>
+          <Text style={styles.errorText}>
+            {this.state.error?.toString()}
+          </Text>
+          <TouchableOpacity 
+            style={styles.retryButton} 
+            onPress={() => this.setState({ hasError: false, error: null, errorInfo: null })}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function ReportsDetailedScreen() {
   const sensorDataRepository = useSensorDataRepository();
 
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  // Add refreshKey state to force re-renders
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // State for raw data (only when needed for specialized visualization)
   const [impacts, setImpacts] = useState<any[]>([]);
@@ -200,7 +246,60 @@ export default function ReportsDetailedScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const deviceId = DEVICE_ID_SIM;
+  // Initialize targetDeviceId as null to indicate it's not yet determined
+  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(null);
+  
+  // Get device and bluetooth services to access device information
+  const deviceService = useDeviceService();
+  const bluetoothService = useBluetoothService();
+  
+  // Effect to find and set the target device ID
+  useEffect(() => {
+    const findDevice = async () => {
+      let foundId: string | null = null;
+      try {
+        // 1. Check actively connected devices first (highest priority)
+        const connectedIds = bluetoothService.getConnectedDeviceIds();
+        if (connectedIds.length > 0) {
+          foundId = connectedIds[0]; // Use the first connected device
+          console.log(`[ReportsDetailed] Using actively connected device: ${foundId}`);
+        } else {
+          // 2. If none connected, check saved devices
+          const savedDevices = await deviceService.getSavedDevices();
+          console.log(`[ReportsDetailed] Found ${savedDevices.length} saved devices`);
+          
+          if (savedDevices.length > 0) {
+            // Sort by lastConnected (most recent first)
+            const sortedDevices = [...savedDevices].sort((a: SavedDevice, b: SavedDevice) => {
+              const aTime = a.lastConnected || 0;
+              const bTime = b.lastConnected || 0;
+              return bTime - aTime;
+            });
+            
+            // Use the most recently connected device
+            foundId = sortedDevices[0].id;
+            console.log(`[ReportsDetailed] Using most recently connected saved device: ${foundId}`);
+          }
+        }
+        
+        // 3. Fall back to simulation device only if absolutely nothing else is found
+        if (!foundId) {
+          console.log(`[ReportsDetailed] No connected or saved devices found, falling back to simulation device ID.`);
+          foundId = DEVICE_ID_SIM;
+        }
+        
+        // Set the target device ID
+        setTargetDeviceId(foundId);
+        
+      } catch (err) {
+        console.error('[ReportsDetailed] Error finding device:', err);
+        // Fall back to simulation device on error
+        setTargetDeviceId(DEVICE_ID_SIM);
+      }
+    };
+    
+    findDevice();
+  }, [deviceService, bluetoothService]);
 
   const getRiskStyle = (risk: any) => {
     switch (risk?.toLowerCase()) {
@@ -212,6 +311,12 @@ export default function ReportsDetailedScreen() {
   };
 
   const fetchData = useCallback(async () => {
+    // Don't attempt to fetch if targetDeviceId is not set yet
+    if (targetDeviceId === null) {
+      console.log('[ReportsDetailed] Cannot fetch data: targetDeviceId is null');
+      return;
+    }
+    
     console.log('[ReportsDetailed] Fetching data...');
     setLoading(true);
     setError(null);
@@ -229,11 +334,11 @@ export default function ReportsDetailedScreen() {
         fetchedHrm,
         fetchedHtm
       ] = await Promise.all([
-        sensorDataRepository.getSensorData(deviceId, 'impact_events', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'motion_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'fsr_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'hrm_packets', startTime, endTime),
-        sensorDataRepository.getSensorData(deviceId, 'htm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', startTime, endTime),
+        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', startTime, endTime),
       ]);
 
       // Keep raw impact data for direction visualization if needed
@@ -336,7 +441,6 @@ export default function ReportsDetailedScreen() {
       console.log('[ReportsDetailed] <-- Done Setting Session Stats.');
 
       // Animate cards in
-      console.log('[ReportsDetailed] --> Starting Animation...');
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
@@ -370,12 +474,15 @@ export default function ReportsDetailedScreen() {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [deviceId, sensorDataRepository, fadeAnim]);
+  }, [targetDeviceId, sensorDataRepository, fadeAnim]);
 
-  // Fetch data on initial mount
+  // Fetch data whenever targetDeviceId changes from null to a valid value
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (targetDeviceId !== null) {
+      console.log(`[ReportsDetailed] targetDeviceId set to ${targetDeviceId}, triggering initial data fetch`);
+      fetchData();
+    }
+  }, [targetDeviceId, fetchData]);
 
   // Create a ref to hold the latest fetchData function
   const fetchDataRef = useRef(fetchData);
@@ -397,10 +504,21 @@ export default function ReportsDetailedScreen() {
   // Subscribe to data changes (using the debounced fetch)
   useEffect(() => {
     const handleDataChange = (eventData: { deviceId: string; type: string }) => {
+      // Skip if targetDeviceId is not set yet
+      if (targetDeviceId === null) {
+        return;
+      }
+      
       // Re-fetch data if the change affects the current device
-      if (eventData.deviceId === deviceId) {
-        console.log(`[ReportsDetailed] Data changed for device ${deviceId} (type: ${eventData.type}), queueing debounced fetch...`);
+      if (eventData.deviceId === targetDeviceId) {
+        console.log(`[ReportsDetailed] Data changed for device ${targetDeviceId} (type: ${eventData.type}), queueing debounced fetch...`);
         debouncedFetchData(); // Call the debounced function
+        
+        // Force a re-render shortly after data is likely fetched
+        setTimeout(() => {
+          console.log('[ReportsDetailed] Forcing component refresh after data change');
+          setRefreshKey(prev => prev + 1);
+        }, 1200); // Wait slightly longer than the debounce period (1000ms)
       }
     };
 
@@ -411,14 +529,47 @@ export default function ReportsDetailedScreen() {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
       debouncedFetchData.cancel(); // Cancel any pending debounced calls
     };
-  }, [deviceId, debouncedFetchData]);
+  }, [targetDeviceId, debouncedFetchData]);
 
-  // Show loading indicator
-  if (loading) {
+  // Add detailed chart data logging
+  useEffect(() => {
+    if (!loading && !error) {
+      // Only log if not in production
+      if (__DEV__) {
+        console.log('--- CHART DATA SUMMARY ---');
+        
+        // Log data dimensions
+        console.log('Chart dimensions:', {
+          hrm: hrmChartData ? `${hrmChartData.labels?.length || 0}x${hrmChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+          temp: tempChartData ? `${tempChartData.labels?.length || 0}x${tempChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+          fsr: biteForceChartData ? `${biteForceChartData.labels?.length || 0}x${biteForceChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+          motion: motionChartData ? `${motionChartData.labels?.length || 0}x${motionChartData.datasets?.[0]?.data?.length || 0}` : 'null',
+        });
+        
+        // Check for empty label percentages
+        if (biteForceChartData?.labels?.length) {
+          const emptyLabels = biteForceChartData.labels.filter(label => !label).length;
+          const pct = (emptyLabels / biteForceChartData.labels.length * 100).toFixed(1);
+          console.log(`FSR empty labels: ${emptyLabels}/${biteForceChartData.labels.length} (${pct}%)`);
+        }
+        
+        if (motionChartData?.labels?.length) {
+          const emptyLabels = motionChartData.labels.filter(label => !label).length;
+          const pct = (emptyLabels / motionChartData.labels.length * 100).toFixed(1);
+          console.log(`Motion empty labels: ${emptyLabels}/${motionChartData.labels.length} (${pct}%)`);
+        }
+      }
+    }
+  }, [loading, error, hrmChartData, tempChartData, biteForceChartData, motionChartData]);
+
+  // Show loading indicator if loading or if targetDeviceId is null
+  if (loading || targetDeviceId === null) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading Report Data...</Text>
+        <Text style={styles.loadingText}>
+          {targetDeviceId === null ? 'Finding device...' : 'Loading Report Data...'}
+        </Text>
       </View>
     );
   }
@@ -446,16 +597,19 @@ export default function ReportsDetailedScreen() {
     return (
       <View style={styles.emptyContainer}>
         <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
-        <Text style={styles.emptyText}>No Data Available</Text>
+        <Text style={styles.emptyText}>No Data Available for Device</Text>
+        <Text style={styles.emptySubText}>Device ID: {targetDeviceId}</Text>
         <Text style={styles.emptySubText}>Generate test data or connect a device to see reports.</Text>
       </View>
     );
   }
 
   return (
+    <ErrorBoundary>
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
+          key={refreshKey} // Add key to force re-render when refreshKey changes
           style={styles.container}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
@@ -481,7 +635,7 @@ export default function ReportsDetailedScreen() {
             <GlassCard style={styles.summaryCard}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Session Report</Text>
-                <Text style={styles.deviceId}>({deviceId})</Text>
+                <Text style={styles.deviceId}>({targetDeviceId})</Text>
               </View>
               
               <View style={styles.metricsRow}>
@@ -507,249 +661,225 @@ export default function ReportsDetailedScreen() {
             </GlassCard>
           </Animated.View>
 
-          {/* Heart Rate Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.heartRateCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
-                  <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Heart Rate</Text>
+          {/* Heart Rate Card - Modified for iOS compatibility */}
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
+                <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
               </View>
-              
-              <View style={styles.scrollableChartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : hrmChartData ? (
-                  <ScrollableHeartRateChart
-                    data={hrmChartData}
-                    currentValue={sessionStats?.avgHr ?? 0}
-                    timestamp={hrmChartData?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
-                    height={280}
-                    rangeData={{
-                      min: sessionStats?.minHr ?? 0,
-                      max: sessionStats?.maxHr ?? 0,
-                      timeRange: hrmChartData?.timeRangeLabel || "Today"
-                    }}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No heart rate data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Heart Rate</Text>
+            </View>
+            
+            <View style={styles.scrollableChartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : hrmChartData ? (
+                <ScrollableHeartRateChart
+                  data={hrmChartData}
+                  currentValue={sessionStats?.avgHr ?? 0}
+                  timestamp={(hrmChartData as any)?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                  height={280}
+                  rangeData={{
+                    min: sessionStats?.minHr ?? 0,
+                    max: sessionStats?.maxHr ?? 0,
+                    timeRange: (hrmChartData as any)?.timeRangeLabel || "Today"
+                  }}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No heart rate data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Temperature Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
-                  <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Temperature</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
+                <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : tempChartData ? (
-                  <TemperatureStabilityGraph
-                    data={tempChartData}
-                    currentTemp={sessionStats?.currentTemp}
-                    avgTemp={sessionStats?.avgTemp}
-                    maxTemp={sessionStats?.maxTemp}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No temperature data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Temperature</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : tempChartData ? (
+                <TemperatureStabilityGraph
+                  data={tempChartData}
+                  currentTemp={sessionStats?.currentTemp}
+                  avgTemp={sessionStats?.avgTemp}
+                  maxTemp={sessionStats?.maxTemp}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No temperature data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Bite Force Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
-                  <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Bite Force</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : biteForceChartData ? (
-                  <BiteForceDynamicsChart
-                    data={biteForceChartData}
-                    avgLeft={sessionStats?.avgBiteLeft}
-                    avgRight={sessionStats?.avgBiteRight}
-                    avgTotal={sessionStats?.avgBiteTotal}
-                    maxForce={sessionStats?.maxBiteForce}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No bite force data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Bite Force</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : biteForceChartData ? (
+                <BiteForceDynamicsChart
+                  data={biteForceChartData}
+                  avgLeft={sessionStats?.avgBiteLeft}
+                  avgRight={sessionStats?.avgBiteRight}
+                  avgTotal={sessionStats?.avgBiteTotal}
+                  maxForce={sessionStats?.maxBiteForce}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No bite force data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Motion Overview Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(80, 80, 80, 0.1)'}]}>
-                  <MaterialCommunityIcons name="axis-arrow" size={20} color="rgba(80, 80, 80, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Motion Overview</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(88, 86, 214, 0.1)'}]}>
+                <MaterialCommunityIcons name="wave" size={20} color="rgba(88, 86, 214, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : motionChartData ? (
-                  <MotionOverviewGraph
-                    data={motionChartData}
-                    peakAccel={sessionStats?.peakAccel}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No motion data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
-
-          {/* Concussion Risk Card - Refined */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={[styles.dataCard, styles.riskCard]}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: `${getRiskStyle(sessionStats?.concussionRisk).color}15`}]}>
-                  <MaterialCommunityIcons 
-                    name="shield-alert-outline" 
-                    size={20} 
-                    color={getRiskStyle(sessionStats?.concussionRisk).color} 
-                  />
-                </View>
-                <Text style={styles.cardTitle}>Concussion Risk</Text>
-              </View>
-              
-              <ConcussionRiskGauge risk={sessionStats?.concussionRisk} />
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Motion Overview</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : motionChartData ? (
+                <MotionOverviewGraph 
+                  data={motionChartData}
+                  peakAccel={sessionStats?.peakAccel}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No motion data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Impact Timeline Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
-                  <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={COLORS.primary} />
-                </View>
-                <Text style={styles.cardTitle}>Impact Timeline</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 45, 85, 0.1)'}]}>
+                <MaterialCommunityIcons name="chart-timeline-variant" size={20} color="rgba(255, 45, 85, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : impactTimelineData ? (
-                  <ImpactTimelineGraph
-                    data={impactTimelineData}
-                    totalImpacts={sessionStats?.totalImpacts}
-                    maxG={sessionStats?.maxG}
-                  />
-                ) : (
-                  <Text style={styles.emptyChartText}>No impact data available</Text>
-                )}
+              <Text style={styles.cardTitle}>Impact Timeline</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : impactTimelineData && impactTimelineData.datasets?.[0]?.data?.length ? (
+                <ImpactTimelineGraph 
+                  data={impactTimelineData}
+                  width={Dimensions.get('window').width - 40}
+                  height={180}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No impact data available</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Concussion Risk Card */}
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(175, 82, 222, 0.1)'}]}>
+                <MaterialCommunityIcons name="brain" size={20} color="rgba(175, 82, 222, 1)" />
               </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Concussion Risk Assessment</Text>
+            </View>
+            
+            <View style={styles.gaugeContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : (sessionStats?.totalImpacts !== null && sessionStats?.totalImpacts !== undefined) ? (
+                <ConcussionRiskGauge 
+                  risk={sessionStats.concussionRisk || 'Low'}
+                  width={Dimensions.get('window').width - 40}
+                />
+              ) : (
+                <Text style={styles.emptyChartText}>No impact risk data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Severity Distribution Card - Refined */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
-                  <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
-                </View>
-                <Text style={styles.cardTitle}>Severity Distribution</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : severityDistData ? (
-                  <SeverityDistributionGraph data={severityDistData} />
-                ) : (
-                  <Text style={styles.emptyChartText}>No impact data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Severity Distribution</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : severityDistData ? (
+                <SeverityDistributionGraph data={severityDistData} />
+              ) : (
+                <Text style={styles.emptyChartText}>No impact data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* CHIE Card */}
-          <Animated.View style={{opacity: fadeAnim, transform: [{translateY: fadeAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [20, 0]
-          })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
-                  <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
-                </View>
-                <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
               </View>
-              
-              <View style={styles.chartContainer}>
-                {loading ? (
-                  <ActivityIndicator color={COLORS.primary} />
-                ) : error ? (
-                  <Text style={styles.errorText}>{error}</Text>
-                ) : chieData ? (
-                  <CumulativeExposureGraph data={chieData} />
-                ) : (
-                  <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
-                )}
-              </View>
-            </GlassCard>
-          </Animated.View>
+              <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+            </View>
+            
+            <View style={styles.chartContainer}>
+              {loading ? (
+                <ActivityIndicator color={COLORS.primary} />
+              ) : error ? (
+                <Text style={styles.errorText}>{error}</Text>
+              ) : chieData ? (
+                <CumulativeExposureGraph data={chieData} />
+              ) : (
+                <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
+              )}
+            </View>
+          </View>
 
           {/* Bottom Spacer */}
           <View style={{ height: 24 }} />
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -1005,5 +1135,24 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  chartCardContainer: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  gaugeContainer: {
+    alignItems: 'center',
+    marginTop: 16,
   },
 });

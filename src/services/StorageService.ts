@@ -13,7 +13,16 @@ export class StorageService {
   public async setValue<T>(key: string, value: T, retries: number = 3): Promise<void> {
     try {
       const jsonValue = JSON.stringify(value);
-      console.log(`[StorageService] Attempting to set key: '${key}' with value: ${jsonValue}`);
+      
+      // Special logging for savedDevices
+      if (key === 'savedDevices') {
+        const devices = value as any[];
+        console.log(`[StorageService] Setting '${key}'. Size: ${jsonValue.length} bytes, ${devices.length} devices.`);
+        console.log(`[StorageService] Devices preview:`, devices.map(d => ({id: d.id, name: d.name, lastConnected: d.lastConnected ? new Date(d.lastConnected).toISOString() : 'none'})));
+      } else {
+        console.log(`[StorageService] Attempting to set key: '${key}'`);
+      }
+      
       await AsyncStorage.setItem(key, jsonValue);
       
       // Verify the value was actually set
@@ -30,7 +39,11 @@ export class StorageService {
         }
       }
       
-      console.log(`[StorageService] Successfully set and verified key: '${key}'`);
+      if (key === 'savedDevices') {
+        console.log(`[StorageService] Successfully verified '${key}' with size ${verifyValue?.length || 0} bytes`);
+      } else {
+        console.log(`[StorageService] Successfully set and verified key: '${key}'`);
+      }
     } catch (error) {
       console.error(`[StorageService] Error setting value for key '${key}':`, error);
       
