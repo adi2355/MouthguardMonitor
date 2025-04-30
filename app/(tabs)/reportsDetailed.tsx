@@ -12,7 +12,8 @@ import { debounce } from 'lodash';
 import { useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/src/contexts/SessionContext';
 import { useSessionRepository } from '@/src/providers/AppProvider';
-
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 // Import the chart components
 import LineChart from '../components/charts/LineChart';
 import BarChart from '../components/charts/BarChart';
@@ -355,7 +356,7 @@ export default function ReportsDetailedScreen() {
       return;
     }
     
-    console.log('[ReportsDetailed] Fetching data...');
+    console.log('[ReportsDetailed] Fetching data (potentially debounced)...');
     setLoading(true);
     setError(null);
 
@@ -522,37 +523,6 @@ export default function ReportsDetailedScreen() {
     }
   }, [targetDeviceId, sensorDataRepository, currentSession]);
 
-  // Fetch data whenever targetDeviceId changes from null to a valid value
-  // or when currentSession changes
-  useEffect(() => {
-    if (targetDeviceId !== null) {
-      fetchData();
-    }
-  }, [targetDeviceId, fetchData, currentSession]);
-  
-  // Set up event listener for data changes
-  useEffect(() => {
-    if (!targetDeviceId) return;
-    
-    const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
-      // Only refetch for matching device and session
-      if (
-        eventData.deviceId === targetDeviceId && 
-        (!currentSession || !eventData.sessionId || eventData.sessionId === currentSession.id)
-      ) {
-        console.log(`[ReportsDetailed] Data changed event triggered for ${eventData.type} - refreshing charts...`);
-        fetchData();
-      }
-    };
-
-    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
-    
-    // Cleanup subscription on unmount
-    return () => {
-      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
-    };
-  }, [targetDeviceId, fetchData, currentSession]);
-
   // Create a ref to hold the latest fetchData function
   const fetchDataRef = useRef(fetchData);
   
@@ -561,14 +531,48 @@ export default function ReportsDetailedScreen() {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
   
-  // Create a debounced version of fetchData ONLY for the listener
+  // Create a debounced version of fetchData
   const debouncedFetchData = useRef(
     debounce(() => {
-      console.log('[ReportsDetailed] Debounced fetch triggered...');
+      console.log('[ReportsDetailed] Debounced fetch triggered after 1s idle period');
       // Call the latest fetchData function from the ref
       fetchDataRef.current();
     }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
   ).current;
+
+  // Fetch data whenever targetDeviceId changes from null to a valid value
+  // or when currentSession changes
+  useEffect(() => {
+    if (targetDeviceId !== null) {
+      fetchData();
+    }
+  }, [targetDeviceId, fetchData]);
+  
+  // Set up event listener for data changes
+  useEffect(() => {
+    if (!targetDeviceId) return;
+    
+    const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
+      // Only handle events for matching device and session
+      if (
+        eventData.deviceId === targetDeviceId && 
+        (!currentSession || !eventData.sessionId || eventData.sessionId === currentSession.id)
+      ) {
+        console.log(`[ReportsDetailed] Data changed event triggered for ${eventData.type} - queueing debounced refresh...`);
+        // Call the debounced function instead of directly calling fetchData
+        debouncedFetchData();
+      }
+    };
+
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    // Cleanup subscription on unmount
+    return () => {
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+      // Make sure to cancel any pending debounced fetch
+      debouncedFetchData.cancel();
+    };
+  }, [targetDeviceId, currentSession, debouncedFetchData]);
 
   // Add detailed chart data logging
   useEffect(() => {
