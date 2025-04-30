@@ -3722,6 +3722,7 @@ import {
 
 // Import our new visualization components
 import HeartRateTrendChart from '../components/charts/HeartRateTrendChart';
+import ScrollableHeartRateChart from '../components/charts/ScrollableHeartRateChart';
 import TemperatureStabilityGraph from '../components/charts/TemperatureStabilityGraph';
 import BiteForceDynamicsChart from '../components/charts/BiteForceDynamicsChart';
 import MotionOverviewGraph from '../components/charts/MotionOverviewGraph';
@@ -3936,32 +3937,69 @@ export default function ReportsDetailedScreen() {
       setImpacts(fetchedImpacts);
       
       console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
+      console.log('[ReportsDetailed] == STARTING PROCESSING ==');
 
       // --- Process data using utility functions ---
-      
-      // Process heart rate data
+      console.log(`[ReportsDetailed] --> Processing HRM (${fetchedHrm.length} packets)...`);
       const hrmResults = processHrmForChart(fetchedHrm);
+      console.log(`[ReportsDetailed] <-- Done Processing HRM. Results:`, JSON.stringify(hrmResults));
+      console.log('[ReportsDetailed] --> Setting HRM Chart Data...');
       setHrmChartData(hrmResults.chartData);
+      console.log('[ReportsDetailed] <-- Done Setting HRM Chart Data.');
       
-      // Process temperature data
+      console.log(`[ReportsDetailed] --> Processing Temp (${fetchedHtm.length} packets)...`);
       const tempResults = processTempForChart(fetchedHtm);
+      console.log(`[ReportsDetailed] <-- Done Processing Temp. Results:`, JSON.stringify(tempResults));
+      console.log('[ReportsDetailed] --> Setting Temp Chart Data...');
       setTempChartData(tempResults.chartData);
+      console.log('[ReportsDetailed] <-- Done Setting Temp Chart Data.');
       
-      // Process bite force data
+      console.log(`[ReportsDetailed] --> Processing FSR (${fetchedFsr.length} packets)...`);
       const fsrResults = processFsrForChart(fetchedFsr);
+      console.log(`[ReportsDetailed] <-- Done Processing FSR. Results:`, JSON.stringify(fsrResults));
+      console.log('[ReportsDetailed] --> Setting Bite Force Chart Data...');
       setBiteForceChartData(fsrResults.chartData);
+      console.log('[ReportsDetailed] <-- Done Setting Bite Force Chart Data.');
       
-      // Process motion data
+      console.log(`[ReportsDetailed] --> Processing Motion (${fetchedMotion.length} packets)...`);
       const motionResults = processMotionForChart(fetchedMotion);
+      console.log(`[ReportsDetailed] <-- Done Processing Motion. Results:`, JSON.stringify(motionResults));
+      console.log('[ReportsDetailed] --> Setting Motion Chart Data...');
       setMotionChartData(motionResults.accelMagnitudeChart);
+      console.log('[ReportsDetailed] <-- Done Setting Motion Chart Data.');
       
-      // Process impact data for various visualizations
+      console.log(`[ReportsDetailed] --> Processing Impacts (${fetchedImpacts.length} packets)...`);
       const impactResults = processImpactsForCharts(fetchedImpacts);
+      console.log(`[ReportsDetailed] <-- Done Processing Impacts. Results:`, JSON.stringify(impactResults));
+      console.log('[ReportsDetailed] --> Setting Impact Chart Data...');
       setImpactTimelineData(impactResults.timelineChart);
+      console.log('[ReportsDetailed] --> Setting Severity Distribution Data...');
       setSeverityDistData(impactResults.severityDistribution);
+      console.log('[ReportsDetailed] --> Setting CHIE Data...');
       setChieData(impactResults.cumulativeExposureChart);
+      console.log('[ReportsDetailed] <-- Done Setting Impact Chart Data.');
       
       // Create a consolidated object with all stats, ensuring each property is defined
+      console.log('[ReportsDetailed] --> Consolidating final stats...');
+      // Log each property to find what might be undefined
+      console.log('[ReportsDetailed] Stats inputs:', {
+        avgHr: hrmResults.avgHr,
+        minHr: hrmResults.minHr,
+        maxHr: hrmResults.maxHr,
+        avgTemp: tempResults.avgTemp,
+        maxTemp: tempResults.maxTemp,
+        currentTemp: tempResults.currentTemp,
+        avgBiteLeft: fsrResults.avgLeft,
+        avgBiteRight: fsrResults.avgRight,
+        avgBiteTotal: fsrResults.avgTotal,
+        maxBiteForce: fsrResults.maxForce,
+        peakAccel: motionResults.peakAccel,
+        totalImpacts: impactResults.totalImpacts,
+        highImpacts: impactResults.highImpacts,
+        maxG: impactResults.maxG,
+        concussionRisk: impactResults.concussionRisk
+      });
+      
       const finalStats = {
         // Heart rate
         avgHr: hrmResults.avgHr ?? null,
@@ -3989,18 +4027,30 @@ export default function ReportsDetailedScreen() {
         concussionRisk: impactResults.concussionRisk ?? 'Low'
       };
       
-      // Update session stats with the consolidated object
+      console.log('[ReportsDetailed] <-- Done Consolidating stats. Value:', JSON.stringify(finalStats));
+      console.log('[ReportsDetailed] --> Setting Session Stats...');
       setSessionStats(finalStats);
+      console.log('[ReportsDetailed] <-- Done Setting Session Stats.');
 
       // Animate cards in
+      console.log('[ReportsDetailed] --> Starting Animation...');
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
         useNativeDriver: true,
-      }).start();
+      }).start(() => {
+        console.log('[ReportsDetailed] <-- Animation Completed.');
+      });
+      console.log('[ReportsDetailed] == PROCESSING COMPLETE ==');
 
     } catch (err) {
       console.error('[ReportsDetailed] Error fetching data:', err);
+      // Add more detailed error logging
+      if (err instanceof Error) {
+        console.error('[ReportsDetailed] Error Name:', err.name);
+        console.error('[ReportsDetailed] Error Message:', err.message);
+        console.error('[ReportsDetailed] Error Stack:', err.stack);
+      }
       setError(err instanceof Error ? err.message : 'Failed to load report data');
       
       // Clear existing data on error
@@ -4159,7 +4209,7 @@ export default function ReportsDetailedScreen() {
             inputRange: [0, 1],
             outputRange: [20, 0]
           })}], marginTop: 8}}>
-            <GlassCard style={styles.dataCard}>
+            <GlassCard style={styles.heartRateCard}>
               <View style={styles.cardHeader}>
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
                   <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
@@ -4167,17 +4217,22 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Heart Rate</Text>
               </View>
               
-              <View style={styles.chartContainer}>
+              <View style={styles.scrollableChartContainer}>
                 {loading ? (
                   <ActivityIndicator color={COLORS.primary} />
                 ) : error ? (
                   <Text style={styles.errorText}>{error}</Text>
                 ) : hrmChartData ? (
-                  <HeartRateTrendChart
+                  <ScrollableHeartRateChart
                     data={hrmChartData}
-                    avgHr={sessionStats?.avgHr}
-                    minHr={sessionStats?.minHr}
-                    maxHr={sessionStats?.maxHr}
+                    currentValue={sessionStats?.avgHr ?? 0}
+                    timestamp={hrmChartData?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                    height={280}
+                    rangeData={{
+                      min: sessionStats?.minHr ?? 0,
+                      max: sessionStats?.maxHr ?? 0,
+                      timeRange: hrmChartData?.timeRangeLabel || "Today"
+                    }}
                   />
                 ) : (
                   <Text style={styles.emptyChartText}>No heart rate data available</Text>
@@ -4458,6 +4513,11 @@ const styles = StyleSheet.create({
   dataCard: {
     marginBottom: 8,
   },
+  heartRateCard: {
+    marginBottom: 8,
+    paddingHorizontal: 0,
+    paddingVertical: 16,
+  },
   riskCard: {
     minHeight: 120,
   },
@@ -4465,6 +4525,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
+    paddingHorizontal: 20,
   },
   iconContainer: {
     width: 36,
@@ -4538,6 +4599,11 @@ const styles = StyleSheet.create({
   chartContainer: {
     alignItems: 'center',
     marginTop: 8,
+    width: '100%',
+  },
+  scrollableChartContainer: {
+    width: '100%',
+    paddingHorizontal: 0,
   },
   legendContainer: {
     flexDirection: 'row',
@@ -5321,11 +5387,12 @@ export default BarChart;
 File: app/components/charts/BiteForceDynamicsChart.tsx
 ================================================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import { COLORS } from '@/src/constants';
 import { ChartData } from '@/src/types';
 import LineChart from './LineChart';
+import chartStyles from './ChartStyles';
 
 interface BiteForceDynamicsChartProps {
   data: ChartData;
@@ -5346,6 +5413,26 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
   height = 180,
   width = Dimensions.get('window').width - 64,
 }) => {
+  // Animation value for chart fade-in
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
+  // Start animation when component mounts
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, []);
+
   // More comprehensive check for valid data
   if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
     return (
@@ -5365,10 +5452,10 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
     );
   }
 
-  // Create a safe version of the data object
+  // Create a safe version of the data object with Apple colors
   const safeData = {
     labels: Array.isArray(data.labels) ? data.labels : [],
-    datasets: data.datasets.map(dataset => {
+    datasets: data.datasets.map((dataset, index) => {
       if (!dataset) return {
         data: [],
         color: (opacity = 1) => 'rgba(0, 0, 0, 0)',
@@ -5378,8 +5465,9 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
       return {
         data: Array.isArray(dataset.data) ? dataset.data : [],
         color: typeof dataset.color === 'function' ? dataset.color : 
-          (opacity = 1) => dataset === data.datasets[0] ? 
-            'rgba(0, 176, 118, 1)' : 'rgba(0, 122, 255, 1)',
+          (opacity = 1) => index === 0 ? 
+            `rgba(50, 215, 75, ${opacity * 0.8})` :  // Apple Green with transparency
+            `rgba(10, 132, 255, ${opacity * 0.8})`,  // Apple Blue with transparency
         strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
       };
     }),
@@ -5387,35 +5475,41 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <Animated.View style={[
+      styles.container,
+      { 
+        opacity: fadeAnim,
+        transform: [{ scale: scaleAnim }]
+      }
+    ]}>
       {/* KPI metrics row */}
       <View style={styles.metricsRow}>
         <View style={styles.metricItem}>
-          <Text style={[styles.metricValue, { color: 'rgba(0, 176, 118, 1)' }]}>
+          <Text style={[chartStyles.primaryValue, { color: 'rgba(50, 215, 75, 0.9)' }]}>
             {avgLeft ?? '--'}
           </Text>
-          <Text style={styles.metricLabel}>Left Avg</Text>
+          <Text style={chartStyles.label}>Left Avg</Text>
         </View>
         <View style={styles.metricItem}>
-          <Text style={[styles.metricValue, { color: 'rgba(0, 122, 255, 1)' }]}>
+          <Text style={[chartStyles.primaryValue, { color: 'rgba(10, 132, 255, 0.9)' }]}>
             {avgRight ?? '--'}
           </Text>
-          <Text style={styles.metricLabel}>Right Avg</Text>
+          <Text style={chartStyles.label}>Right Avg</Text>
         </View>
         <View style={styles.metricItem}>
-          <Text style={styles.metricValue}>{maxForce ?? '--'}</Text>
-          <Text style={styles.metricLabel}>Max Force</Text>
+          <Text style={chartStyles.secondaryValue}>{maxForce ?? '--'}</Text>
+          <Text style={chartStyles.subLabel}>Max Force</Text>
         </View>
       </View>
 
       {/* Legend */}
       <View style={styles.legendContainer}>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: 'rgba(0, 176, 118, 1)' }]} />
+          <View style={[styles.legendDot, { backgroundColor: 'rgba(50, 215, 75, 0.9)' }]} />
           <Text style={styles.legendText}>Left</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: 'rgba(0, 122, 255, 1)' }]} />
+          <View style={[styles.legendDot, { backgroundColor: 'rgba(10, 132, 255, 0.9)' }]} />
           <Text style={styles.legendText}>Right</Text>
         </View>
       </View>
@@ -5425,34 +5519,34 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
         data={safeData}
         width={width}
         height={height}
-        bezier={false}
+        bezier={true}
         chartConfig={{
           backgroundColor: 'transparent',
-          backgroundGradientFrom: 'transparent',
-          backgroundGradientTo: 'transparent',
+          backgroundGradientFrom: COLORS.chartBackground,
+          backgroundGradientTo: COLORS.chartBackground,
           decimalPlaces: 0,
           // Color function that will be overridden by dataset colors
           color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
           style: {
-            borderRadius: 16,
+            borderRadius: 18,
           },
           propsForDots: {
-            r: "2",
+            r: "1.5",
             strokeWidth: "1",
           },
           propsForBackgroundLines: {
-            strokeDasharray: '4, 4',
-            strokeWidth: 0.5,
-            stroke: 'rgba(0, 0, 0, 0.05)',
+            strokeDasharray: '6, 6',
+            strokeWidth: 0.3,
+            stroke: 'rgba(150, 150, 150, 0.2)',
           },
         }}
         style={{
-          marginVertical: 8,
-          borderRadius: 16,
+          marginVertical: 12,
+          borderRadius: 18,
         }}
       />
-    </View>
+    </Animated.View>
   );
 };
 
@@ -5461,45 +5555,37 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
   metricItem: {
     alignItems: 'center',
-  },
-  metricValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
+    paddingHorizontal: 8,
   },
   legendContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 8,
+    marginHorizontal: 12,
   },
   legendDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: 6,
+    marginRight: 8,
   },
   legendText: {
-    fontSize: 12,
+    fontSize: 14,
     color: COLORS.textSecondary,
   },
   emptyText: {
@@ -5523,33 +5609,33 @@ const chartStyles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.cardBackground,
     marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 4,
+    marginVertical: 12,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.08)',
+    borderColor: 'rgba(0, 230, 118, 0.05)',
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   headerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 230, 118, 0.1)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 230, 118, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text.primary,
     marginLeft: 12,
     letterSpacing: 0.38,
@@ -5557,20 +5643,40 @@ const chartStyles = StyleSheet.create({
   description: {
     fontSize: 15,
     color: COLORS.text.secondary,
-    marginTop: 4,
-    marginBottom: 20,
+    marginTop: 6,
+    marginBottom: 24,
     letterSpacing: -0.24,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   chartWrapper: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 8,
+    backgroundColor: COLORS.chartBackground,
+    borderRadius: 18,
+    padding: 18,
+    marginTop: 12,
   },
   chartContainer: {
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
+  },
+  primaryValue: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  secondaryValue: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: COLORS.text.primary,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: COLORS.text.secondary,
+  },
+  subLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: COLORS.text.tertiary,
   },
 });
 
@@ -5580,9 +5686,11 @@ export default chartStyles;
 File: app/components/charts/ConcussionRiskGauge.tsx
 ================================================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import { COLORS } from '@/src/constants';
+import { LinearGradient } from 'expo-linear-gradient';
+import chartStyles from './ChartStyles';
 
 interface ConcussionRiskGaugeProps {
   risk?: 'Low' | 'Moderate' | 'High' | 'Critical' | null;
@@ -5593,63 +5701,107 @@ const ConcussionRiskGauge: React.FC<ConcussionRiskGaugeProps> = ({
   risk = 'Low',
   width = Dimensions.get('window').width - 64,
 }) => {
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const indicatorAnim = useRef(new Animated.Value(0)).current;
+  
   // Default to 'Low' if risk is undefined or null
   const safeRisk = risk || 'Low';
   
-  // Calculate indicator position
+  // Calculate indicator position and colors using Apple's color palette
   let percentage = 0;
-  let textColor = COLORS.primary;
-  let gaugeColor = COLORS.primary;
+  let textColor = '';
   
   switch (safeRisk) {
     case 'Critical':
       percentage = 100;
-      textColor = 'rgb(200, 0, 0)';
-      gaugeColor = 'rgb(200, 0, 0)';
+      textColor = '#BF5AF2'; // Apple Purple
       break;
     case 'High':
       percentage = 75;
-      textColor = 'rgb(255, 59, 48)';
-      gaugeColor = 'rgb(255, 59, 48)';
+      textColor = '#FF453A'; // Apple Red
       break;
     case 'Moderate':
       percentage = 50;
-      textColor = 'rgb(255, 149, 0)';
-      gaugeColor = 'rgb(255, 149, 0)';
+      textColor = '#FF9F0A'; // Apple Orange
       break;
     case 'Low':
     default:
       percentage = 25;
-      textColor = 'rgb(0, 176, 118)';
-      gaugeColor = 'rgb(0, 176, 118)';
+      textColor = '#32D74B'; // Apple Green
       break;
   }
   
+  // Calculate position for the indicator
   const indicatorPosition = (percentage / 100) * (width - 32);
   
+  // Start animations when component mounts
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(indicatorAnim, {
+        toValue: indicatorPosition,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [indicatorPosition]);
+  
   return (
-    <View style={[styles.container, { width }]}>
-      <Text style={[styles.riskValue, { color: textColor }]}>
+    <Animated.View style={[
+      styles.container, 
+      { 
+        width,
+        opacity: fadeAnim,
+        transform: [{ scale: scaleAnim }]
+      }
+    ]}>
+      <Text style={[chartStyles.primaryValue, { color: textColor, fontSize: 28 }]}>
         {safeRisk}
       </Text>
-      <Text style={styles.riskLabel}>
+      <Text style={chartStyles.label}>
         Concussion Risk Level
       </Text>
       
-      {/* Gauge Track */}
-      <View style={[styles.gaugeTrack, { width: width - 32 }]}>
+      {/* Gauge Track with Gradient */}
+      <View style={[styles.gaugeTrackContainer, { width: width - 32 }]}>
+        <LinearGradient
+          colors={['#32D74B', '#FF9F0A', '#FF453A', '#BF5AF2']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.gaugeTrack}
+        />
+        
         {/* Risk labels */}
         <View style={styles.riskLabelContainer}>
-          <Text style={[styles.riskLabelText, { color: 'rgb(0, 176, 118)' }]}>Low</Text>
-          <Text style={[styles.riskLabelText, { color: 'rgb(255, 149, 0)' }]}>Moderate</Text>
-          <Text style={[styles.riskLabelText, { color: 'rgb(255, 59, 48)' }]}>High</Text>
-          <Text style={[styles.riskLabelText, { color: 'rgb(200, 0, 0)' }]}>Critical</Text>
+          <Text style={[styles.riskLabelText, { color: '#32D74B' }]}>Low</Text>
+          <Text style={[styles.riskLabelText, { color: '#FF9F0A' }]}>Moderate</Text>
+          <Text style={[styles.riskLabelText, { color: '#FF453A' }]}>High</Text>
+          <Text style={[styles.riskLabelText, { color: '#BF5AF2' }]}>Critical</Text>
         </View>
         
-        {/* Gauge indicator */}
-        <View style={[styles.gaugeIndicator, { left: indicatorPosition - 6, backgroundColor: gaugeColor }]} />
+        {/* Animated Gauge indicator */}
+        <Animated.View 
+          style={[
+            styles.gaugeIndicator, 
+            { 
+              backgroundColor: textColor,
+              transform: [{ translateX: indicatorAnim }],
+            }
+          ]} 
+        />
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
@@ -5657,32 +5809,34 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 20,
   },
-  riskValue: {
-    fontSize: 32,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  riskLabel: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 24,
+  gaugeTrackContainer: {
+    height: 8,
+    marginTop: 32,
+    position: 'relative',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   gaugeTrack: {
     height: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    borderRadius: 4,
-    position: 'relative',
+    borderRadius: 12,
+    width: '100%',
   },
   gaugeIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     position: 'absolute',
-    top: -2,
-    borderWidth: 2,
+    top: -4,
+    left: 0,
+    borderWidth: 2.5,
     borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   riskLabelContainer: {
     position: 'absolute',
@@ -5693,7 +5847,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   riskLabelText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
   }
 });
@@ -5833,11 +5987,12 @@ export default CumulativeExposureGraph;
 File: app/components/charts/HeartRateTrendChart.tsx
 ================================================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import { COLORS } from '@/src/constants';
 import { ChartData } from '@/src/types';
 import LineChart from './LineChart';
+import chartStyles from './ChartStyles';
 
 interface HeartRateTrendChartProps {
   data: ChartData | null;
@@ -5856,6 +6011,26 @@ const HeartRateTrendChart: React.FC<HeartRateTrendChartProps> = ({
   height = 180,
   width = Dimensions.get('window').width - 64,
 }) => {
+  // Animation value for chart fade-in
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
+  // Start animation when component mounts
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, []);
+
   // Check if we have valid data to display
   if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
     return (
@@ -5871,14 +6046,14 @@ const HeartRateTrendChart: React.FC<HeartRateTrendChartProps> = ({
     datasets: data.datasets.map(dataset => {
       if (!dataset) return {
         data: [],
-        color: (opacity = 1) => 'rgba(255, 59, 48, 1)',
+        color: (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`, // Apple Red with transparency
         strokeWidth: 2
       };
       
       return {
         data: Array.isArray(dataset.data) ? dataset.data : [],
         color: typeof dataset.color === 'function' ? dataset.color : 
-          (opacity = 1) => `rgba(255, 59, 48, ${opacity})`,
+          (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`, // Apple Red with transparency
         strokeWidth: typeof dataset.strokeWidth === 'number' ? dataset.strokeWidth : 2
       };
     }),
@@ -5886,26 +6061,32 @@ const HeartRateTrendChart: React.FC<HeartRateTrendChartProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <Animated.View style={[
+      styles.container,
+      { 
+        opacity: fadeAnim,
+        transform: [{ scale: scaleAnim }]
+      }
+    ]}>
       {/* Stats row with KPIs */}
       <View style={styles.metricsRow}>
         <View style={styles.metricItem}>
-          <Text style={[styles.metricValue, { color: 'rgba(255, 59, 48, 1)' }]}>
+          <Text style={[chartStyles.primaryValue, { color: 'rgba(255, 69, 58, 0.9)' }]}>
             {avgHr !== null && avgHr !== undefined ? avgHr : '--'}
           </Text>
-          <Text style={styles.metricLabel}>Avg BPM</Text>
+          <Text style={chartStyles.label}>Avg BPM</Text>
         </View>
         <View style={styles.metricItem}>
-          <Text style={styles.metricValue}>
+          <Text style={chartStyles.secondaryValue}>
             {minHr !== null && minHr !== undefined ? minHr : '--'}
           </Text>
-          <Text style={styles.metricLabel}>Min</Text>
+          <Text style={chartStyles.subLabel}>Min</Text>
         </View>
         <View style={styles.metricItem}>
-          <Text style={styles.metricValue}>
+          <Text style={chartStyles.secondaryValue}>
             {maxHr !== null && maxHr !== undefined ? maxHr : '--'}
           </Text>
-          <Text style={styles.metricLabel}>Max</Text>
+          <Text style={chartStyles.subLabel}>Max</Text>
         </View>
       </View>
 
@@ -5917,30 +6098,31 @@ const HeartRateTrendChart: React.FC<HeartRateTrendChartProps> = ({
         bezier={true}
         chartConfig={{
           backgroundColor: 'transparent',
-          backgroundGradientFrom: 'transparent',
-          backgroundGradientTo: 'transparent',
+          backgroundGradientFrom: COLORS.chartBackground,
+          backgroundGradientTo: COLORS.chartBackground,
           decimalPlaces: 0,
-          color: (opacity = 1) => `rgba(255, 59, 48, ${opacity})`,
-          labelColor: (opacity = 1) => `rgba(80, 80, 80, ${opacity})`,
+          color: (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`, // Apple Red with transparency
+          labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`, // More transparent axes text
           style: {
-            borderRadius: 16,
+            borderRadius: 18,
           },
           propsForDots: {
-            r: "2",
-            strokeWidth: "1",
+            r: "1.5", // Smaller dots
+            strokeWidth: "1", 
+            stroke: "rgba(255, 69, 58, 0.9)",
           },
           propsForBackgroundLines: {
-            strokeDasharray: '4, 4',
-            strokeWidth: 0.5,
-            stroke: 'rgba(0, 0, 0, 0.05)',
+            strokeDasharray: '6, 6',
+            strokeWidth: 0.3,
+            stroke: 'rgba(150, 150, 150, 0.2)', // Very subtle axes
           },
         }}
         style={{
-          marginVertical: 8,
-          borderRadius: 16,
+          marginVertical: 12,
+          borderRadius: 18,
         }}
       />
-    </View>
+    </Animated.View>
   );
 };
 
@@ -5949,26 +6131,18 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   metricItem: {
     alignItems: 'center',
-  },
-  metricValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  metricLabel: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
+    paddingHorizontal: 8,
   },
   emptyText: {
     fontSize: 14,
@@ -6727,6 +6901,435 @@ const styles = StyleSheet.create({
 export default MotionOverviewGraph; 
 
 ================================================================================
+File: app/components/charts/ScrollableHeartRateChart.tsx
+================================================================================
+
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  Pressable, 
+  TouchableOpacity,
+  Animated
+} from 'react-native';
+import LineChart from './LineChart';
+import { COLORS } from '../../../src/constants';
+import { ChartData } from '../../../src/types';
+
+// Constants with more descriptive time range labels
+const TIME_RANGES = [
+  { id: '1h', label: 'Recent' },
+  { id: '3h', label: 'Short' },
+  { id: '12h', label: 'Medium' },
+  { id: '1d', label: 'Long' },
+  { id: '1w', label: 'All' }
+];
+const chartWidth = 1500; // Make chart scrollable with larger width
+
+interface HeartRateDataPoint {
+  value: number;
+  timestamp: number;
+}
+
+interface ScrollableHeartRateChartProps {
+  data: ChartData;
+  height?: number;
+  currentValue?: number;
+  timestamp?: string;
+  rangeData?: {
+    min: number;
+    max: number;
+    timeRange: string;
+  };
+}
+
+const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
+  data,
+  height = 300,
+  currentValue,
+  timestamp,
+  rangeData
+}) => {
+  // State for selected time range
+  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('12h');
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  
+  // Start animation when component mounts
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, []);
+
+  // Check if we have valid data to display
+  const hasValidData = data && 
+                     data.datasets && 
+                     Array.isArray(data.datasets) && 
+                     data.datasets.length > 0 &&
+                     data.datasets[0].data &&
+                     data.datasets[0].data.length > 0;
+  
+  // Calculate min/max heart rate values from dataset if not provided
+  const derivedRangeData = rangeData || (hasValidData ? {
+    min: Math.min(...data.datasets[0].data),
+    max: Math.max(...data.datasets[0].data),
+    timeRange: "Today"
+  } : { min: 0, max: 0, timeRange: "No data available" });
+  
+  // Calculate current value if not provided
+  const derivedCurrentValue = currentValue || (hasValidData ? data.datasets[0].data[data.datasets[0].data.length - 1] : 0);
+  
+  // Get current timestamp if not provided
+  const derivedTimestamp = timestamp || (hasValidData ? data.labels[data.labels.length - 1] : "--:--");
+
+  // Check if all timestamps are the same (a common issue with the data)
+  const allTimestampsSame = hasValidData && 
+    data.labels.every((label, _, arr) => label === arr[0]);
+  
+  // Filter data based on selected time range
+  const getFilteredData = () => {
+    if (!hasValidData) {
+      return {
+        labels: [],
+        datasets: [{
+          data: [],
+          color: (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`,
+          strokeWidth: 2
+        }]
+      };
+    }
+    
+    // Determine the percentage of data to show based on time range
+    let percentToShow: number;
+    
+    switch(selectedTimeRange) {
+      case '1h': 
+        percentToShow = 0.1; // Show 10% of the data for 1h
+        break;
+      case '3h': 
+        percentToShow = 0.25; // Show 25% of the data for 3h
+        break; 
+      case '12h': 
+        percentToShow = 0.5; // Show 50% of the data for 12h
+        break;
+      case '1d': 
+        percentToShow = 0.75; // Show 75% of the data for 1d
+        break;
+      case '1w': 
+        percentToShow = 1; // Show all data for 1w
+        break;
+      default: 
+        percentToShow = 0.5; // Default to 50%
+    }
+    
+    // Calculate how many data points to include
+    const totalPoints = data.datasets[0].data.length;
+    const pointsToInclude = Math.max(Math.round(totalPoints * percentToShow), 2); // At least 2 points
+    
+    // Get the most recent data based on percentage
+    const startIndex = Math.max(0, totalPoints - pointsToInclude);
+    
+    // Create filtered dataset
+    const filteredData = {
+      labels: data.labels.slice(startIndex),
+      datasets: [{
+        ...data.datasets[0],
+        data: data.datasets[0].data.slice(startIndex)
+      }]
+    };
+    
+    // Generate more meaningful labels if all timestamps are the same
+    if (allTimestampsSame) {
+      const filteredLength = filteredData.labels.length;
+      const now = new Date();
+      
+      // Create time labels based on relative position
+      filteredData.labels = filteredData.labels.map((_, index) => {
+        // For equally spaced time labels
+        if (index === 0) return "Start";
+        if (index === filteredLength - 1) return "Now";
+        
+        // For selected points in the middle
+        if (
+          index === Math.floor(filteredLength * 0.25) || 
+          index === Math.floor(filteredLength * 0.5) || 
+          index === Math.floor(filteredLength * 0.75)
+        ) {
+          return `${Math.round((index / filteredLength) * 100)}%`;
+        }
+        
+        return "";
+      });
+    } else {
+      // Determine appropriate label spacing for regular timestamps
+      const filteredLength = filteredData.labels.length;
+      
+      // Adjust label step based on amount of data
+      let labelStep: number;
+      
+      if (filteredLength > 30) {
+        labelStep = Math.max(1, Math.floor(filteredLength / 6));
+      } else if (filteredLength > 15) {
+        labelStep = Math.max(1, Math.floor(filteredLength / 4));
+      } else {
+        labelStep = 1; // Show all labels for small datasets
+      }
+      
+      // Create sparse labels with empty strings for non-shown labels
+      filteredData.labels = filteredData.labels.map((label, index) => 
+        index % labelStep === 0 ? label : ""
+      );
+    }
+    
+    return filteredData;
+  };
+  
+  // Calculate average heart rate from filtered data
+  const getAverageHeartRate = () => {
+    if (!hasValidData) return 0;
+    
+    // Get currently filtered data
+    const filteredDataset = getFilteredData().datasets[0].data;
+    
+    // Calculate average
+    const sum = filteredDataset.reduce((acc, val) => acc + val, 0);
+    return Math.round(sum / filteredDataset.length);
+  };
+
+  return (
+    <Animated.View 
+      style={[
+        styles.container,
+        {
+          opacity: fadeAnim,
+          transform: [{ scale: scaleAnim }]
+        }
+      ]}
+    >
+      {/* Time range selector */}
+      <View style={styles.timeRangeSelector}>
+        {TIME_RANGES.map((range) => (
+          <Pressable
+            key={range.id}
+            style={[
+              styles.timeRangeButton,
+              selectedTimeRange === range.id && styles.selectedTimeRange
+            ]}
+            onPress={() => setSelectedTimeRange(range.id)}
+          >
+            <Text 
+              style={[
+                styles.timeRangeText,
+                selectedTimeRange === range.id && styles.selectedTimeRangeText
+              ]}
+            >
+              {range.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      
+      {/* Range information */}
+      <View style={styles.rangeInfo}>
+        <View style={styles.rangeRow}>
+          <View>
+            <Text style={styles.rangeTitle}>RANGE</Text>
+            <Text style={styles.rangeValue}>
+              {derivedRangeData.min}–{derivedRangeData.max} <Text style={styles.rangeUnit}>BPM</Text>
+            </Text>
+          </View>
+          <View style={styles.averageContainer}>
+            <Text style={styles.avgTitle}>AVG</Text>
+            <Text style={styles.avgValue}>{getAverageHeartRate()} <Text style={styles.rangeUnit}>BPM</Text></Text>
+          </View>
+        </View>
+        <Text style={styles.dateRange}>{derivedRangeData.timeRange}</Text>
+      </View>
+      
+      {/* Scrollable chart */}
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: 20 }}
+        style={styles.scrollView}
+        decelerationRate="normal"
+      >
+        {hasValidData ? (
+          <LineChart
+            data={getFilteredData()}
+            width={chartWidth}
+            height={height}
+            bezier={true}
+            chartConfig={{
+              backgroundColor: 'transparent',
+              backgroundGradientFrom: 'transparent',
+              backgroundGradientTo: 'transparent',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(255, 69, 58, ${opacity * 0.8})`,
+              labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
+              style: {
+                borderRadius: 0,
+              },
+              propsForDots: {
+                r: "3",
+                strokeWidth: "0",
+                stroke: "transparent",
+                fill: "rgba(255, 69, 58, 0.8)",
+              },
+              propsForBackgroundLines: {
+                strokeDasharray: '5, 5',
+                strokeWidth: 0.5,
+                stroke: 'rgba(150, 150, 150, 0.15)',
+              },
+            }}
+            style={{
+              marginVertical: 8,
+              borderRadius: 0,
+            }}
+          />
+        ) : (
+          <View style={[styles.emptyChart, { width: chartWidth, height }]}>
+            <Text style={styles.emptyChartText}>No heart rate data available</Text>
+          </View>
+        )}
+      </ScrollView>
+      
+      {/* Current value indicator */}
+      <View style={styles.currentValueContainer}>
+        <Text style={styles.currentValueLabel}>Latest: {derivedTimestamp}</Text>
+        <Text style={styles.currentValue}>{derivedCurrentValue} BPM</Text>
+      </View>
+    </Animated.View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    backgroundColor: '#000',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  timeRangeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    paddingVertical: 12,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 12,
+    marginHorizontal: 12,
+    marginTop: 12,
+  },
+  timeRangeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  selectedTimeRange: {
+    backgroundColor: '#2C2C2E',
+  },
+  timeRangeText: {
+    color: '#8E8E93',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  selectedTimeRangeText: {
+    color: '#FFFFFF',
+  },
+  rangeInfo: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  rangeTitle: {
+    color: '#8E8E93',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  rangeValue: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  rangeUnit: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#8E8E93',
+  },
+  dateRange: {
+    color: '#8E8E93',
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  averageContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 6,
+  },
+  avgTitle: {
+    color: '#8E8E93',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  avgValue: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '600',
+  },
+  scrollView: {
+    marginTop: 8,
+  },
+  currentValueContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FF453A',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginTop: 16,
+  },
+  currentValueLabel: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '500',
+  },
+  currentValue: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  emptyChart: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyChartText: {
+    color: '#8E8E93',
+    fontSize: 16,
+  }
+});
+
+export default ScrollableHeartRateChart; 
+
+================================================================================
 File: app/components/charts/SeverityDistributionGraph.tsx
 ================================================================================
 
@@ -7438,7 +8041,7 @@ const Card: React.FC<CardProps> = ({ children, style }) => {
   return (
     <View style={[styles.container, style]}>
       <LinearGradient
-        colors={['rgba(0,230,118,0.15)', 'rgba(0,230,118,0.05)', 'transparent']}
+        colors={['rgba(0,230,118,0.10)', 'rgba(0,230,118,0.03)', 'transparent']}
         style={styles.gradientBackground}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -7451,20 +8054,22 @@ const Card: React.FC<CardProps> = ({ children, style }) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
+    borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(0, 230, 118, 0.1)',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    borderColor: 'rgba(0, 230, 118, 0.08)',
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
     position: 'relative',
+    padding: 20,
+    marginVertical: 12,
   },
   gradientBackground: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.8,
+    opacity: 0.7,
   },
 });
 
@@ -7607,13 +8212,13 @@ interface ThemeWrapperProps {
 
 /**
  * ThemeWrapper provides consistent styling for all screens
- * with the yellowish background color from the design.
+ * with a lighter neutral background color from the design.
  */
 const ThemeWrapper: React.FC<ThemeWrapperProps> = ({ children }) => {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['rgba(237, 235, 209, 1)', 'rgba(237, 235, 209, 0.8)']}
+        colors={['rgba(248, 249, 250, 1)', 'rgba(248, 249, 250, 0.9)']}
         style={styles.backgroundGradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -7626,7 +8231,7 @@ const ThemeWrapper: React.FC<ThemeWrapperProps> = ({ children }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.secondaryBackground, // Sand color as fallback
+    backgroundColor: COLORS.secondaryBackground, // Lighter background color as fallback
     position: 'relative',
   },
   backgroundGradient: {
@@ -7645,6 +8250,252 @@ import { Redirect } from 'expo-router';
 export default function Index() {
   return <Redirect href="/(tabs)" />;
 } 
+
+================================================================================
+File: app/screens/HeartRateDemo.tsx
+================================================================================
+
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import { COLORS } from '@/src/constants';
+import ScrollableHeartRateChart from '../components/charts/ScrollableHeartRateChart';
+import HeartRateTrendChart from '../components/charts/HeartRateTrendChart';
+import Card from '../components/shared/Card';
+
+const HeartRateDemo = () => {
+  // Sample data for HeartRateTrendChart
+  const heartRateData = {
+    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+    datasets: [
+      {
+        data: [65, 70, 80, 75, 90, 85],
+        color: (opacity = 1) => `rgba(255, 69, 58, ${opacity})`,
+        strokeWidth: 2
+      }
+    ]
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.contentContainer}>
+        <View style={styles.header}>
+          <Text style={styles.backButton}>Heart</Text>
+          <Text style={styles.title}>Heart Rate</Text>
+          <Text style={styles.actionButton}>Add Data</Text>
+        </View>
+        
+        {/* Apple-Style Scrollable Chart */}
+        <ScrollableHeartRateChart 
+          data={heartRateData}
+          currentValue={55}
+          timestamp="09:34"
+          height={350}
+          rangeData={{
+            min: 47,
+            max: 179,
+            timeRange: "Dec 29, 2024 - Jun 28, 2025"
+          }}
+        />
+        
+        {/* Highlights Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Highlights</Text>
+          <Text style={styles.sectionAction}>Show All</Text>
+        </View>
+        
+        {/* Highlight Card */}
+        <Card style={styles.highlightCard}>
+          <View style={styles.highlightHeader}>
+            <View style={styles.heartIconContainer}>
+              <Text style={styles.heartIcon}>❤️</Text>
+            </View>
+            <Text style={styles.highlightTitle}>Heart Rate: Workout</Text>
+          </View>
+          
+          <Text style={styles.highlightDescription}>
+            Your heart rate was 99–176 beats per minute during your recent workout.
+          </Text>
+          
+          <View style={styles.divider} />
+          
+          {/* Heart Rate Trend in Highlight Card */}
+          <HeartRateTrendChart 
+            data={heartRateData}
+            avgHr={131}
+            minHr={99}
+            maxHr={176}
+            height={180}
+          />
+          
+          <View style={styles.timeLabels}>
+            <Text style={styles.timeLabel}>17:40</Text>
+            <Text style={styles.timeLabel}>18:40</Text>
+          </View>
+        </Card>
+        
+        {/* About Heart Rate Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>About Heart Rate</Text>
+        </View>
+        
+        <Card style={styles.aboutCard}>
+          <Text style={styles.aboutText}>
+            Your heart beats approximately 100,000 times per day, accelerating and slowing through periods of rest and exertion. Your heart rate refers to how many times your heart beats per minute and can be an indicator of your overall cardiovascular health and fitness level.
+          </Text>
+        </Card>
+        
+        {/* Tab bar simulation */}
+        <View style={styles.tabBar}>
+          <View style={styles.tabItem}>
+            <Text style={styles.tabIcon}>♡</Text>
+            <Text style={styles.tabLabel}>Summary</Text>
+          </View>
+          <View style={styles.tabItem}>
+            <Text style={styles.tabIcon}>👥</Text>
+            <Text style={styles.tabLabel}>Sharing</Text>
+          </View>
+          <View style={[styles.tabItem, styles.activeTab]}>
+            <Text style={[styles.tabIcon, styles.activeTabIcon]}>☰</Text>
+            <Text style={[styles.tabLabel, styles.activeTabLabel]}>Browse</Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  contentContainer: {
+    paddingBottom: 40,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  backButton: {
+    color: '#0A84FF',
+    fontSize: 17,
+    fontWeight: '500',
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  actionButton: {
+    color: '#0A84FF',
+    fontSize: 17,
+    fontWeight: '500',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 32,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  sectionAction: {
+    color: '#0A84FF',
+    fontSize: 17,
+    fontWeight: '500',
+  },
+  highlightCard: {
+    backgroundColor: '#1C1C1E',
+    borderColor: 'rgba(56, 56, 58, 0.8)',
+    marginHorizontal: 16,
+  },
+  highlightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  heartIconContainer: {
+    marginRight: 8,
+  },
+  heartIcon: {
+    fontSize: 22,
+  },
+  highlightTitle: {
+    color: '#FF453A',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  highlightDescription: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '500',
+    lineHeight: 24,
+    marginBottom: 16,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(56, 56, 58, 0.8)',
+    marginBottom: 16,
+  },
+  timeLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  timeLabel: {
+    color: '#8E8E93',
+    fontSize: 14,
+  },
+  aboutCard: {
+    backgroundColor: '#1C1C1E',
+    borderColor: 'rgba(56, 56, 58, 0.8)',
+    marginHorizontal: 16,
+  },
+  aboutText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    lineHeight: 24,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 12,
+    borderTopWidth: 0.5,
+    borderColor: 'rgba(56, 56, 58, 0.8)',
+    backgroundColor: '#000',
+    marginTop: 40,
+  },
+  tabItem: {
+    alignItems: 'center',
+  },
+  tabIcon: {
+    fontSize: 22,
+    color: '#8E8E93',
+    marginBottom: 4,
+  },
+  tabLabel: {
+    color: '#8E8E93',
+    fontSize: 11,
+  },
+  activeTab: {},
+  activeTabIcon: {
+    color: '#0A84FF',
+  },
+  activeTabLabel: {
+    color: '#0A84FF',
+  },
+});
+
+export default HeartRateDemo; 
 
 ================================================================================
 File: app/screens/LogsScreen.tsx
@@ -12474,36 +13325,39 @@ export const MOUTHGUARD_DB_NAME: string = "mouthguardMonitor.db";
 export const COLORS = {
   // Core Palette
   primary: '#005432',       // Evergreen (For buttons, active icons, highlights)
-  background: '#EDEBD1',    // Changed from White to Sand (Main app background)
+  background: '#F8F9FA',    // Changed to lighter neutral background
   card: '#FFFFFF',          // White (Card backgrounds, slightly elevated)
-  secondaryBackground: '#EDEBD1', // Sand (Subtle backgrounds, dividers, or inactive states)
+  secondaryBackground: '#F8F8F8', // Lighter sand color as recommended
 
   // Text Palette
   textPrimary: '#303434',    // Soft Black (Primary text)
-  textSecondary: '#4F6069',  // Slate (Secondary text, subtitles)
-  textTertiary: '#7E96A0',   // Gray (Placeholder text, disabled text, subtle info)
-  textOnPrimary: '#FFFFFF', // White (Text on Evergreen buttons/elements)
+  textSecondary: '#6B7280',  // Slate (Secondary text, subtitles, labels)
+  textTertiary: '#9CA3AF',   // Gray (Placeholder text, disabled text, subtle info)
+  textOnPrimary: '#FFFFFF',  // White (Text on Evergreen buttons/elements)
   textAccent: '#005432',     // Evergreen (Links, highlighted values)
 
   // Accents (Use Sparingly!)
   accent1: '#9CCB3B',        // Apple (Maybe for specific highlights or success states)
   accent2: '#009374',        // Teal (Alternative accent, info indicators)
   accent3: '#006484',        // Storm (Another alternative accent)
-  accent4: '#DBE442',        // Lemongrass (Could be a warning indicator)
+  accent4: '#FFD60A',        // Apple Yellow (for temperature graph)
   accent5: '#80B0A6',        // Seaglass (Subtle accent or background)
 
   // Semantic Colors
-  success: '#34C759',        // Standard Green (Overriding Apple Green for clarity)
-  warning: '#FF9500',        // Standard Orange (Using standard warning) - Lemongrass might be too subtle
-  error: '#FF3B30',          // Standard Red (Using standard error)
-  info: '#006484',           // Storm (For informational messages/icons)
+  success: '#32D74B',        // Apple Green (using more pastel-toned green)
+  warning: '#FF9500',        // Standard Orange
+  error: '#FF453A',          // Apple Red (heart rate)
+  info: '#0A84FF',           // Apple Blue (bite force)
 
   // Neutrals & Borders
-  border: '#CAD2D8',          // Silver (Subtle borders and dividers)
-  borderLight: '#EAEAEA',    // Lighter border option
-  inputBackground: '#F0F0F0',// Light gray for input fields
-  disabled: '#CAD2D8',        // Silver (Disabled elements background/text)
+  border: '#E5E7EB',         // Lighter border for softer appearance
+  borderLight: '#F3F4F6',    // Even lighter border option
+  inputBackground: '#F9FAFB', // Light gray for input fields
+  disabled: '#D1D5DB',       // Disabled elements background/text
   shadow: '#000000',         // Black for shadows (used with low opacity)
+
+  // Chart Colors
+  chartBackground: '#1C1C1E', // Softer dark gray for chart backgrounds
 
   // Institutional (Use as needed for branding)
   instGreen: '#006747',
@@ -12512,9 +13366,9 @@ export const COLORS = {
   // Legacy structure maintained for backward compatibility
   text: {
     primary: '#303434',    // Map to textPrimary
-    secondary: '#4F6069',  // Map to textSecondary
-    tertiary: '#7E96A0',   // Map to textTertiary
-    onPrimary: '#FFFFFF',  // Add this for consistency
+    secondary: '#6B7280',  // Map to textSecondary
+    tertiary: '#9CA3AF',   // Map to textTertiary
+    onPrimary: '#FFFFFF',  // For text on primary colored backgrounds
   },
   cardBackground: '#FFFFFF', // Map to card
 };
@@ -17694,6 +18548,7 @@ export function processHrmForChart(packets: HRMPacket[]): {
   maxHr: number | null 
 } {
   if (!packets || packets.length === 0) {
+    console.log('[processHrmForChart] No packets provided');
     return { 
       chartData: { labels: [], datasets: [] }, 
       avgHr: null, 
@@ -17702,13 +18557,54 @@ export function processHrmForChart(packets: HRMPacket[]): {
     };
   }
 
-  // Filter invalid data and sort by timestamp
-  const validPackets = packets
-    .filter(p => typeof p.heartRate === 'number' && !isNaN(p.heartRate) && p.heartRate > 0)
-    .sort((a, b) => a.appTimestamp - b.appTimestamp);
+  // Log sample data to understand structure
+  console.log(`[processHrmForChart] Sample packet (first of ${packets.length}):`, 
+    JSON.stringify(packets[0]));
 
-  // If no valid data after filtering, return empty result
+  // Try different ways to extract heart rate data
+  let validPackets: Array<HRMPacket & { heartRate: number, appTimestamp: number }> = [];
+  
+  try {
+    // First attempt - use standard interface
+    validPackets = packets
+      .filter(p => typeof p.heartRate === 'number' && !isNaN(p.heartRate) && p.heartRate > 0)
+      .sort((a, b) => a.appTimestamp - b.appTimestamp) as Array<HRMPacket & { heartRate: number, appTimestamp: number }>;
+      
+    console.log(`[processHrmForChart] Standard filtering found ${validPackets.length} valid packets`);
+    
+    // If no valid packets found, try alternative property names
+    if (validPackets.length === 0) {
+      // Check for alternative property names
+      const alternativeProps = ['heart_rate', 'hr', 'bpm', 'rate'];
+      
+      for (const prop of alternativeProps) {
+        const packetsWithProp = packets.filter(p => 
+          typeof (p as any)[prop] === 'number' && 
+          !isNaN((p as any)[prop]) && 
+          (p as any)[prop] > 0
+        );
+        
+        if (packetsWithProp.length > 0) {
+          console.log(`[processHrmForChart] Found ${packetsWithProp.length} packets with ${prop} property`);
+          
+          // Map to standard format
+          validPackets = packetsWithProp.map(p => ({
+            ...p,
+            heartRate: (p as any)[prop],
+            appTimestamp: p.appTimestamp || p.deviceTimestamp || (p as any).timestamp || Date.now()
+          })).sort((a, b) => a.appTimestamp - b.appTimestamp) as Array<HRMPacket & { heartRate: number, appTimestamp: number }>;
+          
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[processHrmForChart] Error during filtering:', error);
+  }
+
+  // If no valid data after all attempts, return empty result
   if (validPackets.length === 0) {
+    console.log('[processHrmForChart] No valid heart rate data found after all attempts');
     return { 
       chartData: { labels: [], datasets: [] }, 
       avgHr: null, 
@@ -17737,6 +18633,7 @@ export function processHrmForChart(packets: HRMPacket[]): {
     strokeWidth: 2,
   }];
 
+  console.log(`[processHrmForChart] Successfully processed ${validPackets.length} packets. Avg HR: ${avgHr}`);
   return { chartData: { labels, datasets }, avgHr, minHr, maxHr };
 }
 
@@ -17779,17 +18676,20 @@ export function processTempForChart(packets: HTMPacket[]): {
   // Subsample for better chart performance
   const subsampled = subsampleData(validPackets);
   
-  // Format data for chart
+  // Format data for chart - round to 1 decimal place for display
   const labels = subsampled.map(p => formatChartTimestamp(p.appTimestamp));
-  const data = subsampled.map(p => p.temperature);
+  const data = subsampled.map(p => parseFloat(p.temperature.toFixed(1)));
 
   // Calculate statistics
   const validTemps = validPackets.map(p => p.temperature);
   const avgTemp = validTemps.length > 0 ? 
     parseFloat((validTemps.reduce((a, b) => a + b, 0) / validTemps.length).toFixed(1)) : null;
-  const minTemp = validTemps.length > 0 ? Math.min(...validTemps) : null;
-  const maxTemp = validTemps.length > 0 ? Math.max(...validTemps) : null;
-  const currentTemp = validPackets.length > 0 ? validPackets[validPackets.length - 1].temperature : null;
+  const minTemp = validTemps.length > 0 ? 
+    parseFloat(Math.min(...validTemps).toFixed(1)) : null;
+  const maxTemp = validTemps.length > 0 ? 
+    parseFloat(Math.max(...validTemps).toFixed(1)) : null;
+  const currentTemp = validPackets.length > 0 ? 
+    parseFloat(validPackets[validPackets.length - 1].temperature.toFixed(1)) : null;
 
   const datasets: ChartDataset[] = [{
     data: data,
@@ -17916,12 +18816,42 @@ export function processMotionForChart(packets: MotionPacket[]): {
 
   // Calculate G-force magnitudes
   const magnitudes = sortedPackets.map(p => {
-    // Convert raw values to G-force
-    const gx = (p.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
-    const gy = (p.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
-    const gz = (p.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
-    // Calculate magnitude (vector length)
-    return Math.sqrt(gx*gx + gy*gy + gz*gz);
+    try {
+      // First, handle the case where accel200 is an array as defined in the type
+      if (p.accel200 && Array.isArray(p.accel200) && p.accel200.length >= 3) {
+        // Use the array directly
+        const gx = (p.accel200[0] ?? 0) / ACCEL_200G_SENSITIVITY;
+        const gy = (p.accel200[1] ?? 0) / ACCEL_200G_SENSITIVITY;
+        const gz = (p.accel200[2] ?? 0) / ACCEL_200G_SENSITIVITY;
+        return Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+      
+      // Next, try handling as possible object notation (p.accel200.x)
+      if (p.accel200 && typeof p.accel200 === 'object' && 'x' in p.accel200 && 'y' in p.accel200 && 'z' in p.accel200) {
+        const gx = ((p.accel200 as any).x ?? 0) / ACCEL_200G_SENSITIVITY;
+        const gy = ((p.accel200 as any).y ?? 0) / ACCEL_200G_SENSITIVITY;
+        const gz = ((p.accel200 as any).z ?? 0) / ACCEL_200G_SENSITIVITY;
+        return Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+      
+      // Finally, try accessing as individual properties (p.accel200_x)
+      const accel200X = (p as any).accel200_x ?? (p as any).accel200x ?? 0;
+      const accel200Y = (p as any).accel200_y ?? (p as any).accel200y ?? 0;
+      const accel200Z = (p as any).accel200_z ?? (p as any).accel200z ?? 0;
+      
+      if (accel200X !== 0 || accel200Y !== 0 || accel200Z !== 0) {
+        const gx = accel200X / ACCEL_200G_SENSITIVITY;
+        const gy = accel200Y / ACCEL_200G_SENSITIVITY;
+        const gz = accel200Z / ACCEL_200G_SENSITIVITY;
+        return Math.sqrt(gx*gx + gy*gy + gz*gz);
+      }
+      
+      // If none of the above worked, return 0
+      return 0;
+    } catch (error) {
+      console.warn('Error processing motion packet:', error);
+      return 0; // Fallback to 0 on error
+    }
   });
 
   // Find peak acceleration

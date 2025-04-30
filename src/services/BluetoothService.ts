@@ -873,11 +873,16 @@ export class BluetoothService {
         const buffer = Buffer.from(characteristic.value, 'base64');
         const appTimestamp = Date.now(); // Timestamp when app received data
 
+        // Make UUID comparisons case-insensitive for robustness
+        const lowerCharUuid = characteristicUuid.toLowerCase();
+        const lowerServiceUuid = serviceUuid.toLowerCase();
+
         // --- PARSING LOGIC BASED ON CHARACTERISTIC UUID ---
 
         // --- HRM Data ---
-        if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.hrmData.toLowerCase()) {
-            if (buffer.length >= 5) { // Expected size: 1 byte HR + 4 bytes timestamp
+        if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.hrmData.toLowerCase()) {
+            const EXPECTED_HRM_LENGTH = 5; // Expected size: 1 byte HR + 4 bytes timestamp
+            if (buffer.length >= EXPECTED_HRM_LENGTH) {
                 const hrmPacket: HRMPacket = {
                     heartRate: buffer.readUInt8(0),
                     // Assuming device_timestamp is uint32_t LE at offset 1
@@ -886,17 +891,18 @@ export class BluetoothService {
                     appTimestamp: appTimestamp
                 };
                 console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}`);
-                this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
+                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket); // Store raw packet
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'heartRate', deviceId, timestamp: appTimestamp, values: [hrmPacket.heartRate] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId });
             } else {
-                 console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes`);
+                 console.warn(`[BluetoothService] HRM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HRM_LENGTH})`);
             }
         }
 
         // --- HTM Data ---
-        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.htmData.toLowerCase()) {
-             if (buffer.length >= 6) { // Expected size: 2 bytes temp + 4 bytes timestamp
+        else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.htmData.toLowerCase()) {
+            const EXPECTED_HTM_LENGTH = 6; // Expected size: 2 bytes temp + 4 bytes timestamp
+            if (buffer.length >= EXPECTED_HTM_LENGTH) {
                 // Read temperature (int16_t, scaled by 100)
                 const rawTempValue = buffer.readInt16LE(0);
                 const temperatureCelsius = rawTempValue / 100.0; // Reverse the scaling
@@ -909,49 +915,61 @@ export class BluetoothService {
                      appTimestamp: appTimestamp
                 };
                 console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}`);
-                this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
+                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket); // Store parsed packet
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'temperature', deviceId, timestamp: appTimestamp, values: [htmPacket.temperature] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId });
             } else {
-                 console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes`);
+                 console.warn(`[BluetoothService] HTM data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_HTM_LENGTH})`);
             }
         }
 
         // --- IMU Data ---
-        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
-            const EXPECTED_IMU_LENGTH = 32; // Define expected length
+        // ***** UPDATED PARSING FOR 20 BYTES *****
+        else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.imuData.toLowerCase()) {
+            const EXPECTED_IMU_LENGTH = 20; // UPDATED expected length based on observed behavior
             if (buffer.length >= EXPECTED_IMU_LENGTH) {
-                // Parse only if length is sufficient
-                const motionPacket: MotionPacket = {
-                    gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)],
-                    accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)],
-                    accel200: [buffer.readInt16LE(12), buffer.readInt16LE(14), buffer.readInt16LE(16)],
-                    mag: [buffer.readInt16LE(18), buffer.readInt16LE(20), buffer.readInt16LE(22)],
-                    bite_l: buffer.readUInt16LE(24),
-                    bite_r: buffer.readUInt16LE(26),
-                    timestamp: buffer.readUInt32LE(28) // Device timestamp
+                // Create a partial motion packet based on the 20 bytes received
+                // Initialize with required properties to avoid 'possibly undefined' errors
+                const partialMotionPacket = {
+                    gyro: [buffer.readInt16LE(0), buffer.readInt16LE(2), buffer.readInt16LE(4)] as [number, number, number],
+                    accel16: [buffer.readInt16LE(6), buffer.readInt16LE(8), buffer.readInt16LE(10)] as [number, number, number],
+                    accel200: [buffer.readInt16LE(12), buffer.readInt16LE(14), buffer.readInt16LE(16)] as [number, number, number],
+                    // Only read the first mag value
+                    mag: [buffer.readInt16LE(18), 0, 0] as [number, number, number], 
+                    // BITE and DEVICE TIMESTAMP ARE MISSING in the 20-byte packet
+                    bite_l: 0,
+                    bite_r: 0,
+                    timestamp: appTimestamp // Use app timestamp as device timestamp is missing
                 };
-                console.log(`[BluetoothService] Parsed IMU: Gyro=${motionPacket.gyro[0]}, Acc16=${motionPacket.accel16[0]}, Acc200=${motionPacket.accel200[0]}, Mag=${motionPacket.mag[0]}, BiteL=${motionPacket.bite_l}, DevTS=${motionPacket.timestamp}`);
-                // Use await here to catch potential errors from the repository
-                await this.sensorDataRepository.recordMotionPacket(deviceId, motionPacket);
-                // Emit specific live data points as needed (e.g., high-G accel)
-                const SENSITIVITY_200G = 16384 / 200; // Example, adjust as needed
-                const gForceX = motionPacket.accel200[0] / SENSITIVITY_200G;
-                const gForceY = motionPacket.accel200[1] / SENSITIVITY_200G;
-                const gForceZ = motionPacket.accel200[2] / SENSITIVITY_200G;
-                const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
-                dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
-                dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}`);
+
+                try {
+                    // No need to adapt the packet since we've already created it with the correct types
+                    await this.sensorDataRepository.recordMotionPacket(deviceId, partialMotionPacket);
+
+                    // Emit live data for UI updates
+                    const SENSITIVITY_200G = 16384 / 200; // Example sensitivity factor
+                    const gForceX = partialMotionPacket.accel200[0] / SENSITIVITY_200G;
+                    const gForceY = partialMotionPacket.accel200[1] / SENSITIVITY_200G;
+                    const gForceZ = partialMotionPacket.accel200[2] / SENSITIVITY_200G;
+                    const magnitude = Math.sqrt(gForceX**2 + gForceY**2 + gForceZ**2);
+                    dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'accelerometer', deviceId, timestamp: appTimestamp, values: [gForceX, gForceY, gForceZ, magnitude] } as LiveDataPoint);
+                    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId });
+                } catch (saveError) {
+                    console.error(`[BluetoothService] Error saving partial IMU packet:`, saveError);
+                }
             } else {
-                // Log the warning and skip processing this packet
                 console.warn(`[BluetoothService] IMU data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_IMU_LENGTH}). Skipping packet.`);
-                // DO NOT attempt to parse or save incomplete data
             }
         }
 
         // --- FSR (Bite Force) Data ---
-        else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.fsrData.toLowerCase()) {
-            if (buffer.length >= 8) { // Expected size: 2 bytes left + 2 bytes right + 4 bytes timestamp
+        else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.fsrData.toLowerCase()) {
+            const EXPECTED_FSR_LENGTH = 8; // Expected size: 2 bytes left + 2 bytes right + 4 bytes timestamp
+            if (buffer.length >= EXPECTED_FSR_LENGTH) {
+                // Log raw bytes for debugging
+                console.log(`[BluetoothService] Raw FSR bytes received: ${buffer.toString('hex')}`);
+                
                 // Read bite forces (int16_t, scaled by 100)
                 const rawLeftBite = buffer.readInt16LE(0);
                 const rawRightBite = buffer.readInt16LE(2);
@@ -964,19 +982,27 @@ export class BluetoothService {
                     right_bite: rightBiteForce, // Store actual force
                     timestamp: deviceTimestamp // Device timestamp
                 };
+                
+                // Log detailed info for debugging
                 console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}`);
-                this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
+                console.log(`[BluetoothService] Raw FSR Int16 values: Left=${rawLeftBite}, Right=${rawRightBite}`);
+                
+                await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket); // Store parsed packet
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'force', deviceId, timestamp: appTimestamp, values: [fsrPacket.left_bite, fsrPacket.right_bite] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId });
             } else {
-                 console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes`);
+                 console.warn(`[BluetoothService] FSR data has unexpected length: ${buffer.length} bytes (expected >= ${EXPECTED_FSR_LENGTH})`);
             }
         }
 
         // --- Battery Level ---
-         else if (characteristicUuid.toLowerCase() === MOUTHGUARD_UUIDS.characteristics.batteryLevel.toLowerCase()) {
-            const level = buffer.readUInt8(0);
-            this.handleBatteryLevel(deviceId, level); // Use existing handler
+         else if (lowerCharUuid === MOUTHGUARD_UUIDS.characteristics.batteryLevel.toLowerCase()) {
+            if (buffer.length >= 1) { // Battery level is usually 1 byte
+                const level = buffer.readUInt8(0);
+                this.handleBatteryLevel(deviceId, level); // Use existing handler
+            } else {
+                console.warn(`[BluetoothService] Battery level data has unexpected length: ${buffer.length} bytes`);
+            }
         }
 
         // --- Add other characteristic handling if needed ---
