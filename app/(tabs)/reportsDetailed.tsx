@@ -210,11 +210,15 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 export default function ReportsDetailedScreen() {
   const sensorDataRepository = useSensorDataRepository();
   const sessionRepository = useSessionRepository();
-  const { activeSession } = useSession();
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { activeSession, sessionLoading } = useSession();
+  const { sessionId: routeSessionId } = useLocalSearchParams<{ sessionId: string }>();
   
-  // State for current session being viewed
+  // State for current session being viewed and device
   const [currentSession, setCurrentSession] = useState<any>(null);
+  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(null);
+  
+  // State for viewing session (either from route params or active)
+  const [viewingSessionId, setViewingSessionId] = useState<string | null>(null);
 
   // State for raw data (only when needed for specialized visualization)
   const [impacts, setImpacts] = useState<any[]>([]);
@@ -250,40 +254,65 @@ export default function ReportsDetailedScreen() {
   // Loading and error states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Initialize targetDeviceId as null to indicate it's not yet determined
-  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(null);
   
   // Get device and bluetooth services to access device information
   const deviceService = useDeviceService();
   const bluetoothService = useBluetoothService();
 
+  // Effect to determine which session to view
+  useEffect(() => {
+    // Prioritize session ID from route params
+    if (routeSessionId) {
+      console.log(`[ReportsDetailed] Viewing specific session from route: ${routeSessionId}`);
+      setViewingSessionId(routeSessionId);
+    }
+    // If no route param, check for an active session
+    else if (activeSession) {
+      console.log(`[ReportsDetailed] Viewing currently active session: ${activeSession.id}`);
+      setViewingSessionId(activeSession.id);
+    }
+    // Otherwise, no session is being viewed
+    else {
+      console.log(`[ReportsDetailed] No specific or active session to view.`);
+      setViewingSessionId(null);
+      // Clear existing chart data when no session is active/selected
+      setHrmChartData(null);
+      setTempChartData(null);
+      setBiteForceChartData(null);
+      setMotionChartData(null);
+      setImpactTimelineData(null);
+      setSeverityDistData(null);
+      setChieData(null);
+      setSessionStats(null);
+    }
+  }, [routeSessionId, activeSession]);
+
   // Effect to load session data when a session ID is provided
   useEffect(() => {
     const loadSession = async () => {
-      if (sessionId) {
+      if (viewingSessionId) {
         try {
-          const session = await sessionRepository.getSessionById(sessionId);
+          const session = await sessionRepository.getSessionById(viewingSessionId);
           if (session) {
             setCurrentSession(session);
             console.log(`[ReportsDetailed] Loaded session: ${session.id} - ${session.name}`);
           } else {
-            console.error(`[ReportsDetailed] Session not found: ${sessionId}`);
-            setError(`Session with ID ${sessionId} not found`);
+            console.error(`[ReportsDetailed] Session not found: ${viewingSessionId}`);
+            setError(`Session with ID ${viewingSessionId} not found`);
+            setViewingSessionId(null); // Clear the viewing session ID if not found
           }
         } catch (err) {
           console.error('[ReportsDetailed] Error loading session:', err);
           setError('Failed to load session data');
+          setViewingSessionId(null); // Clear the viewing session ID on error
         }
-      } else if (activeSession) {
-        // If no specific session ID provided, use active session if available
-        setCurrentSession(activeSession);
-        console.log(`[ReportsDetailed] Using active session: ${activeSession.id} - ${activeSession.name}`);
+      } else {
+        setCurrentSession(null);
       }
     };
 
     loadSession();
-  }, [sessionId, activeSession, sessionRepository]);
+  }, [viewingSessionId, sessionRepository]);
   
   // Effect to find and set the target device ID
   useEffect(() => {
@@ -350,38 +379,29 @@ export default function ReportsDetailedScreen() {
   };
 
   const fetchData = useCallback(async () => {
-    // Don't attempt to fetch if targetDeviceId is not set yet
-    if (targetDeviceId === null) {
-      console.log('[ReportsDetailed] Cannot fetch data: targetDeviceId is null');
+    // Don't attempt to fetch if targetDeviceId is not set yet or no session is being viewed
+    if (targetDeviceId === null || viewingSessionId === null) {
+      console.log(`[ReportsDetailed] Cannot fetch data: targetDeviceId=${targetDeviceId}, viewingSessionId=${viewingSessionId}`);
+      setLoading(false); // Ensure loading is set to false if we're skipping the fetch
       return;
     }
     
-    console.log('[ReportsDetailed] Fetching data (potentially debounced)...');
+    console.log(`[ReportsDetailed] Fetching data for Device: ${targetDeviceId}, Session: ${viewingSessionId}`);
     setLoading(true);
     setError(null);
 
     try {
-      // Define query options
+      // Define query options - now we ONLY use sessionId
       const options: {
-        startTime?: number;
-        endTime?: number;
-        sessionId?: string;
-      } = {};
-
-      // If we have a current session, use its ID for filtering
-      if (currentSession) {
-        options.sessionId = currentSession.id;
-        console.log(`[ReportsDetailed] Fetching data for session: ${currentSession.id}`);
-      } else {
-        // Otherwise use a time range (last 24 hours)
-        const endTime = Date.now();
-        const startTime = endTime - (24 * 60 * 60 * 1000); // 24 hours
-        options.startTime = startTime;
-        options.endTime = endTime;
-        console.log(`[ReportsDetailed] No session specified, fetching data for last 24 hours`);
-      }
+        sessionId: string;
+        limit?: number;
+      } = {
+        sessionId: viewingSessionId,
+        limit: 1000
+      };
 
       // Fetch all relevant data types with session filtering
+      console.log(`[ReportsDetailed] Fetching data for session: ${viewingSessionId}`);
       const [
         fetchedImpacts,
         fetchedMotion,
@@ -399,7 +419,7 @@ export default function ReportsDetailedScreen() {
       // Keep raw impact data for direction visualization if needed
       setImpacts(fetchedImpacts);
       
-      console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets.`);
+      console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets for session ${viewingSessionId}.`);
       console.log('[ReportsDetailed] == STARTING PROCESSING ==');
 
       // --- Process data using utility functions ---
@@ -521,7 +541,7 @@ export default function ReportsDetailedScreen() {
       setLoading(false);
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [targetDeviceId, sensorDataRepository, currentSession]);
+  }, [targetDeviceId, sensorDataRepository, viewingSessionId]);
 
   // Create a ref to hold the latest fetchData function
   const fetchDataRef = useRef(fetchData);
@@ -540,15 +560,17 @@ export default function ReportsDetailedScreen() {
     }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
   ).current;
 
-  // Fetch data whenever targetDeviceId changes from null to a valid value
-  // or when currentSession changes
+  // Fetch data whenever targetDeviceId or viewingSessionId changes
   useEffect(() => {
-    if (targetDeviceId !== null) {
+    if (targetDeviceId !== null && viewingSessionId !== null) {
       fetchData();
+    } else {
+      // If we don't have a session ID, ensure loading is false
+      setLoading(false);
     }
-  }, [targetDeviceId, fetchData]);
+  }, [targetDeviceId, viewingSessionId, fetchData]);
   
-  // Set up event listener for data changes
+  // Set up event listener for data changes - only trigger for the session we're viewing
   useEffect(() => {
     if (!targetDeviceId) return;
     
@@ -556,10 +578,9 @@ export default function ReportsDetailedScreen() {
       // Only handle events for matching device and session
       if (
         eventData.deviceId === targetDeviceId && 
-        (!currentSession || !eventData.sessionId || eventData.sessionId === currentSession.id)
+        eventData.sessionId === viewingSessionId
       ) {
-        console.log(`[ReportsDetailed] Data changed event triggered for ${eventData.type} - queueing debounced refresh...`);
-        // Call the debounced function instead of directly calling fetchData
+        console.log(`[ReportsDetailed] Relevant data changed (${eventData.type} for session ${viewingSessionId}). Triggering debounced refresh...`);
         debouncedFetchData();
       }
     };
@@ -572,7 +593,7 @@ export default function ReportsDetailedScreen() {
       // Make sure to cancel any pending debounced fetch
       debouncedFetchData.cancel();
     };
-  }, [targetDeviceId, currentSession, debouncedFetchData]);
+  }, [targetDeviceId, viewingSessionId, debouncedFetchData]);
 
   // Add detailed chart data logging
   useEffect(() => {
@@ -605,13 +626,13 @@ export default function ReportsDetailedScreen() {
     }
   }, [loading, error, hrmChartData, tempChartData, biteForceChartData, motionChartData]);
 
-  // Show loading indicator if loading or if targetDeviceId is null
-  if (loading || targetDeviceId === null) {
+  // Show loading indicator if loading or if targetDeviceId is null or sessionLoading
+  if (loading || sessionLoading || targetDeviceId === null) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>
-          {targetDeviceId === null ? 'Finding device...' : 'Loading Report Data...'}
+          {targetDeviceId === null ? 'Finding device...' : (sessionLoading ? 'Checking session...' : 'Loading Report Data...')}
         </Text>
       </View>
     );
@@ -631,293 +652,310 @@ export default function ReportsDetailedScreen() {
     );
   }
 
-  // Show message if no data
-  if (!sessionStats && 
-      !impactTimelineData?.datasets?.[0]?.data?.length && 
-      !biteForceChartData?.datasets?.[0]?.data?.length && 
-      !hrmChartData?.datasets?.[0]?.data?.length && 
-      !tempChartData?.datasets?.[0]?.data?.length) {
+  // Show message if no session is selected
+  if (!viewingSessionId) {
     return (
       <View style={styles.emptyContainer}>
-        <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
-        <Text style={styles.emptyText}>No Data Available for Device</Text>
-        <Text style={styles.emptySubText}>Device ID: {targetDeviceId}</Text>
-        <Text style={styles.emptySubText}>Generate test data or connect a device to see reports.</Text>
+        <MaterialCommunityIcons name="clipboard-text-clock-outline" size={48} color={COLORS.textTertiary} />
+        <Text style={styles.emptyText}>No Session Selected</Text>
+        <Text style={styles.emptySubText}>
+          {activeSession
+            ? `Currently viewing live data for session: ${activeSession.name}. Select a past session from the 'Sessions' tab to view its report.`
+            : "Start a new session on the Dashboard or select a past session from the 'Sessions' tab."}
+        </Text>
       </View>
     );
   }
 
+  // Show message if no data is available for the selected session
+  const noDataForSession = !sessionStats &&
+                          !impactTimelineData?.datasets?.[0]?.data?.length &&
+                          !biteForceChartData?.datasets?.[0]?.data?.length &&
+                          !hrmChartData?.datasets?.[0]?.data?.length &&
+                          !tempChartData?.datasets?.[0]?.data?.length;
+
+  if (noDataForSession) {
+    return (
+      <View style={styles.emptyContainer}>
+        <MaterialCommunityIcons name="chart-bar-stacked" size={48} color={COLORS.textTertiary} />
+        <Text style={styles.emptyText}>No Data Recorded</Text>
+        <Text style={styles.emptySubText}>No sensor data was found for the selected session.</Text>
+      </View>
+    );
+  }
+
+  // Original return statement for rendering charts and data
   return (
     <ErrorBoundary>
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Enhanced Header */}
-          <View style={styles.header}>
-            <LinearGradient
-              colors={['rgba(0,176,118,0.2)', 'rgba(0,176,118,0.05)', 'transparent']}
-              style={styles.headerGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-            />
-            <View style={styles.headerContent}>
-              <Text style={styles.headerTitle}>Detailed Report</Text>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.safeArea} edges={['top']}>
+          <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Enhanced Header */}
+            <View style={styles.header}>
+              <LinearGradient
+                colors={['rgba(0,176,118,0.2)', 'rgba(0,176,118,0.05)', 'transparent']}
+                style={styles.headerGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+              />
+              <View style={styles.headerContent}>
+                <Text style={styles.headerTitle}>Detailed Report</Text>
+              </View>
             </View>
-          </View>
 
-          {/* Session Info Card - Refined */}
-          <View>
-            <GlassCard style={styles.summaryCard}>
+            {/* Session Info Card - Refined */}
+            <View>
+              <GlassCard style={styles.summaryCard}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.cardTitle}>Session Report</Text>
+                  <Text style={styles.deviceId}>({targetDeviceId})</Text>
+                </View>
+                
+                <View style={styles.metricsRow}>
+                  <View style={styles.metricColumn}>
+                    <Text style={styles.metricNumber}>{sessionStats?.totalImpacts ?? '0'}</Text>
+                    <Text style={styles.metricLabel}>Total Impacts</Text>
+                  </View>
+                  
+                  <View style={styles.metricDivider} />
+                  
+                  <View style={styles.metricColumn}>
+                    <Text style={styles.metricNumber}>{sessionStats?.maxG ?? '0'}g</Text>
+                    <Text style={styles.metricLabel}>Max G-Force</Text>
+                  </View>
+                  
+                  <View style={styles.metricDivider} />
+                  
+                  <View style={styles.metricColumn}>
+                    <Text style={styles.metricNumber}>{sessionStats?.highImpacts ?? '0'}</Text>
+                    <Text style={styles.metricLabel}>High Impacts</Text>
+                  </View>
+                </View>
+              </GlassCard>
+            </View>
+
+            {/* Heart Rate Card - Modified for iOS compatibility */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
               <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>Session Report</Text>
-                <Text style={styles.deviceId}>({targetDeviceId})</Text>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
+                  <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Heart Rate</Text>
               </View>
               
-              <View style={styles.metricsRow}>
-                <View style={styles.metricColumn}>
-                  <Text style={styles.metricNumber}>{sessionStats?.totalImpacts ?? '0'}</Text>
-                  <Text style={styles.metricLabel}>Total Impacts</Text>
+              <View style={styles.scrollableChartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : hrmChartData ? (
+                  <ScrollableHeartRateChart
+                    data={hrmChartData}
+                    currentValue={sessionStats?.avgHr ?? 0}
+                    timestamp={(hrmChartData as any)?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                    height={280}
+                    rangeData={{
+                      min: sessionStats?.minHr ?? 0,
+                      max: sessionStats?.maxHr ?? 0,
+                      timeRange: (hrmChartData as any)?.timeRangeLabel || "Today"
+                    }}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No heart rate data available</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Temperature Card */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
+                  <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
                 </View>
-                
-                <View style={styles.metricDivider} />
-                
-                <View style={styles.metricColumn}>
-                  <Text style={styles.metricNumber}>{sessionStats?.maxG ?? '0'}g</Text>
-                  <Text style={styles.metricLabel}>Max G-Force</Text>
+                <Text style={styles.cardTitle}>Temperature</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : tempChartData ? (
+                  <TemperatureStabilityGraph
+                    data={tempChartData}
+                    currentTemp={sessionStats?.currentTemp}
+                    avgTemp={sessionStats?.avgTemp}
+                    maxTemp={sessionStats?.maxTemp}
+                    width={Dimensions.get('window').width - 40}
+                    height={180}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No temperature data available</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Bite Force Card */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                  <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
                 </View>
-                
-                <View style={styles.metricDivider} />
-                
-                <View style={styles.metricColumn}>
-                  <Text style={styles.metricNumber}>{sessionStats?.highImpacts ?? '0'}</Text>
-                  <Text style={styles.metricLabel}>High Impacts</Text>
+                <Text style={styles.cardTitle}>Bite Force</Text>
+              </View>
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : biteForceChartData ? (
+                  <BiteForceDynamicsChart
+                    data={biteForceChartData}
+                    avgLeft={sessionStats?.avgBiteLeft}
+                    avgRight={sessionStats?.avgBiteRight}
+                    avgTotal={sessionStats?.avgBiteTotal}
+                    maxForce={sessionStats?.maxBiteForce}
+                    width={Dimensions.get('window').width - 40}
+                    height={180}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No bite force data available</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Motion Overview Card */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(88, 86, 214, 0.1)'}]}>
+                  <MaterialCommunityIcons name="wave" size={20} color="rgba(88, 86, 214, 1)" />
                 </View>
+                <Text style={styles.cardTitle}>Motion Overview</Text>
               </View>
-            </GlassCard>
-          </View>
-
-          {/* Heart Rate Card - Modified for iOS compatibility */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 59, 48, 0.1)'}]}>
-                <MaterialCommunityIcons name="heart-pulse" size={20} color="rgba(255, 59, 48, 1)" />
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : motionChartData ? (
+                  <MotionOverviewGraph 
+                    data={motionChartData}
+                    peakAccel={sessionStats?.peakAccel}
+                    width={Dimensions.get('window').width - 40}
+                    height={180}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No motion data available</Text>
+                )}
               </View>
-              <Text style={styles.cardTitle}>Heart Rate</Text>
             </View>
-            
-            <View style={styles.scrollableChartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : hrmChartData ? (
-                <ScrollableHeartRateChart
-                  data={hrmChartData}
-                  currentValue={sessionStats?.avgHr ?? 0}
-                  timestamp={(hrmChartData as any)?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
-                  height={280}
-                  rangeData={{
-                    min: sessionStats?.minHr ?? 0,
-                    max: sessionStats?.maxHr ?? 0,
-                    timeRange: (hrmChartData as any)?.timeRangeLabel || "Today"
-                  }}
-                />
-              ) : (
-                <Text style={styles.emptyChartText}>No heart rate data available</Text>
-              )}
-            </View>
-          </View>
 
-          {/* Temperature Card */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 149, 0, 0.1)'}]}>
-                <MaterialCommunityIcons name="thermometer" size={20} color="rgba(255, 149, 0, 1)" />
+            {/* Impact Timeline Card */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 45, 85, 0.1)'}]}>
+                  <MaterialCommunityIcons name="chart-timeline-variant" size={20} color="rgba(255, 45, 85, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Impact Timeline</Text>
               </View>
-              <Text style={styles.cardTitle}>Temperature</Text>
-            </View>
-            
-            <View style={styles.chartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : tempChartData ? (
-                <TemperatureStabilityGraph
-                  data={tempChartData}
-                  currentTemp={sessionStats?.currentTemp}
-                  avgTemp={sessionStats?.avgTemp}
-                  maxTemp={sessionStats?.maxTemp}
-                  width={Dimensions.get('window').width - 40}
-                  height={180}
-                />
-              ) : (
-                <Text style={styles.emptyChartText}>No temperature data available</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Bite Force Card */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
-                <MaterialCommunityIcons name="tooth-outline" size={20} color="rgba(0, 122, 255, 1)" />
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : impactTimelineData && impactTimelineData.datasets?.[0]?.data?.length ? (
+                  <ImpactTimelineGraph 
+                    data={impactTimelineData}
+                    width={Dimensions.get('window').width - 40}
+                    height={180}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
               </View>
-              <Text style={styles.cardTitle}>Bite Force</Text>
             </View>
-            
-            <View style={styles.chartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : biteForceChartData ? (
-                <BiteForceDynamicsChart
-                  data={biteForceChartData}
-                  avgLeft={sessionStats?.avgBiteLeft}
-                  avgRight={sessionStats?.avgBiteRight}
-                  avgTotal={sessionStats?.avgBiteTotal}
-                  maxForce={sessionStats?.maxBiteForce}
-                  width={Dimensions.get('window').width - 40}
-                  height={180}
-                />
-              ) : (
-                <Text style={styles.emptyChartText}>No bite force data available</Text>
-              )}
-            </View>
-          </View>
 
-          {/* Motion Overview Card */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(88, 86, 214, 0.1)'}]}>
-                <MaterialCommunityIcons name="wave" size={20} color="rgba(88, 86, 214, 1)" />
+            {/* Concussion Risk Card */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(175, 82, 222, 0.1)'}]}>
+                  <MaterialCommunityIcons name="brain" size={20} color="rgba(175, 82, 222, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Concussion Risk Assessment</Text>
               </View>
-              <Text style={styles.cardTitle}>Motion Overview</Text>
-            </View>
-            
-            <View style={styles.chartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : motionChartData ? (
-                <MotionOverviewGraph 
-                  data={motionChartData}
-                  peakAccel={sessionStats?.peakAccel}
-                  width={Dimensions.get('window').width - 40}
-                  height={180}
-                />
-              ) : (
-                <Text style={styles.emptyChartText}>No motion data available</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Impact Timeline Card */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(255, 45, 85, 0.1)'}]}>
-                <MaterialCommunityIcons name="chart-timeline-variant" size={20} color="rgba(255, 45, 85, 1)" />
+              
+              <View style={styles.gaugeContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : (sessionStats?.totalImpacts !== null && sessionStats?.totalImpacts !== undefined) ? (
+                  <ConcussionRiskGauge 
+                    risk={sessionStats.concussionRisk || 'Low'}
+                    width={Dimensions.get('window').width - 40}
+                  />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact risk data available</Text>
+                )}
               </View>
-              <Text style={styles.cardTitle}>Impact Timeline</Text>
             </View>
-            
-            <View style={styles.chartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : impactTimelineData && impactTimelineData.datasets?.[0]?.data?.length ? (
-                <ImpactTimelineGraph 
-                  data={impactTimelineData}
-                  width={Dimensions.get('window').width - 40}
-                  height={180}
-                />
-              ) : (
-                <Text style={styles.emptyChartText}>No impact data available</Text>
-              )}
-            </View>
-          </View>
 
-          {/* Concussion Risk Card */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(175, 82, 222, 0.1)'}]}>
-                <MaterialCommunityIcons name="brain" size={20} color="rgba(175, 82, 222, 1)" />
+            {/* Severity Distribution Card - Refined */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
+                  <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
+                </View>
+                <Text style={styles.cardTitle}>Severity Distribution</Text>
               </View>
-              <Text style={styles.cardTitle}>Concussion Risk Assessment</Text>
-            </View>
-            
-            <View style={styles.gaugeContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : (sessionStats?.totalImpacts !== null && sessionStats?.totalImpacts !== undefined) ? (
-                <ConcussionRiskGauge 
-                  risk={sessionStats.concussionRisk || 'Low'}
-                  width={Dimensions.get('window').width - 40}
-                />
-              ) : (
-                <Text style={styles.emptyChartText}>No impact risk data available</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Severity Distribution Card - Refined */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 176, 118, 0.1)'}]}>
-                <MaterialCommunityIcons name="chart-histogram" size={20} color={COLORS.primary} />
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : severityDistData ? (
+                  <SeverityDistributionGraph data={severityDistData} />
+                ) : (
+                  <Text style={styles.emptyChartText}>No impact data available</Text>
+                )}
               </View>
-              <Text style={styles.cardTitle}>Severity Distribution</Text>
             </View>
-            
-            <View style={styles.chartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : severityDistData ? (
-                <SeverityDistributionGraph data={severityDistData} />
-              ) : (
-                <Text style={styles.emptyChartText}>No impact data available</Text>
-              )}
-            </View>
-          </View>
 
-          {/* CHIE Card */}
-          <View style={[styles.chartCardContainer, {marginTop: 8}]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
-                <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
+            {/* CHIE Card */}
+            <View style={[styles.chartCardContainer, {marginTop: 8}]}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.iconContainer, {backgroundColor: 'rgba(0, 122, 255, 0.1)'}]}>
+                  <MaterialCommunityIcons name="brain" size={20} color="rgba(0, 122, 255, 1)" />
+                </View>
+                <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
               </View>
-              <Text style={styles.cardTitle}>Cumulative Head Impact Exposure</Text>
+              
+              <View style={styles.chartContainer}>
+                {loading ? (
+                  <ActivityIndicator color={COLORS.primary} />
+                ) : error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : chieData ? (
+                  <CumulativeExposureGraph data={chieData} />
+                ) : (
+                  <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
+                )}
+              </View>
             </View>
-            
-            <View style={styles.chartContainer}>
-              {loading ? (
-                <ActivityIndicator color={COLORS.primary} />
-              ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
-              ) : chieData ? (
-                <CumulativeExposureGraph data={chieData} />
-              ) : (
-                <Text style={styles.emptyChartText}>No cumulative exposure data available</Text>
-              )}
-            </View>
-          </View>
 
-          {/* Bottom Spacer */}
-          <View style={{ height: 24 }} />
-        </ScrollView>
-      </SafeAreaView>
-    </SafeAreaProvider>
+            {/* Bottom Spacer */}
+            <View style={{ height: 24 }} />
+          </ScrollView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }
@@ -1160,7 +1198,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    minHeight: 300,
+    backgroundColor: COLORS.background,
   },
   emptyText: {
     fontSize: 20,
@@ -1168,6 +1206,7 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptySubText: {
     fontSize: 14,

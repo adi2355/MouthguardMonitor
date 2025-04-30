@@ -911,9 +911,32 @@ export class BluetoothService {
         // Get the current session ID if any
         const activeSessionId = this.getSessionContext().activeSession?.id || null;
 
+        // --- >>> Session Active Check <<< ---
+        if (!activeSessionId) {
+            console.log(`[BluetoothService] No active session. Discarding data from ${deviceId}/${characteristicUuid}.`);
+            // Only update the device's last seen timestamp but don't save any data
+            this.updateDeviceLastSeen(deviceId);
+            return;
+        }
+        // --- >>> End Session Active Check <<< ---
+
         // Make UUID comparisons case-insensitive for robustness
         const lowerCharUuid = characteristicUuid.toLowerCase();
         const lowerServiceUuid = serviceUuid.toLowerCase();
+
+        // --- Fetch Athlete ID (needed for alerts/impact events) ---
+        let athleteId: string | undefined = undefined;
+        let athleteName: string | undefined = undefined;
+        try {
+            const athlete = await this.athleteRepository.getAthleteByDeviceId(deviceId);
+            if (athlete) {
+                athleteId = athlete.id;
+                athleteName = athlete.name;
+            }
+        } catch (athleteLookupError) {
+            console.error(`[BluetoothService] Error looking up athlete for device ${deviceId}:`, athleteLookupError);
+        }
+        // --- End Fetch Athlete ID ---
 
         // --- PARSING LOGIC BASED ON CHARACTERISTIC UUID ---
 
@@ -928,8 +951,8 @@ export class BluetoothService {
                     flags: 0, // Flags aren't in your custom struct, set default or derive if needed
                     appTimestamp: appTimestamp
                 };
-                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}, SessionID=${activeSessionId || 'none'}`);
-                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket, activeSessionId); // Pass session ID
+                console.log(`[BluetoothService] Parsed HRM: HR=${hrmPacket.heartRate}, DevTS=${hrmPacket.deviceTimestamp}, SessionID=${activeSessionId}`);
+                await this.sensorDataRepository.recordHRMPacket(deviceId, hrmPacket, activeSessionId);
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'heartRate', deviceId, timestamp: appTimestamp, values: [hrmPacket.heartRate] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId, sessionId: activeSessionId });
             } else {
@@ -952,8 +975,8 @@ export class BluetoothService {
                      flags: 0, // Flags aren't in your custom struct
                      appTimestamp: appTimestamp
                 };
-                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}, SessionID=${activeSessionId || 'none'}`);
-                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket, activeSessionId); // Pass session ID
+                console.log(`[BluetoothService] Parsed HTM: Temp=${htmPacket.temperature.toFixed(2)}C, DevTS=${htmPacket.timestamp}, SessionID=${activeSessionId}`);
+                await this.sensorDataRepository.recordHTMPacket(deviceId, htmPacket, activeSessionId);
                 dataChangeEmitter.emit(SENSOR_DATA_EVENT, deviceId, { type: 'temperature', deviceId, timestamp: appTimestamp, values: [htmPacket.temperature] } as LiveDataPoint);
                 dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId, sessionId: activeSessionId });
             } else {
@@ -979,7 +1002,7 @@ export class BluetoothService {
                     bite_r: 0,
                     timestamp: appTimestamp // Use app timestamp as device timestamp is missing
                 };
-                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}, SessionID=${activeSessionId || 'none'}`);
+                console.log(`[BluetoothService] Parsed Partial IMU (20 bytes): Gyro=${partialMotionPacket.gyro[0]}, Acc16=${partialMotionPacket.accel16[0]}, Acc200=${partialMotionPacket.accel200[0]}, MagX=${partialMotionPacket.mag[0]}, SessionID=${activeSessionId}`);
 
                 try {
                     // No need to adapt the packet since we've already created it with the correct types
@@ -1022,7 +1045,7 @@ export class BluetoothService {
                 };
                 
                 // Log detailed info for debugging
-                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}, SessionID=${activeSessionId || 'none'}`);
+                console.log(`[BluetoothService] Parsed FSR: L=${fsrPacket.left_bite.toFixed(2)}, R=${fsrPacket.right_bite.toFixed(2)}, DevTS=${fsrPacket.timestamp}, SessionID=${activeSessionId}`);
                 console.log(`[BluetoothService] Raw FSR Int16 values: Left=${rawLeftBite}, Right=${rawRightBite}`);
                 
                 await this.sensorDataRepository.recordFSRPacket(deviceId, fsrPacket, activeSessionId); // Pass session ID
