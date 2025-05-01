@@ -35,7 +35,33 @@ const SessionCard = ({ session, onSelect, isActive }: {
   isActive: boolean;
 }) => {
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString();
+    try {
+      // First check if timestamp is valid
+      if (!timestamp || isNaN(timestamp) || timestamp <= 0) {
+        console.warn(`[SessionCard] Invalid timestamp: ${timestamp}`);
+        return 'Invalid Date';
+      }
+      
+      const date = new Date(timestamp);
+      
+      // Check if date is valid before formatting
+      if (isNaN(date.getTime())) {
+        console.warn(`[SessionCard] Could not create valid date from timestamp: ${timestamp}`);
+        return 'Invalid Date';
+      }
+      
+      // Format date string using locale settings
+      return date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error(`[SessionCard] Error formatting date from timestamp ${timestamp}:`, error);
+      return 'Invalid Date';
+    }
   };
 
   const getDuration = (start: number, end?: number) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -6,17 +6,20 @@ import {
   ScrollView, 
   ActivityIndicator, 
   TouchableOpacity, 
-  Platform 
+  Platform,
+  RefreshControl 
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '@/src/constants';
-import { useBluetoothService } from '@/src/providers/AppProvider';
+import { useBluetoothService, useSensorDataRepository } from '@/src/providers/AppProvider';
 import { DeviceStatus, LiveDataPoint } from '@/src/types';
 import LineChart from '../components/charts/LineChart';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { throttle } from 'lodash';
+import { useSession } from '@/src/contexts/SessionContext';
+import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
 
 // Maximum number of data points to keep per device
 const MAX_DATA_POINTS = 50; // Increased for smoother scrollable charts
@@ -56,10 +59,13 @@ const GlassCard: React.FC<{style?: any, children: React.ReactNode, intensity?: n
 export default function LiveMonitorScreen() {
   const [connectedDevices, setConnectedDevices] = useState<DeviceStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sessionActive, setSessionActive] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [liveData, setLiveData] = useState<Record<string, LiveDataPoint[]>>({});
   const [serviceReady, setServiceReady] = useState(false);
   
+  // Add session context
+  const { activeSession, isSessionActive } = useSession();
+  const sensorDataRepository = useSensorDataRepository();
   const bluetoothService = useBluetoothService();
   
   // Create throttled state updater with proper typing
@@ -71,15 +77,46 @@ export default function LiveMonitorScreen() {
   
   // Check if bluetoothService is available and set serviceReady state
   useEffect(() => {
-    if (bluetoothService) {
-      setServiceReady(true);
-    } else {
-      setServiceReady(false);
-    }
-  }, [bluetoothService]);
+    setServiceReady(!!bluetoothService && !!sensorDataRepository);
+  }, [bluetoothService, sensorDataRepository]);
   
   // Reference to store sensor data subscriptions - updated to match the correct return type
   const sensorDataSubscriptionRef = useRef<any>(null);
+  
+  // Fetch initial force data from DB
+  const fetchForceData = useCallback(async (deviceId: string) => {
+    if (!sensorDataRepository || !activeSession?.id) return;
+    
+    try {
+      console.log(`[LiveMonitor] Fetching initial force data for device ${deviceId}`);
+      const options = { sessionId: activeSession.id, limit: MAX_DATA_POINTS };
+      const forceData = await sensorDataRepository.getSensorData(deviceId, 'fsr_packets', options);
+      
+      if (forceData && forceData.length > 0) {
+        console.log(`[LiveMonitor] Retrieved ${forceData.length} force data points`);
+        
+        // Convert to LiveDataPoint format
+        const formattedData: LiveDataPoint[] = forceData.map(data => ({
+          timestamp: data.appTimestamp || data.timestamp,
+          deviceId: deviceId,
+          type: 'force',
+          values: [data.left_bite || 0, data.right_bite || 0]
+        }));
+        
+        // Update liveData state with force data
+        setLiveData(prev => {
+          return {
+            ...prev,
+            [deviceId]: [...(prev[deviceId] || []), ...formattedData].slice(-MAX_DATA_POINTS)
+          };
+        });
+      } else {
+        console.log(`[LiveMonitor] No force data available yet for device ${deviceId}`);
+      }
+    } catch (error) {
+      console.error('[LiveMonitor] Error fetching force data:', error);
+    }
+  }, [sensorDataRepository, activeSession]);
   
   // Initialize device status and data
   useEffect(() => {
@@ -97,6 +134,12 @@ export default function LiveMonitorScreen() {
     // Subscribe to device status updates
     const subscription = bluetoothService.subscribeToDeviceStatusUpdates((deviceStatus: DeviceStatus) => {
       console.log('[LiveMonitorScreen] Device Status Update Received:', deviceStatus);
+      
+      if (deviceStatus.connected) {
+        // Fetch initial force data for newly connected device
+        fetchForceData(deviceStatus.id);
+      }
+      
       setConnectedDevices(prevDevices => {
         // Update or add device
         const updatedDevices = [...prevDevices];
@@ -122,6 +165,8 @@ export default function LiveMonitorScreen() {
     
     // Subscribe to sensor data updates - using throttled updates now
     const unsubscribeSensorData = bluetoothService.subscribeSensorData((deviceId: string, dataPoint: LiveDataPoint) => {
+      console.log(`[LiveMonitor] Received sensor data: ${dataPoint.type} from ${deviceId}`);
+      
       // Use throttled function to update state
       throttledSetLiveData((prevData: Record<string, LiveDataPoint[]>) => {
         // Initialize array for this device if it doesn't exist
@@ -142,6 +187,17 @@ export default function LiveMonitorScreen() {
       });
     });
     
+    // Add force data event handler to listen for FSR_DATA_CHANGED events
+    const handleForceDataChange = (eventData: { deviceId: string, sessionId?: string }) => {
+      if (isSessionActive && eventData.sessionId === activeSession?.id) {
+        console.log(`[LiveMonitor] Force data changed for device ${eventData.deviceId}`);
+        fetchForceData(eventData.deviceId);
+      }
+    };
+    
+    // Register for force data change events
+    dataChangeEmitter.on(dbEvents.FSR_DATA_CHANGED, handleForceDataChange);
+    
     // --- FIX: Ensure loading becomes false even if no initial status update ---
     // Use a small timeout to allow initial updates to potentially arrive first,
     // but guarantee the loading state resolves.
@@ -161,17 +217,44 @@ export default function LiveMonitorScreen() {
       sensorDataSubscriptionRef.current = unsubscribeSensorData.remove.bind(unsubscribeSensorData);
     }
     
+    // Initial data load for connected devices
+    bluetoothService.getConnectedDeviceIds().forEach(deviceId => {
+      fetchForceData(deviceId);
+    });
+    
     return () => {
       console.log('[LiveMonitorScreen] Cleaning up subscriptions.');
       clearTimeout(loadingTimeout); // Clear the timeout on cleanup
       subscription.remove();
+      dataChangeEmitter.off(dbEvents.FSR_DATA_CHANGED, handleForceDataChange);
       if (sensorDataSubscriptionRef.current) {
         // Call the appropriate cleanup function
         sensorDataSubscriptionRef.current();
       }
       throttledSetLiveData.cancel(); // Cancel any pending throttled updates on unmount
     };
-  }, [bluetoothService, throttledSetLiveData]); // Add throttledSetLiveData to dependencies
+  }, [bluetoothService, throttledSetLiveData, fetchForceData, isSessionActive, activeSession]);
+  
+  // Handle refresh (manual pull-to-refresh)
+  const handleRefresh = useCallback(async () => {
+    if (!serviceReady) return;
+    
+    setRefreshing(true);
+    console.log('[LiveMonitor] Manual refresh triggered');
+    
+    // Reload connected devices status
+    if (bluetoothService) {
+      const deviceStatuses = bluetoothService.getDeviceStatuses();
+      setConnectedDevices(deviceStatuses.filter(d => d.connected));
+    }
+    
+    // Reload force data for each connected device
+    connectedDevices.forEach(device => {
+      fetchForceData(device.id);
+    });
+    
+    setRefreshing(false);
+  }, [serviceReady, fetchForceData, bluetoothService, connectedDevices]);
   
   // Handle session start/stop
   const toggleSession = async () => {
@@ -180,11 +263,10 @@ export default function LiveMonitorScreen() {
       return;
     }
   
-    if (sessionActive) {
+    if (isSessionActive) {
       // Stop session
       try {
         await bluetoothService.stopSession();
-        setSessionActive(false);
       } catch (error) {
         console.error('Error stopping session:', error);
       }
@@ -192,7 +274,6 @@ export default function LiveMonitorScreen() {
       // Start session
       try {
         await bluetoothService.startSession();
-        setSessionActive(true);
       } catch (error) {
         console.error('Error starting session:', error);
       }
@@ -323,6 +404,61 @@ export default function LiveMonitorScreen() {
       );
     }
     
+    // For force data (FSR) - Implement the visualization
+    if (latestData.type === 'force') {
+      const chartData = {
+        labels: deviceData.map((_, i) => ''),
+        datasets: [
+          {
+            data: deviceData.map(d => d.values[0]), // Left bite
+            color: () => 'rgba(0, 122, 255, 0.8)', // Blue for left bite
+            strokeWidth: 2
+          },
+          {
+            data: deviceData.map(d => d.values[1]), // Right bite
+            color: () => 'rgba(255, 45, 85, 0.8)', // Pink for right bite
+            strokeWidth: 2
+          }
+        ],
+        legend: ['Left Bite', 'Right Bite']
+      };
+      
+      return (
+        <View>
+          <View style={styles.currentValues}>
+            <Text style={styles.currentValueLabel}>Current Force: </Text>
+            <Text style={[styles.currentValue, {color: 'rgba(0, 122, 255, 0.8)'}]}>
+              Left: {latestData.values[0].toFixed(1)}
+            </Text>
+            <Text style={[styles.currentValue, {color: 'rgba(255, 45, 85, 0.8)'}]}>
+              Right: {latestData.values[1].toFixed(1)}
+            </Text>
+          </View>
+          
+          <LineChart
+            data={chartData}
+            width={320}
+            height={180}
+            chartConfig={{
+              backgroundColor: THEME.cardBackground,
+              backgroundGradientFrom: THEME.cardBackground,
+              backgroundGradientTo: THEME.cardBackground,
+              decimalPlaces: 1,
+              color: (opacity = 1) => `rgba(0, 176, 118, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(51, 51, 51, ${opacity})`,
+              propsForDots: {
+                r: '3',
+                strokeWidth: '1',
+                stroke: THEME.primary,
+              }
+            }}
+            bezier
+            style={styles.chart}
+          />
+        </View>
+      );
+    }
+    
     // Generic fallback chart for other data types
     return (
       <View style={styles.emptyChart}>
@@ -348,6 +484,15 @@ export default function LiveMonitorScreen() {
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={THEME.primary}
+            colors={[THEME.primary]}
+            progressBackgroundColor={THEME.cardBackground}
+          />
+        }
       >
         {/* Premium Header with Gradient */}
         <View style={styles.header}>
@@ -363,22 +508,22 @@ export default function LiveMonitorScreen() {
               onPress={toggleSession}
               style={[
                 styles.sessionToggle,
-                sessionActive ? styles.sessionActive : styles.sessionInactive
+                isSessionActive ? styles.sessionActive : styles.sessionInactive
               ]}
             >
               <LinearGradient
-                colors={sessionActive ? ['#ff5252', '#ff3b30'] : ['rgba(100,100,100,0.1)', 'rgba(100,100,100,0.2)']}
+                colors={isSessionActive ? ['#ff5252', '#ff3b30'] : ['rgba(100,100,100,0.1)', 'rgba(100,100,100,0.2)']}
                 style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               />
               <MaterialCommunityIcons 
-                name={sessionActive ? "record-circle" : "record-circle-outline"} 
+                name={isSessionActive ? "record-circle" : "record-circle-outline"} 
                 size={16} 
-                color={sessionActive ? "#fff" : "#555"} 
+                color={isSessionActive ? "#fff" : "#555"} 
               />
-              <Text style={sessionActive ? styles.sessionActiveText : styles.sessionInactiveText}>
-                {sessionActive ? "Session Active" : "Session Inactive"}
+              <Text style={isSessionActive ? styles.sessionActiveText : styles.sessionInactiveText}>
+                {isSessionActive ? "Session Active" : "Session Inactive"}
               </Text>
             </TouchableOpacity>
           </View>

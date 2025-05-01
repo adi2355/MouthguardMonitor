@@ -235,22 +235,30 @@ export default function Dashboard() {
       return;
     }
     
+    const currentSessionId = activeSession.id; // Capture ID for stability
+    
+    console.log(`[fetchHrmData] Fetching for device ${targetDeviceId}, session ${currentSessionId}`);
+    
     try {
-      const options = { sessionId: activeSession.id, limit: 500 };
+      const options = { sessionId: currentSessionId, limit: 500 };
       const fetchedHrm = await sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', options);
+      
+      console.log(`[fetchHrmData] Retrieved ${fetchedHrm.length} HRM packets for session ${currentSessionId}`);
       
       if (fetchedHrm.length > 0) {
         const hrmResults = processHrmForChart(fetchedHrm);
+        console.log(`[fetchHrmData] Processed HRM: Avg=${hrmResults.avgHr}`);
         setAvgHeartRate(hrmResults.avgHr);
         setCurrentHeartRate(fetchedHrm[fetchedHrm.length - 1]?.heartRate || null);
       } else {
-        // No data available
+        console.log(`[fetchHrmData] No HRM data found for session ${currentSessionId}, setting avg to null.`);
         setAvgHeartRate(null);
         setCurrentHeartRate(null);
       }
     } catch (err) {
       console.error('[Dashboard] Error fetching HRM data:', err);
       setAvgHeartRate(null);
+      setCurrentHeartRate(null);
     }
   }, [targetDeviceId, activeSession, sensorDataRepository]);
   
@@ -260,22 +268,29 @@ export default function Dashboard() {
       return;
     }
     
+    const currentSessionId = activeSession.id;
+    console.log(`[fetchTempData] Fetching for device ${targetDeviceId}, session ${currentSessionId}`);
+    
     try {
-      const options = { sessionId: activeSession.id, limit: 500 };
+      const options = { sessionId: currentSessionId, limit: 500 };
       const fetchedTemp = await sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', options);
+      
+      console.log(`[fetchTempData] Retrieved ${fetchedTemp.length} HTM packets for session ${currentSessionId}`);
       
       if (fetchedTemp.length > 0) {
         const tempResults = processTempForChart(fetchedTemp);
+        console.log(`[fetchTempData] Processed HTM: Avg=${tempResults.avgTemp}`);
         setAvgTemperature(tempResults.avgTemp);
         setCurrentTemperature(tempResults.currentTemp);
       } else {
-        // No data available
+        console.log(`[fetchTempData] No HTM data found for session ${currentSessionId}, setting avg to null.`);
         setAvgTemperature(null);
         setCurrentTemperature(null);
       }
     } catch (err) {
       console.error('[Dashboard] Error fetching temperature data:', err);
       setAvgTemperature(null);
+      setCurrentTemperature(null);
     }
   }, [targetDeviceId, activeSession, sensorDataRepository]);
   
@@ -285,18 +300,23 @@ export default function Dashboard() {
       return;
     }
     
+    const currentSessionId = activeSession.id;
+    console.log(`[fetchMotionData] Fetching for device ${targetDeviceId}, session ${currentSessionId}`);
+    
     try {
-      const options = { sessionId: activeSession.id, limit: 500 };
+      const options = { sessionId: currentSessionId, limit: 500 };
       const fetchedMotion = await sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', options);
+      
+      console.log(`[fetchMotionData] Retrieved ${fetchedMotion.length} Motion packets for session ${currentSessionId}`);
       
       if (fetchedMotion.length > 0) {
         const motionResults = processMotionForChart(fetchedMotion);
-        // Convert G-force to mph (rough approximation)
         const avgAccelG = motionResults.peakAccel;
         const avgAccelMph = avgAccelG ? parseFloat((avgAccelG * 2.23694).toFixed(1)) : null;
+        console.log(`[fetchMotionData] Processed Motion: PeakG=${avgAccelG}, AvgMPH=${avgAccelMph}`);
         setAvgAcceleration(avgAccelMph);
       } else {
-        // No data available
+        console.log(`[fetchMotionData] No Motion data found for session ${currentSessionId}, setting avg to null.`);
         setAvgAcceleration(null);
       }
     } catch (err) {
@@ -335,6 +355,86 @@ export default function Dashboard() {
       setCurrentAcceleration(null);
     }
   }, [isSessionActive, activeSession, targetDeviceId, throttledFetchHrm, throttledFetchTemp, throttledFetchMotion]);
+
+  // --- useEffect for event listeners and data subscription ---
+  useEffect(() => {
+    if (!isSessionActive || !activeSession?.id || !targetDeviceId) {
+      console.log("[Dashboard Event Listener useEffect] Conditions not met, returning.");
+      return; // Exit if no active session or target device
+    }
+
+    const currentSessionId = activeSession.id; // Capture session ID for stability in listeners
+
+    console.log(`[Dashboard Event Listener useEffect] Setting up listeners for session ${currentSessionId}`);
+
+    // --- Use specific event listeners ---
+    const handleHrmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === currentSessionId) {
+        console.log(`[Dashboard HRM Listener] Triggering throttledFetchHrm for session ${currentSessionId}`);
+        throttledFetchHrm();
+      }
+    };
+
+    const handleHtmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === currentSessionId) {
+        console.log(`[Dashboard HTM Listener] Triggering throttledFetchTemp for session ${currentSessionId}`);
+        throttledFetchTemp();
+      }
+    };
+
+    const handleMotionChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === currentSessionId) {
+        console.log(`[Dashboard Motion Listener] Triggering throttledFetchMotion for session ${currentSessionId}`);
+        throttledFetchMotion();
+      }
+    };
+
+    // Register specific listeners
+    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+    dataChangeEmitter.on(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+
+    // Optional: Keep polling as a fallback, but ensure it calls the stable fetchAllSensorData
+    const pollingInterval = setInterval(fetchAllSensorData, 5000);
+    console.log(`[Dashboard Event Listener useEffect] Started polling interval.`);
+
+    // Cleanup function
+    return () => {
+      console.log(`[Dashboard Event Listener useEffect] Cleaning up listeners for session ${currentSessionId}`);
+      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+      dataChangeEmitter.off(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+
+      clearInterval(pollingInterval);
+      console.log(`[Dashboard Event Listener useEffect] Cleared polling interval.`);
+
+      // Cancel any pending throttled fetches
+      throttledFetchHrm.cancel();
+      throttledFetchTemp.cancel();
+      throttledFetchMotion.cancel();
+      console.log(`[Dashboard Event Listener useEffect] Cancelled pending throttled fetches.`);
+    };
+  }, [isSessionActive, activeSession, targetDeviceId, fetchAllSensorData, throttledFetchHrm, throttledFetchTemp, throttledFetchMotion]);
+
+  // --- useEffect for INITIAL load / session change ---
+  useEffect(() => {
+    // Fetch data immediately when the active session starts or target device is identified
+    // but only if we ARE active
+    if (isSessionActive && activeSession && targetDeviceId) {
+      console.log(`[Dashboard Initial Fetch useEffect] Active session detected (${activeSession.id}), triggering immediate fetch.`);
+      // Call non-throttled versions for immediate update
+      Promise.allSettled([fetchHrmData(), fetchTempData(), fetchMotionData()]);
+    } else {
+      console.log("[Dashboard Initial Fetch useEffect] No active session or target device, clearing data.");
+      // Clear data if session ends or no target device
+      setAvgHeartRate(null);
+      setAvgTemperature(null);
+      setAvgAcceleration(null);
+      setCurrentHeartRate(null);
+      setCurrentTemperature(null);
+      setCurrentAcceleration(null);
+    }
+  }, [isSessionActive, activeSession, targetDeviceId, fetchHrmData, fetchTempData, fetchMotionData]);
 
   // Use a single effect for initial loading with stable dependencies
   useEffect(() => {
@@ -391,78 +491,6 @@ export default function Dashboard() {
     };
   // Remove unnecessary dependencies to prevent rerenders
   }, [serviceReady, sessionLoading, bluetoothService, deviceService]);
-
-  // Listen for data changes when there's an active session
-  useEffect(() => {
-    if (!isSessionActive || !activeSession || !targetDeviceId) {
-      return;
-    }
-    
-    // Fetch initial data
-    fetchAllSensorData();
-    
-    // Set up listeners for data changes
-    const handleHrmChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
-        throttledFetchHrm();
-      }
-    };
-    
-    const handleHtmChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
-        throttledFetchTemp();
-      }
-    };
-    
-    const handleMotionChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
-        throttledFetchMotion();
-      }
-    };
-    
-    // Register all listeners
-    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
-    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
-    dataChangeEmitter.on(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
-    
-    // Generic data change event as a fallback
-    const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
-        // Determine which data to update based on type
-        if (eventData.type.includes('hrm') || eventData.type.includes('heart')) {
-          throttledFetchHrm();
-        } else if (eventData.type.includes('htm') || eventData.type.includes('temp')) {
-          throttledFetchTemp();
-        } else if (eventData.type.includes('motion') || eventData.type.includes('accel')) {
-          throttledFetchMotion();
-        } else {
-          // If type is unknown, refresh all data
-          fetchAllSensorData();
-        }
-      }
-    };
-    
-    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
-    
-    // Also set a regular polling interval as a fallback
-    const pollingInterval = setInterval(fetchAllSensorData, 5000);
-    
-    return () => {
-      // Clean up listeners
-      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
-      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
-      dataChangeEmitter.off(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
-      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
-      
-      // Clear interval
-      clearInterval(pollingInterval);
-      
-      // Cancel any pending throttled fetches
-      throttledFetchHrm.cancel();
-      throttledFetchTemp.cancel();
-      throttledFetchMotion.cancel();
-    };
-  }, [isSessionActive, activeSession, targetDeviceId, fetchAllSensorData, throttledFetchHrm, throttledFetchTemp, throttledFetchMotion]);
 
   // Create a function to load data with access to the latest state
   const loadData = useCallback(async () => {
