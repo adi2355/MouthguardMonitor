@@ -321,6 +321,7 @@ export default function Dashboard() {
   // Fetch all sensor data
   const fetchAllSensorData = useCallback(() => {
     if (isSessionActive && activeSession && targetDeviceId) {
+      console.log("[Dashboard] fetchAllSensorData triggered (throttled)");
       throttledFetchHrm();
       throttledFetchTemp();
       throttledFetchMotion();
@@ -582,6 +583,12 @@ export default function Dashboard() {
   const handleStartSession = async () => {
     if (isTogglingSession) return; // Prevent double taps
     
+    // Ensure target device ID is available before starting
+    if (!targetDeviceId) {
+      Alert.alert('Device Not Ready', 'Waiting to identify the primary device. Please wait a moment.');
+      return;
+    }
+    
     if (connectedDevices.length === 0) {
       Alert.alert(
         'No Devices Connected',
@@ -594,7 +601,8 @@ export default function Dashboard() {
     setIsTogglingSession(true);
     try {
       const sessionName = `Session ${new Date().toLocaleString()}`;
-      await startNewSession(sessionName);
+      // Start session via context - this updates activeSession state
+      const newSession = await startNewSession(sessionName);
       
       // Reset session stats
       setMaxHeartRateSession(null);
@@ -604,6 +612,18 @@ export default function Dashboard() {
       setAvgHeartRate(null);
       setAvgTemperature(null);
       setAvgAcceleration(null);
+      
+      // Added: Immediate, Non-Throttled Fetch after session start
+      console.log(`[Dashboard] Session ${newSession.id} started. Triggering IMMEDIATE data fetch.`);
+      // Call the original, non-throttled fetch functions directly
+      // Use Promise.allSettled to fetch concurrently and ignore individual errors
+      await Promise.allSettled([
+        fetchHrmData(),
+        fetchTempData(),
+        fetchMotionData()
+      ]);
+      console.log(`[Dashboard] Initial data fetch attempt complete after session start.`);
+      // The UI will update once these fetches complete and set state
       
       console.log(`[Dashboard] Session started: ${sessionName}`);
     } catch (error) {
