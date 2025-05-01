@@ -1,7 +1,7 @@
 /**
  * Constants File
  * 
- * Original Author: Adi K | https://github.com/adi235
+ * Original Author: Aditya Khetarpal | https://github.com/adi235
  * Part of the SandCHealth Mouthguard Monitoring Application
  * Attribution to the original author must be maintained in all derivatives.
  * 
@@ -17,7 +17,7 @@ export const MOUTHGUARD_DB_NAME: string = "mouthguardMonitor.db";
 export const APP_METADATA = {
   name: "Mouthguard Monitor",
   version: "1.0.0",
-  author: "Adi K",
+  author: "Aditya Khetarpal",
   authorUrl: "https://github.com/adi235",
   authorUuid: "ADI-K-1ae4b98d-8a76-4f4c-9e2f-f90e2c5c1a71"
 };

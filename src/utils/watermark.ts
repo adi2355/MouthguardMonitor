@@ -1,7 +1,7 @@
 /**
  * Watermark Utility
  * 
- * Original Author: Adi K | https://github.com/adi235
+ * Original Author: Aditya Khetarpal | https://github.com/adi235
  * Part of the SandCHealth Mouthguard Monitoring Application
  * Attribution to the original author must be maintained in all derivatives.
  * 

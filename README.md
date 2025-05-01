@@ -2,7 +2,7 @@
 
 Original author: **Aditya Khetarpal** | [GitHub](https://github.com/adi235)
 
-![Built by Adi K](https://img.shields.io/badge/built%20by-Adi%20K-blue)
+![Built by Aditya Khetarpal](https://img.shields.io/badge/built%20by-Aditya%20Khetarpal-blue)
 
 This app allows monitoring of mouthguard sensors for athlete tracking and impact detection.
 
@@ -92,7 +92,7 @@ node reset-app.js
 
 ## License
 
-Copyright (c) 2024 Adi K | [GitHub](https://github.com/adi235)
+Copyright (c) 2024 Aditya Khetarpal | [GitHub](https://github.com/adi235)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -103,7 +103,7 @@ furnished to do so, subject to the following conditions:
 
 1. **Attribution requirement**: All copies or substantial portions of the Software, 
    in source or binary form, must retain the above copyright notice, this list of 
-   conditions, and attribution to the original author (Adi K).
+   conditions, and attribution to the original author (Aditya Khetarpal).
 
 2. The above copyright notice and this permission notice shall be included in all
    copies or substantial portions of the Software.

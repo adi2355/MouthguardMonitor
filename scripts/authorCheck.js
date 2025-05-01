@@ -1,6 +1,6 @@
 /**
  * Author Trace Script
- * Original project by: Adi K | https://github.com/adi235
+ * Original project by: Aditya Khetarpal | https://github.com/adi235
  * 
  * This script runs after installation to verify attribution is preserved.
  * 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 // Author fingerprint to verify
 const AUTHOR_FINGERPRINT = 'ADI-K-1ae4b98d-8a76-4f4c-9e2f-f90e2c5c1a71';
-const AUTHOR_NAME = 'Adi K';
+const AUTHOR_NAME = 'Aditya Khetarpal';
 const AUTHOR_GITHUB = 'https://github.com/adi235';
 
 function verifyAttribution() {

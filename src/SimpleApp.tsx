@@ -1,7 +1,7 @@
 /**
  * Mouthguard Monitoring App - SimpleApp Component
  * 
- * Original Author: Adi K | https://github.com/adi235
+ * Original Author: Aditya Khetarpal | https://github.com/adi235
  * This file and its contents are part of the SandCHealth project.
  * Attribution to the original author must be maintained in all derivatives.
  * 

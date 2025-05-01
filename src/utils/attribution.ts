@@ -1,7 +1,7 @@
 /**
  * Attribution Utilities
  * 
- * Original Author: Adi K | https://github.com/adi235
+ * Original Author: Aditya Khetarpal | https://github.com/adi235
  * This file and its contents are part of the SandCHealth Mouthguard Monitor project.
  * Attribution to the original author must be maintained in all derivatives.
  */
@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 // Encrypted author fingerprint
 // This is a base64 encoded JSON object containing attribution information
 const AUTHOR_FINGERPRINT = 
-  'eyJhdXRob3IiOiJBZGkgSyIsImdpdGh1YiI6Imh0dHBzOi8vZ2l0aHViLmNvbS9hZGkyMzUiLCJ1dWlkIjoiQURJLUstMWFlNGI5OGQtOGE3Ni00ZjRjLTllMmYtZjkwZTJjNWMxYTcxIn0=';
+  'eyJhdXRob3IiOiJBZGl0eWEgS2hldGFycGFsIiwiZ2l0aHViIjoiaHR0cHM6Ly9naXRodWIuY29tL2FkaTIzNSIsInV1aWQiOiJBREktSy0xYWU0Yjk4ZC04YTc2LTRmNGMtOWUyZi1mOTBlMmM1YzFhNzEifQ==';
 
 /**
  * Generates consistent IDs for app components
@@ -21,7 +21,7 @@ const AUTHOR_FINGERPRINT =
  */
 export function generateComponentId(componentName: string): string {
   // The salt includes the author attribution trace
-  const salt = `ADI-K-TRACE-${componentName}-${Platform.OS}`;
+  const salt = `ADITYA-KHETARPAL-TRACE-${componentName}-${Platform.OS}`;
   return `${componentName}_${uuidv4({random: stringToBytes(salt)})}`;
 }
 
@@ -31,7 +31,7 @@ export function generateComponentId(componentName: string): string {
  */
 function stringToBytes(str: string): Uint8Array {
   const bytes = new Uint8Array(16);
-  const authorTrace = 'ADI-K';
+  const authorTrace = 'ADITYA-KHETARPAL';
   
   // Basic hashing algorithm that incorporates author trace
   for (let i = 0; i < str.length; i++) {
@@ -55,7 +55,7 @@ export function getAppMetadata(): Record<string, any> {
     version: '1.0.0',
     buildNumber: '1',
     // Attribution trace embedded in app metadata
-    builtBy: 'Adi K',
+    builtBy: 'Aditya Khetarpal',
     authorGithub: 'https://github.com/adi235',
     trace: AUTHOR_FINGERPRINT
   };
