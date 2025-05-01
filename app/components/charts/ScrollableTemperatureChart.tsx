@@ -15,10 +15,7 @@ import { ChartData } from '../../../src/types';
 
 // Constants with more descriptive time range labels
 const TIME_RANGES = [
-  { id: '1h', label: 'Recent' },
   { id: '3h', label: 'Short' },
-  { id: '12h', label: 'Medium' },
-  { id: '1d', label: 'Long' },
   { id: '1w', label: 'All' }
 ];
 const chartWidth = 1500; // Make chart scrollable with larger width
@@ -50,8 +47,8 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
   rangeData,
   unit = '°F' // Default to Fahrenheit
 }) => {
-  // State for selected time range
-  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('12h');
+  // State for selected time range - default to Short (3h) instead of 12h
+  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('3h');
   // Reference to the scroll view to scroll to end (newest data) on mount
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -90,12 +87,12 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
                      data.datasets[0].data &&
                      data.datasets[0].data.length > 0;
   
-  // Calculate min/max temperature values from dataset if not provided
+  // Calculate min/max temperature values from dataset if not provided - set reasonable min/max bounds
   const derivedRangeData = rangeData || (hasValidData ? {
-    min: Math.min(...data.datasets[0].data.filter(val => !isNaN(val))),
-    max: Math.max(...data.datasets[0].data.filter(val => !isNaN(val))),
+    min: Math.max(97, Math.min(...data.datasets[0].data.filter(val => !isNaN(val)))),
+    max: Math.min(103, Math.max(...data.datasets[0].data.filter(val => !isNaN(val)))),
     timeRange: "Today"
-  } : { min: 0, max: 0, timeRange: "No data available" });
+  } : { min: 97, max: 103, timeRange: "No data available" });
   
   // Calculate current value if not provided
   const derivedCurrentValue = currentValue || (hasValidData ? 
@@ -142,23 +139,13 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
     let percentToShow: number;
     
     switch(selectedTimeRange) {
-      case '1h': 
-        percentToShow = 0.1; // Show 10% of the data for 1h
-        break;
       case '3h': 
         percentToShow = 0.25; // Show 25% of the data for 3h
         break; 
-      case '12h': 
-        percentToShow = 0.5; // Show 50% of the data for 12h
-        break;
-      case '1d': 
-        percentToShow = 0.75; // Show 75% of the data for 1d
-        break;
-      case '1w': 
+      case '1w':
+      default: 
         percentToShow = 1; // Show all data for 1w
         break;
-      default: 
-        percentToShow = 0.5; // Default to 50%
     }
     
     // Calculate how many data points to include
@@ -238,10 +225,7 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
     
     // Get currently filtered data (before reversal to ensure we're using the right data)
     const totalPoints = data.datasets[0].data.length;
-    const percentToShow = selectedTimeRange === '1h' ? 0.1 : 
-                          selectedTimeRange === '3h' ? 0.25 :
-                          selectedTimeRange === '12h' ? 0.5 :
-                          selectedTimeRange === '1d' ? 0.75 : 1;
+    const percentToShow = selectedTimeRange === '3h' ? 0.25 : 1;
     
     const pointsToInclude = Math.max(Math.round(totalPoints * percentToShow), 2);
     const startIndex = Math.max(0, totalPoints - pointsToInclude);
@@ -324,7 +308,7 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
             <LineChart
               data={getFilteredData()}
               width={chartWidth}
-              height={height - 100} // Reduce height to account for static range display
+              height={height - 120} // Further reduce height to account for static range display
               bezier={true}
               chartConfig={{
                 backgroundColor: 'transparent',
@@ -337,7 +321,7 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
                   borderRadius: 0,
                 },
                 propsForDots: {
-                  r: "3.5",
+                  r: "3",
                   strokeWidth: "0",
                   stroke: "transparent",
                   fill: "rgba(255, 149, 0, 1)", // Orange for temperature dots
@@ -347,17 +331,17 @@ const ScrollableTemperatureChart: React.FC<ScrollableTemperatureChartProps> = Re
                   strokeWidth: 0.5,
                   stroke: 'rgba(150, 150, 150, 0.15)',
                 },
-                strokeWidth: 2.5, // Increase line thickness
+                strokeWidth: 2, // Thinner line
                 fillShadowGradient: 'rgba(255, 149, 0, 0.4)', // Semi-transparent gradient fill
                 fillShadowGradientOpacity: 0.3, // Reduced opacity for the fill
               }}
               style={{
-                marginVertical: 8,
+                marginVertical: 6, // Less vertical margin
                 borderRadius: 0,
               }}
             />
           ) : (
-            <View style={[styles.emptyChart, { width: chartWidth, height: height - 100 }]}>
+            <View style={[styles.emptyChart, { width: chartWidth, height: height - 120 }]}>
               <Text style={styles.emptyChartText}>No temperature data available</Text>
             </View>
           )}
@@ -414,7 +398,7 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     position: 'relative',
-    height: 240, // Fixed height for the chart area
+    height: 220, // Reduced height for chart area
   },
   staticRangeContainer: {
     position: 'absolute',
@@ -422,7 +406,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
     zIndex: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -437,11 +422,11 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 13,
     fontWeight: '500',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   rangeValue: {
     color: '#FFFFFF',
-    fontSize: 32,
+    fontSize: 28, // Smaller font size
     fontWeight: '700',
     marginBottom: 2,
   },
@@ -452,8 +437,8 @@ const styles = StyleSheet.create({
   },
   dateRange: {
     color: '#8E8E93',
-    fontSize: 16,
-    marginBottom: 16,
+    fontSize: 14, // Smaller font size
+    marginBottom: 8, // Reduced margin
   },
   averageContainer: {
     alignItems: 'flex-end',
@@ -471,7 +456,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollView: {
-    marginTop: 80, // Give space for the static range display
+    marginTop: 72, // Reduced space for the static range display
   },
   scrollViewContent: {
     paddingHorizontal: 20,
@@ -483,18 +468,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.warning, // Default to warning color
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 12, // Reduced padding
   },
   currentValueLabel: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 13, // Smaller font
     fontWeight: '500',
-    opacity: 0.9, // Reduce visual intensity
+    opacity: 0.9,
   },
   currentValue: {
-    fontSize: 17,
+    fontSize: 16, // Smaller font
     fontWeight: '600',
-    opacity: 0.9, // Reduce visual intensity
+    opacity: 0.9,
   },
   emptyChart: {
     justifyContent: 'center',
