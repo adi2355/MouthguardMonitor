@@ -32,7 +32,7 @@ import {
 // Import our new visualization components
 import HeartRateTrendChart from '../components/charts/HeartRateTrendChart';
 import ScrollableHeartRateChart from '../components/charts/ScrollableHeartRateChart';
-import TemperatureStabilityGraph from '../components/charts/TemperatureStabilityGraph';
+import ScrollableTemperatureChart from '../components/charts/ScrollableTemperatureChart';
 import BiteForceDynamicsChart from '../components/charts/BiteForceDynamicsChart';
 import MotionOverviewGraph from '../components/charts/MotionOverviewGraph';
 import ConcussionRiskGauge from '../components/charts/ConcussionRiskGauge';
@@ -954,19 +954,23 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Temperature</Text>
               </View>
               
-              <View style={styles.chartContainer}>
+              <View style={styles.scrollableChartContainer}>
                 {loading ? (
                   <ActivityIndicator color={COLORS.primary} />
                 ) : error ? (
                   <Text style={styles.errorText}>{error}</Text>
                 ) : tempChartData ? (
-                  <TemperatureStabilityGraph
+                  <ScrollableTemperatureChart
                     data={tempChartData}
-                    currentTemp={sessionStats?.currentTemp}
-                    avgTemp={sessionStats?.avgTemp}
-                    maxTemp={sessionStats?.maxTemp}
-                    width={Dimensions.get('window').width - 40}
-                    height={180}
+                    currentValue={sessionStats?.currentTemp ?? undefined}
+                    timestamp={(tempChartData as any)?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                    height={280}
+                    rangeData={{
+                      min: sessionStats?.avgTemp ?? 0,
+                      max: sessionStats?.maxTemp ?? 0,
+                      timeRange: (tempChartData as any)?.timeRangeLabel || "Today"
+                    }}
+                    unit="°F"
                   />
                 ) : (
                   <Text style={styles.emptyChartText}>No temperature data available</Text>
