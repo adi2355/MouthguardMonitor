@@ -118,6 +118,76 @@ export default function LiveMonitorScreen() {
     }
   }, [sensorDataRepository, activeSession]);
   
+  // Fetch initial heart rate data from DB
+  const fetchHeartRateData = useCallback(async (deviceId: string) => {
+    if (!sensorDataRepository || !activeSession?.id) return;
+    
+    try {
+      console.log(`[LiveMonitor] Fetching initial heart rate data for device ${deviceId}`);
+      const options = { sessionId: activeSession.id, limit: MAX_DATA_POINTS };
+      const heartRateData = await sensorDataRepository.getSensorData(deviceId, 'hrm_packets', options);
+      
+      if (heartRateData && heartRateData.length > 0) {
+        console.log(`[LiveMonitor] Retrieved ${heartRateData.length} heart rate data points`);
+        
+        // Convert to LiveDataPoint format
+        const formattedData: LiveDataPoint[] = heartRateData.map(data => ({
+          timestamp: data.appTimestamp || data.timestamp,
+          deviceId: deviceId,
+          type: 'heartRate',
+          values: [data.heart_rate || 0]
+        }));
+        
+        // Update liveData state with heart rate data
+        setLiveData(prev => {
+          return {
+            ...prev,
+            [deviceId]: [...(prev[deviceId] || []), ...formattedData].slice(-MAX_DATA_POINTS)
+          };
+        });
+      } else {
+        console.log(`[LiveMonitor] No heart rate data available yet for device ${deviceId}`);
+      }
+    } catch (error) {
+      console.error('[LiveMonitor] Error fetching heart rate data:', error);
+    }
+  }, [sensorDataRepository, activeSession]);
+  
+  // Fetch initial temperature data from DB
+  const fetchTemperatureData = useCallback(async (deviceId: string) => {
+    if (!sensorDataRepository || !activeSession?.id) return;
+    
+    try {
+      console.log(`[LiveMonitor] Fetching initial temperature data for device ${deviceId}`);
+      const options = { sessionId: activeSession.id, limit: MAX_DATA_POINTS };
+      const temperatureData = await sensorDataRepository.getSensorData(deviceId, 'htm_packets', options);
+      
+      if (temperatureData && temperatureData.length > 0) {
+        console.log(`[LiveMonitor] Retrieved ${temperatureData.length} temperature data points`);
+        
+        // Convert to LiveDataPoint format
+        const formattedData: LiveDataPoint[] = temperatureData.map(data => ({
+          timestamp: data.appTimestamp || data.timestamp,
+          deviceId: deviceId,
+          type: 'temperature',
+          values: [data.temperature || 0]
+        }));
+        
+        // Update liveData state with temperature data
+        setLiveData(prev => {
+          return {
+            ...prev,
+            [deviceId]: [...(prev[deviceId] || []), ...formattedData].slice(-MAX_DATA_POINTS)
+          };
+        });
+      } else {
+        console.log(`[LiveMonitor] No temperature data available yet for device ${deviceId}`);
+      }
+    } catch (error) {
+      console.error('[LiveMonitor] Error fetching temperature data:', error);
+    }
+  }, [sensorDataRepository, activeSession]);
+  
   // Initialize device status and data
   useEffect(() => {
     console.log('[LiveMonitorScreen] useEffect running. Subscribing...');
@@ -136,8 +206,10 @@ export default function LiveMonitorScreen() {
       console.log('[LiveMonitorScreen] Device Status Update Received:', deviceStatus);
       
       if (deviceStatus.connected) {
-        // Fetch initial force data for newly connected device
+        // Fetch initial data for newly connected device
         fetchForceData(deviceStatus.id);
+        fetchHeartRateData(deviceStatus.id);
+        fetchTemperatureData(deviceStatus.id);
       }
       
       setConnectedDevices(prevDevices => {
@@ -167,6 +239,11 @@ export default function LiveMonitorScreen() {
     const unsubscribeSensorData = bluetoothService.subscribeSensorData((deviceId: string, dataPoint: LiveDataPoint) => {
       console.log(`[LiveMonitor] Received sensor data: ${dataPoint.type} from ${deviceId}`);
       
+      // Add debug logs for received data values
+      if (dataPoint.values && dataPoint.values.length > 0) {
+        console.log(`[LiveMonitor] Data values: ${JSON.stringify(dataPoint.values)}`);
+      }
+      
       // Use throttled function to update state
       throttledSetLiveData((prevData: Record<string, LiveDataPoint[]>) => {
         // Initialize array for this device if it doesn't exist
@@ -195,8 +272,26 @@ export default function LiveMonitorScreen() {
       }
     };
     
-    // Register for force data change events
+    // Add heart rate data event handler to listen for HRM_DATA_CHANGED events
+    const handleHeartRateDataChange = (eventData: { deviceId: string, sessionId?: string }) => {
+      if (isSessionActive && eventData.sessionId === activeSession?.id) {
+        console.log(`[LiveMonitor] Heart rate data changed for device ${eventData.deviceId}`);
+        fetchHeartRateData(eventData.deviceId);
+      }
+    };
+    
+    // Add temperature data event handler to listen for HTM_DATA_CHANGED events
+    const handleTemperatureDataChange = (eventData: { deviceId: string, sessionId?: string }) => {
+      if (isSessionActive && eventData.sessionId === activeSession?.id) {
+        console.log(`[LiveMonitor] Temperature data changed for device ${eventData.deviceId}`);
+        fetchTemperatureData(eventData.deviceId);
+      }
+    };
+    
+    // Register for data change events
     dataChangeEmitter.on(dbEvents.FSR_DATA_CHANGED, handleForceDataChange);
+    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHeartRateDataChange);
+    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleTemperatureDataChange);
     
     // --- FIX: Ensure loading becomes false even if no initial status update ---
     // Use a small timeout to allow initial updates to potentially arrive first,
@@ -220,6 +315,8 @@ export default function LiveMonitorScreen() {
     // Initial data load for connected devices
     bluetoothService.getConnectedDeviceIds().forEach(deviceId => {
       fetchForceData(deviceId);
+      fetchHeartRateData(deviceId);
+      fetchTemperatureData(deviceId);
     });
     
     return () => {
@@ -227,13 +324,15 @@ export default function LiveMonitorScreen() {
       clearTimeout(loadingTimeout); // Clear the timeout on cleanup
       subscription.remove();
       dataChangeEmitter.off(dbEvents.FSR_DATA_CHANGED, handleForceDataChange);
+      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHeartRateDataChange);
+      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleTemperatureDataChange);
       if (sensorDataSubscriptionRef.current) {
         // Call the appropriate cleanup function
         sensorDataSubscriptionRef.current();
       }
       throttledSetLiveData.cancel(); // Cancel any pending throttled updates on unmount
     };
-  }, [bluetoothService, throttledSetLiveData, fetchForceData, isSessionActive, activeSession]);
+  }, [bluetoothService, throttledSetLiveData, fetchForceData, fetchHeartRateData, fetchTemperatureData, isSessionActive, activeSession]);
   
   // Handle refresh (manual pull-to-refresh)
   const handleRefresh = useCallback(async () => {
@@ -248,13 +347,15 @@ export default function LiveMonitorScreen() {
       setConnectedDevices(deviceStatuses.filter(d => d.connected));
     }
     
-    // Reload force data for each connected device
+    // Reload data for each connected device
     connectedDevices.forEach(device => {
       fetchForceData(device.id);
+      fetchHeartRateData(device.id);
+      fetchTemperatureData(device.id);
     });
     
     setRefreshing(false);
-  }, [serviceReady, fetchForceData, bluetoothService, connectedDevices]);
+  }, [serviceReady, fetchForceData, fetchHeartRateData, fetchTemperatureData, bluetoothService, connectedDevices]);
   
   // Handle session start/stop
   const toggleSession = async () => {
@@ -301,17 +402,17 @@ export default function LiveMonitorScreen() {
         labels: deviceData.map((_, i) => ''),
         datasets: [
           {
-            data: deviceData.map(d => d.values[0]), // X
+            data: deviceData.map(d => d.values[0] || 0), // X
             color: () => 'rgba(255, 0, 0, 0.8)',
             strokeWidth: 2
           },
           {
-            data: deviceData.map(d => d.values[1]), // Y
+            data: deviceData.map(d => d.values[1] || 0), // Y
             color: () => 'rgba(0, 255, 0, 0.8)',
             strokeWidth: 2
           },
           {
-            data: deviceData.map(d => d.values[2]), // Z
+            data: deviceData.map(d => d.values[2] || 0), // Z
             color: () => 'rgba(0, 0, 255, 0.8)',
             strokeWidth: 2
           }
@@ -324,13 +425,13 @@ export default function LiveMonitorScreen() {
           <View style={styles.currentValues}>
             <Text style={styles.currentValueLabel}>Current: </Text>
             <Text style={[styles.currentValue, {color: 'rgba(255, 0, 0, 0.8)'}]}>
-              X: {latestData.values[0].toFixed(2)}
+              X: {(latestData.values[0] || 0).toFixed(2)}
             </Text>
             <Text style={[styles.currentValue, {color: 'rgba(0, 255, 0, 0.8)'}]}>
-              Y: {latestData.values[1].toFixed(2)}
+              Y: {(latestData.values[1] || 0).toFixed(2)}
             </Text>
             <Text style={[styles.currentValue, {color: 'rgba(0, 0, 255, 0.8)'}]}>
-              Z: {latestData.values[2].toFixed(2)}
+              Z: {(latestData.values[2] || 0).toFixed(2)}
             </Text>
           </View>
           
@@ -364,7 +465,7 @@ export default function LiveMonitorScreen() {
         labels: deviceData.map((_, i) => ''),
         datasets: [
           {
-            data: deviceData.map(d => d.values[0]),
+            data: deviceData.map(d => d.values[0] || 0),
             color: () => 'rgba(255, 193, 7, 0.8)',
             strokeWidth: 2
           }
@@ -376,7 +477,7 @@ export default function LiveMonitorScreen() {
           <View style={styles.currentValues}>
             <Text style={styles.currentValueLabel}>Current Temperature: </Text>
             <Text style={[styles.currentValue, {color: 'rgba(255, 193, 7, 0.8)'}]}>
-              {latestData.values[0].toFixed(1)}°C
+              {(latestData.values[0] || 0).toFixed(1)}°C
             </Text>
           </View>
           
@@ -404,18 +505,64 @@ export default function LiveMonitorScreen() {
       );
     }
     
+    // For heart rate data
+    if (latestData.type === 'heartRate') {
+      const chartData = {
+        labels: deviceData.map((_, i) => ''),
+        datasets: [
+          {
+            data: deviceData.map(d => d.values[0] || 0),
+            color: () => 'rgba(244, 67, 54, 0.8)', // Red for heart rate
+            strokeWidth: 2
+          }
+        ]
+      };
+      
+      return (
+        <View>
+          <View style={styles.currentValues}>
+            <Text style={styles.currentValueLabel}>Current Heart Rate: </Text>
+            <Text style={[styles.currentValue, {color: 'rgba(244, 67, 54, 0.8)'}]}>
+              {(latestData.values[0] || 0).toFixed(0)} bpm
+            </Text>
+          </View>
+          
+          <LineChart
+            data={chartData}
+            width={320}
+            height={180}
+            chartConfig={{
+              backgroundColor: THEME.cardBackground,
+              backgroundGradientFrom: THEME.cardBackground,
+              backgroundGradientTo: THEME.cardBackground,
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(244, 67, 54, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(51, 51, 51, ${opacity})`,
+              propsForDots: {
+                r: '3',
+                strokeWidth: '1',
+                stroke: 'rgba(244, 67, 54, 1)',
+              }
+            }}
+            bezier
+            style={styles.chart}
+          />
+        </View>
+      );
+    }
+    
     // For force data (FSR) - Implement the visualization
     if (latestData.type === 'force') {
       const chartData = {
         labels: deviceData.map((_, i) => ''),
         datasets: [
           {
-            data: deviceData.map(d => d.values[0]), // Left bite
+            data: deviceData.map(d => d.values[0] || 0), // Left bite
             color: () => 'rgba(0, 122, 255, 0.8)', // Blue for left bite
             strokeWidth: 2
           },
           {
-            data: deviceData.map(d => d.values[1]), // Right bite
+            data: deviceData.map(d => d.values[1] || 0), // Right bite
             color: () => 'rgba(255, 45, 85, 0.8)', // Pink for right bite
             strokeWidth: 2
           }
@@ -428,10 +575,10 @@ export default function LiveMonitorScreen() {
           <View style={styles.currentValues}>
             <Text style={styles.currentValueLabel}>Current Force: </Text>
             <Text style={[styles.currentValue, {color: 'rgba(0, 122, 255, 0.8)'}]}>
-              Left: {latestData.values[0].toFixed(1)}
+              Left: {(latestData.values[0] || 0).toFixed(1)}
             </Text>
             <Text style={[styles.currentValue, {color: 'rgba(255, 45, 85, 0.8)'}]}>
-              Right: {latestData.values[1].toFixed(1)}
+              Right: {(latestData.values[1] || 0).toFixed(1)}
             </Text>
           </View>
           
