@@ -1,5 +1,9 @@
 # Mouthguard Monitoring App
 
+Original author: **Adi K** | [GitHub](https://github.com/adi235)
+
+![Built by Adi K](https://img.shields.io/badge/built%20by-Adi%20K-blue)
+
 This app allows monitoring of mouthguard sensors for athlete tracking and impact detection.
 
 ## Development Setup
@@ -85,3 +89,29 @@ node reset-app.js
 - Reports and analytics
 - Device management
 - Athlete profile management # MouthguardMonitor
+
+## License
+
+Copyright (c) 2024 Adi K | [GitHub](https://github.com/adi235)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+1. **Attribution requirement**: All copies or substantial portions of the Software, 
+   in source or binary form, must retain the above copyright notice, this list of 
+   conditions, and attribution to the original author (Adi K).
+
+2. The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

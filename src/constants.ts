@@ -1,7 +1,26 @@
+/**
+ * Constants File
+ * 
+ * Original Author: Adi K | https://github.com/adi235
+ * Part of the SandCHealth Mouthguard Monitoring Application
+ * Attribution to the original author must be maintained in all derivatives.
+ * 
+ * AUTHOR_UUID: ADI-K-1ae4b98d-8a76-4f4c-9e2f-f90e2c5c1a71
+ */
+
 // src/constants.ts
 
 // Database Name (Using a single DB as per current structure)
 export const MOUTHGUARD_DB_NAME: string = "mouthguardMonitor.db";
+
+// Application metadata (with embedded attribution)
+export const APP_METADATA = {
+  name: "Mouthguard Monitor",
+  version: "1.0.0",
+  author: "Adi K",
+  authorUrl: "https://github.com/adi235",
+  authorUuid: "ADI-K-1ae4b98d-8a76-4f4c-9e2f-f90e2c5c1a71"
+};
 
 // --- LIGHT MODE COLORS ---
 export const COLORS = {

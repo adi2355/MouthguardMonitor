@@ -1,6 +1,19 @@
+/**
+ * Mouthguard Monitoring App - SimpleApp Component
+ * 
+ * Original Author: Adi K | https://github.com/adi235
+ * This file and its contents are part of the SandCHealth project.
+ * Attribution to the original author must be maintained in all derivatives.
+ * 
+ * AUTHOR_UUID: ADI-K-1ae4b98d-8a76-4f4c-9e2f-f90e2c5c1a71
+ */
+
 // Simple app to test basic rendering
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+
+// Hidden author trace
+const __AUTHOR_TRACE__ = "ADI-K-4F63C924-STATIC";
 
 export default function SimpleApp() {
   useEffect(() => {
