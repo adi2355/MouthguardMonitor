@@ -9,19 +9,21 @@ interface MotionOverviewGraphProps {
   peakAccel?: number | null;
   height?: number;
   width?: number;
+  noDataMessage?: string;
 }
 
-const MotionOverviewGraph: React.FC<MotionOverviewGraphProps> = ({
+const MotionOverviewGraph: React.FC<MotionOverviewGraphProps> = React.memo(({
   data,
-  peakAccel,
-  height = 180,
+  peakAccel = 0,
+  height = 240,
   width = Dimensions.get('window').width - 64,
+  noDataMessage = "No motion data available",
 }) => {
   // Check if we have valid data to display
   if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
     return (
       <View style={[styles.container, { height, width }]}>
-        <Text style={styles.emptyText}>No motion data available</Text>
+        <Text style={styles.emptyText}>{noDataMessage}</Text>
       </View>
     );
   }
@@ -91,7 +93,7 @@ const MotionOverviewGraph: React.FC<MotionOverviewGraphProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

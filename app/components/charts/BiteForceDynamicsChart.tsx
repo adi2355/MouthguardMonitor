@@ -13,16 +13,18 @@ interface BiteForceDynamicsChartProps {
   maxForce?: number | null;
   height?: number;
   width?: number;
+  noDataMessage?: string;
 }
 
-const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
+const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = React.memo(({
   data,
-  avgLeft,
-  avgRight,
-  avgTotal,
-  maxForce,
-  height = 180,
+  avgLeft = 0,
+  avgRight = 0,
+  avgTotal = 0,
+  maxForce = 0,
+  height = 300,
   width = Dimensions.get('window').width - 64,
+  noDataMessage = "No bite force data available"
 }) => {
   // Animation value for chart fade-in
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -63,7 +65,7 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
   if (!isValidData || !hasValidDataPoints) {
     return (
       <View style={[styles.container, { height, width }]}>
-        <Text style={styles.emptyText}>No bite force data available</Text>
+        <Text style={styles.emptyText}>{noDataMessage}</Text>
       </View>
     );
   }
@@ -169,7 +171,7 @@ const BiteForceDynamicsChart: React.FC<BiteForceDynamicsChartProps> = ({
       />
     </Animated.View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

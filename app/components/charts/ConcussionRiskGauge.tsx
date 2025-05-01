@@ -9,7 +9,7 @@ interface ConcussionRiskGaugeProps {
   width?: number;
 }
 
-const ConcussionRiskGauge: React.FC<ConcussionRiskGaugeProps> = ({
+const ConcussionRiskGauge: React.FC<ConcussionRiskGaugeProps> = React.memo(({
   risk = 'Low',
   width = Dimensions.get('window').width - 64,
 }) => {
@@ -115,7 +115,7 @@ const ConcussionRiskGauge: React.FC<ConcussionRiskGaugeProps> = ({
       </View>
     </Animated.View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

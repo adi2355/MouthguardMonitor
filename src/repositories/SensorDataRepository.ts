@@ -235,6 +235,7 @@ export class SensorDataRepository {
 
       // Return the inserted ID
       dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'motion', deviceId, sessionId });
+      dataChangeEmitter.emit(dbEvents.MOTION_DATA_CHANGED, { deviceId, sessionId });
       return result.lastInsertRowId;
     } catch (error) {
       console.error('Error inserting motion packet:', error);
@@ -266,6 +267,7 @@ export class SensorDataRepository {
       );
 
       dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'fsr', deviceId, sessionId });
+      dataChangeEmitter.emit(dbEvents.FSR_DATA_CHANGED, { deviceId, sessionId });
       return result.lastInsertRowId;
     } catch (error) {
       console.error('Error inserting FSR packet:', error);
@@ -295,6 +297,7 @@ export class SensorDataRepository {
       );
 
       dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'hrm', deviceId, sessionId });
+      dataChangeEmitter.emit(dbEvents.HRM_DATA_CHANGED, { deviceId, sessionId });
       return result.lastInsertRowId;
     } catch (error) {
       console.error('Error inserting HRM packet:', error);
@@ -325,6 +328,7 @@ export class SensorDataRepository {
       );
 
       dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { type: 'htm', deviceId, sessionId });
+      dataChangeEmitter.emit(dbEvents.HTM_DATA_CHANGED, { deviceId, sessionId });
       return result.lastInsertRowId;
     } catch (error) {
       console.error('Error inserting HTM packet:', error);
@@ -525,6 +529,18 @@ export class SensorDataRepository {
       magnitude: event.magnitude,
       athleteId: event.athleteId // Pass athleteId if available
     });
+    
+    // Emit regular data change event and specific impact event
+    dataChangeEmitter.emit(dbEvents.DATA_CHANGED, { 
+      type: 'impact', 
+      deviceId: event.deviceId, 
+      sessionId: event.session_id 
+    });
+    dataChangeEmitter.emit(dbEvents.IMPACT_EVENT_RECORDED, { 
+      deviceId: event.deviceId, 
+      sessionId: event.session_id 
+    });
+    
     return result.lastInsertRowId; // Return the ID
   }
 } 

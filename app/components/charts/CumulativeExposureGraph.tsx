@@ -8,18 +8,20 @@ interface CumulativeExposureGraphProps {
   data: ChartData | null;
   height?: number;
   width?: number;
+  noDataMessage?: string;
 }
 
-const CumulativeExposureGraph: React.FC<CumulativeExposureGraphProps> = ({
+const CumulativeExposureGraph: React.FC<CumulativeExposureGraphProps> = React.memo(({
   data,
-  height = 180,
+  height = 200,
   width = Dimensions.get('window').width - 64,
+  noDataMessage = "No impact data available"
 }) => {
   // Check if we have valid data to display
   if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
     return (
       <View style={[styles.container, { height, width }]}>
-        <Text style={styles.emptyText}>No impact exposure data available</Text>
+        <Text style={styles.emptyText}>{noDataMessage}</Text>
       </View>
     );
   }
@@ -91,7 +93,7 @@ const CumulativeExposureGraph: React.FC<CumulativeExposureGraphProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

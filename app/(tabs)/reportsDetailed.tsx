@@ -378,7 +378,256 @@ export default function ReportsDetailedScreen() {
     }
   };
 
-  const fetchData = useCallback(async () => {
+  // Create specific fetch functions for each data type to avoid loading all data at once
+  const fetchHrmData = useCallback(async (showLoadingState = false) => {
+    if (targetDeviceId === null || viewingSessionId === null) return;
+    
+    console.log(`[ReportsDetailed] Fetching HRM data for session: ${viewingSessionId}`);
+    
+    try {
+      const options = { sessionId: viewingSessionId, limit: 1000 };
+      const fetchedHrm = await sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', options);
+      
+      console.log(`[ReportsDetailed] --> Processing HRM (${fetchedHrm.length} packets)...`);
+      const hrmResults = processHrmForChart(fetchedHrm);
+      setHrmChartData(hrmResults.chartData);
+      
+      // Update relevant parts of session stats
+      setSessionStats(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          avgHr: hrmResults.avgHr ?? prev.avgHr,
+          minHr: hrmResults.minHr ?? prev.minHr,
+          maxHr: hrmResults.maxHr ?? prev.maxHr
+        };
+      });
+      
+    } catch (err) {
+      console.error('[ReportsDetailed] Error fetching HRM data:', err);
+    }
+  }, [targetDeviceId, viewingSessionId, sensorDataRepository]);
+  
+  const fetchHtmData = useCallback(async (showLoadingState = false) => {
+    if (targetDeviceId === null || viewingSessionId === null) return;
+    
+    console.log(`[ReportsDetailed] Fetching temperature data for session: ${viewingSessionId}`);
+    
+    try {
+      const options = { sessionId: viewingSessionId, limit: 1000 };
+      const fetchedHtm = await sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', options);
+      
+      console.log(`[ReportsDetailed] --> Processing temperature (${fetchedHtm.length} packets)...`);
+      const tempResults = processTempForChart(fetchedHtm);
+      setTempChartData(tempResults.chartData);
+      
+      // Update relevant parts of session stats
+      setSessionStats(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          avgTemp: tempResults.avgTemp ?? prev.avgTemp,
+          maxTemp: tempResults.maxTemp ?? prev.maxTemp,
+          currentTemp: tempResults.currentTemp ?? prev.currentTemp
+        };
+      });
+      
+    } catch (err) {
+      console.error('[ReportsDetailed] Error fetching temperature data:', err);
+    }
+  }, [targetDeviceId, viewingSessionId, sensorDataRepository]);
+  
+  const fetchFsrData = useCallback(async (showLoadingState = false) => {
+    if (targetDeviceId === null || viewingSessionId === null) return;
+    
+    console.log(`[ReportsDetailed] Fetching FSR data for session: ${viewingSessionId}`);
+    
+    try {
+      const options = { sessionId: viewingSessionId, limit: 1000 };
+      const fetchedFsr = await sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', options);
+      
+      console.log(`[ReportsDetailed] --> Processing FSR (${fetchedFsr.length} packets)...`);
+      const fsrResults = processFsrForChart(fetchedFsr);
+      setBiteForceChartData(fsrResults.chartData);
+      
+      // Update relevant parts of session stats
+      setSessionStats(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          avgBiteLeft: fsrResults.avgLeft ?? prev.avgBiteLeft,
+          avgBiteRight: fsrResults.avgRight ?? prev.avgBiteRight,
+          avgBiteTotal: fsrResults.avgTotal ?? prev.avgBiteTotal,
+          maxBiteForce: fsrResults.maxForce ?? prev.maxBiteForce
+        };
+      });
+      
+    } catch (err) {
+      console.error('[ReportsDetailed] Error fetching FSR data:', err);
+    }
+  }, [targetDeviceId, viewingSessionId, sensorDataRepository]);
+  
+  const fetchMotionData = useCallback(async (showLoadingState = false) => {
+    if (targetDeviceId === null || viewingSessionId === null) return;
+    
+    console.log(`[ReportsDetailed] Fetching motion data for session: ${viewingSessionId}`);
+    
+    try {
+      const options = { sessionId: viewingSessionId, limit: 1000 };
+      const fetchedMotion = await sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', options);
+      
+      console.log(`[ReportsDetailed] --> Processing motion (${fetchedMotion.length} packets)...`);
+      const motionResults = processMotionForChart(fetchedMotion);
+      setMotionChartData(motionResults.accelMagnitudeChart);
+      
+      // Update relevant parts of session stats
+      setSessionStats(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          peakAccel: motionResults.peakAccel ?? prev.peakAccel
+        };
+      });
+      
+    } catch (err) {
+      console.error('[ReportsDetailed] Error fetching motion data:', err);
+    }
+  }, [targetDeviceId, viewingSessionId, sensorDataRepository]);
+  
+  const fetchImpactData = useCallback(async (showLoadingState = false) => {
+    if (targetDeviceId === null || viewingSessionId === null) return;
+    
+    console.log(`[ReportsDetailed] Fetching impact data for session: ${viewingSessionId}`);
+    
+    try {
+      const options = { sessionId: viewingSessionId, limit: 1000 };
+      const fetchedImpacts = await sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', options);
+      
+      // Keep raw impact data for direction visualization if needed
+      setImpacts(fetchedImpacts);
+      
+      console.log(`[ReportsDetailed] --> Processing impacts (${fetchedImpacts.length} events)...`);
+      const impactResults = processImpactsForCharts(fetchedImpacts);
+      setImpactTimelineData(impactResults.timelineChart);
+      setSeverityDistData(impactResults.severityDistribution);
+      setChieData(impactResults.cumulativeExposureChart);
+      
+      // Update relevant parts of session stats
+      setSessionStats(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          totalImpacts: impactResults.totalImpacts ?? prev.totalImpacts,
+          highImpacts: impactResults.highImpacts ?? prev.highImpacts,
+          maxG: impactResults.maxG ?? prev.maxG,
+          concussionRisk: impactResults.concussionRisk ?? prev.concussionRisk
+        };
+      });
+      
+    } catch (err) {
+      console.error('[ReportsDetailed] Error fetching impact data:', err);
+    }
+  }, [targetDeviceId, viewingSessionId, sensorDataRepository]);
+  
+  // Create debounced versions of the fetch functions
+  const debouncedFetchHrm = useRef(
+    debounce(() => fetchHrmData(false), 1500, { leading: false, trailing: true })
+  ).current;
+  
+  const debouncedFetchHtm = useRef(
+    debounce(() => fetchHtmData(false), 1500, { leading: false, trailing: true })
+  ).current;
+  
+  const debouncedFetchFsr = useRef(
+    debounce(() => fetchFsrData(false), 1500, { leading: false, trailing: true })
+  ).current;
+  
+  const debouncedFetchMotion = useRef(
+    debounce(() => fetchMotionData(false), 1500, { leading: false, trailing: true })
+  ).current;
+  
+  const debouncedFetchImpact = useRef(
+    debounce(() => fetchImpactData(false), 1500, { leading: false, trailing: true })
+  ).current;
+
+  // Set up specific event listeners for each data type
+  useEffect(() => {
+    if (!targetDeviceId || !viewingSessionId) return;
+    
+    // Handler for heart rate data changes
+    const handleHrmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] HRM data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
+        debouncedFetchHrm();
+      }
+    };
+    
+    // Handler for temperature data changes
+    const handleHtmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] Temperature data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
+        debouncedFetchHtm();
+      }
+    };
+    
+    // Handler for FSR data changes
+    const handleFsrChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] FSR data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
+        debouncedFetchFsr();
+      }
+    };
+    
+    // Handler for motion data changes
+    const handleMotionChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] Motion data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
+        debouncedFetchMotion();
+      }
+    };
+    
+    // Handler for impact events
+    const handleImpactChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] Impact event recorded for session ${viewingSessionId}. Triggering debounced fetch...`);
+        debouncedFetchImpact();
+      }
+    };
+    
+    // Register all listeners
+    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+    dataChangeEmitter.on(dbEvents.FSR_DATA_CHANGED, handleFsrChange);
+    dataChangeEmitter.on(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+    dataChangeEmitter.on(dbEvents.IMPACT_EVENT_RECORDED, handleImpactChange);
+    
+    // Cleanup function to remove listeners
+    return () => {
+      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+      dataChangeEmitter.off(dbEvents.FSR_DATA_CHANGED, handleFsrChange);
+      dataChangeEmitter.off(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+      dataChangeEmitter.off(dbEvents.IMPACT_EVENT_RECORDED, handleImpactChange);
+      
+      // Cancel any pending debounced fetches
+      debouncedFetchHrm.cancel();
+      debouncedFetchHtm.cancel();
+      debouncedFetchFsr.cancel();
+      debouncedFetchMotion.cancel();
+      debouncedFetchImpact.cancel();
+    };
+  }, [
+    targetDeviceId, 
+    viewingSessionId, 
+    debouncedFetchHrm, 
+    debouncedFetchHtm, 
+    debouncedFetchFsr, 
+    debouncedFetchMotion, 
+    debouncedFetchImpact
+  ]);
+  
+  // Modify the main fetchData function to use the specific fetch functions
+  const fetchData = useCallback(async (isInitialLoadOrRefresh = true) => {
     // Don't attempt to fetch if targetDeviceId is not set yet or no session is being viewed
     if (targetDeviceId === null || viewingSessionId === null) {
       console.log(`[ReportsDetailed] Cannot fetch data: targetDeviceId=${targetDeviceId}, viewingSessionId=${viewingSessionId}`);
@@ -386,136 +635,46 @@ export default function ReportsDetailedScreen() {
       return;
     }
     
-    console.log(`[ReportsDetailed] Fetching data for Device: ${targetDeviceId}, Session: ${viewingSessionId}`);
-    setLoading(true);
+    console.log(`[ReportsDetailed] Fetching all data for Device: ${targetDeviceId}, Session: ${viewingSessionId}, Initial/Refresh: ${isInitialLoadOrRefresh}`);
+    
+    // Only set loading state for initial load or manual refresh
+    if (isInitialLoadOrRefresh) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
-      // Define query options - now we ONLY use sessionId
-      const options: {
-        sessionId: string;
-        limit?: number;
-      } = {
-        sessionId: viewingSessionId,
-        limit: 1000
-      };
-
-      // Fetch all relevant data types with session filtering
-      console.log(`[ReportsDetailed] Fetching data for session: ${viewingSessionId}`);
-      const [
-        fetchedImpacts,
-        fetchedMotion,
-        fetchedFsr,
-        fetchedHrm,
-        fetchedHtm
-      ] = await Promise.all([
-        sensorDataRepository.getSensorData(targetDeviceId, 'impact_events', options),
-        sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', options),
-        sensorDataRepository.getSensorData(targetDeviceId, 'fsr_packets', options),
-        sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', options),
-        sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', options),
+      // Initialize session stats for the first load
+      if (isInitialLoadOrRefresh) {
+        setSessionStats({
+          avgHr: null,
+          minHr: null,
+          maxHr: null,
+          avgTemp: null,
+          maxTemp: null,
+          currentTemp: null,
+          avgBiteLeft: null,
+          avgBiteRight: null,
+          avgBiteTotal: null,
+          maxBiteForce: null,
+          peakAccel: null,
+          totalImpacts: 0,
+          highImpacts: 0,
+          maxG: null,
+          concussionRisk: 'Low'
+        });
+      }
+      
+      // Fetch all data types in parallel
+      await Promise.all([
+        fetchHrmData(false),
+        fetchHtmData(false),
+        fetchFsrData(false),
+        fetchMotionData(false),
+        fetchImpactData(false)
       ]);
-
-      // Keep raw impact data for direction visualization if needed
-      setImpacts(fetchedImpacts);
       
-      console.log(`[ReportsDetailed] Fetched ${fetchedImpacts.length} impacts, ${fetchedMotion.length} motion, ${fetchedFsr.length} fsr, ${fetchedHrm.length} hrm, ${fetchedHtm.length} htm packets for session ${viewingSessionId}.`);
-      console.log('[ReportsDetailed] == STARTING PROCESSING ==');
-
-      // --- Process data using utility functions ---
-      console.log(`[ReportsDetailed] --> Processing HRM (${fetchedHrm.length} packets)...`);
-      const hrmResults = processHrmForChart(fetchedHrm);
-      console.log(`[ReportsDetailed] <-- Done Processing HRM. Results:`, JSON.stringify(hrmResults));
-      console.log('[ReportsDetailed] --> Setting HRM Chart Data...');
-      setHrmChartData(hrmResults.chartData);
-      console.log('[ReportsDetailed] <-- Done Setting HRM Chart Data.');
-      
-      console.log(`[ReportsDetailed] --> Processing Temp (${fetchedHtm.length} packets)...`);
-      const tempResults = processTempForChart(fetchedHtm);
-      console.log(`[ReportsDetailed] <-- Done Processing Temp. Results:`, JSON.stringify(tempResults));
-      console.log('[ReportsDetailed] --> Setting Temp Chart Data...');
-      setTempChartData(tempResults.chartData);
-      console.log('[ReportsDetailed] <-- Done Setting Temp Chart Data.');
-      
-      console.log(`[ReportsDetailed] --> Processing FSR (${fetchedFsr.length} packets)...`);
-      const fsrResults = processFsrForChart(fetchedFsr);
-      console.log(`[ReportsDetailed] <-- Done Processing FSR. Results:`, JSON.stringify(fsrResults));
-      console.log('[ReportsDetailed] --> Setting Bite Force Chart Data...');
-      setBiteForceChartData(fsrResults.chartData);
-      console.log('[ReportsDetailed] <-- Done Setting Bite Force Chart Data.');
-      
-      console.log(`[ReportsDetailed] --> Processing Motion (${fetchedMotion.length} packets)...`);
-      const motionResults = processMotionForChart(fetchedMotion);
-      console.log(`[ReportsDetailed] <-- Done Processing Motion. Results:`, JSON.stringify(motionResults));
-      console.log('[ReportsDetailed] --> Setting Motion Chart Data...');
-      setMotionChartData(motionResults.accelMagnitudeChart);
-      console.log('[ReportsDetailed] <-- Done Setting Motion Chart Data.');
-      
-      console.log(`[ReportsDetailed] --> Processing Impacts (${fetchedImpacts.length} packets)...`);
-      const impactResults = processImpactsForCharts(fetchedImpacts);
-      console.log(`[ReportsDetailed] <-- Done Processing Impacts. Results:`, JSON.stringify(impactResults));
-      console.log('[ReportsDetailed] --> Setting Impact Chart Data...');
-      setImpactTimelineData(impactResults.timelineChart);
-      console.log('[ReportsDetailed] --> Setting Severity Distribution Data...');
-      setSeverityDistData(impactResults.severityDistribution);
-      console.log('[ReportsDetailed] --> Setting CHIE Data...');
-      setChieData(impactResults.cumulativeExposureChart);
-      console.log('[ReportsDetailed] <-- Done Setting Impact Chart Data.');
-      
-      // Create a consolidated object with all stats, ensuring each property is defined
-      console.log('[ReportsDetailed] --> Consolidating final stats...');
-      // Log each property to find what might be undefined
-      console.log('[ReportsDetailed] Stats inputs:', {
-        avgHr: hrmResults.avgHr,
-        minHr: hrmResults.minHr,
-        maxHr: hrmResults.maxHr,
-        avgTemp: tempResults.avgTemp,
-        maxTemp: tempResults.maxTemp,
-        currentTemp: tempResults.currentTemp,
-        avgBiteLeft: fsrResults.avgLeft,
-        avgBiteRight: fsrResults.avgRight,
-        avgBiteTotal: fsrResults.avgTotal,
-        maxBiteForce: fsrResults.maxForce,
-        peakAccel: motionResults.peakAccel,
-        totalImpacts: impactResults.totalImpacts,
-        highImpacts: impactResults.highImpacts,
-        maxG: impactResults.maxG,
-        concussionRisk: impactResults.concussionRisk
-      });
-      
-      const finalStats = {
-        // Heart rate
-        avgHr: hrmResults.avgHr ?? null,
-        minHr: hrmResults.minHr ?? null,
-        maxHr: hrmResults.maxHr ?? null,
-        
-        // Temperature
-        avgTemp: tempResults.avgTemp ?? null,
-        maxTemp: tempResults.maxTemp ?? null,
-        currentTemp: tempResults.currentTemp ?? null,
-        
-        // Bite force
-        avgBiteLeft: fsrResults.avgLeft ?? null,
-        avgBiteRight: fsrResults.avgRight ?? null,
-        avgBiteTotal: fsrResults.avgTotal ?? null,
-        maxBiteForce: fsrResults.maxForce ?? null,
-        
-        // Motion
-        peakAccel: motionResults.peakAccel ?? null,
-        
-        // Impacts
-        totalImpacts: impactResults.totalImpacts ?? 0,
-        highImpacts: impactResults.highImpacts ?? 0,
-        maxG: impactResults.maxG ?? null,
-        concussionRisk: impactResults.concussionRisk ?? 'Low'
-      };
-      
-      console.log('[ReportsDetailed] <-- Done Consolidating stats. Value:', JSON.stringify(finalStats));
-      console.log('[ReportsDetailed] --> Setting Session Stats...');
-      setSessionStats(finalStats);
-      console.log('[ReportsDetailed] <-- Done Setting Session Stats.');
-
-      console.log('[ReportsDetailed] == PROCESSING COMPLETE ==');
+      console.log('[ReportsDetailed] == ALL DATA FETCHED SUCCESSFULLY ==');
 
     } catch (err) {
       console.error('[ReportsDetailed] Error fetching data:', err);
@@ -538,10 +697,21 @@ export default function ReportsDetailedScreen() {
       setChieData(null);
       setSessionStats(null);
     } finally {
-      setLoading(false);
+      // Only set loading state to false if it was set to true
+      if (isInitialLoadOrRefresh) {
+        setLoading(false);
+      }
       console.log('[ReportsDetailed] Fetching complete.');
     }
-  }, [targetDeviceId, sensorDataRepository, viewingSessionId]);
+  }, [
+    targetDeviceId, 
+    viewingSessionId, 
+    fetchHrmData, 
+    fetchHtmData, 
+    fetchFsrData, 
+    fetchMotionData, 
+    fetchImpactData
+  ]);
 
   // Create a ref to hold the latest fetchData function
   const fetchDataRef = useRef(fetchData);
@@ -551,28 +721,31 @@ export default function ReportsDetailedScreen() {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
   
-  // Create a debounced version of fetchData
+  // Keep the debounced version of the full fetchData for the generic DATA_CHANGED event
   const debouncedFetchData = useRef(
     debounce(() => {
-      console.log('[ReportsDetailed] Debounced fetch triggered after 1s idle period');
-      // Call the latest fetchData function from the ref
-      fetchDataRef.current();
-    }, 1000, { leading: false, trailing: true }) // Fetch on the trailing edge after 1s pause
+      console.log('[ReportsDetailed] Debounced background fetch triggered after 1.5s idle period');
+      // Call the latest fetchData function from the ref with isInitialLoadOrRefresh=false
+      fetchDataRef.current(false);
+    }, 1500, { leading: false, trailing: true })
   ).current;
 
   // Fetch data whenever targetDeviceId or viewingSessionId changes
   useEffect(() => {
     if (targetDeviceId !== null && viewingSessionId !== null) {
-      fetchData();
+      // Initial load or when IDs change, treat as a full refresh
+      fetchData(true);
     } else {
       // If we don't have a session ID, ensure loading is false
       setLoading(false);
     }
   }, [targetDeviceId, viewingSessionId, fetchData]);
   
-  // Set up event listener for data changes - only trigger for the session we're viewing
+  // Keep a fallback listener for the generic DATA_CHANGED event
+  // This ensures backward compatibility and catches any data changes
+  // that might not be covered by the specific event types
   useEffect(() => {
-    if (!targetDeviceId) return;
+    if (!targetDeviceId || !viewingSessionId) return;
     
     const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
       // Only handle events for matching device and session
@@ -580,7 +753,8 @@ export default function ReportsDetailedScreen() {
         eventData.deviceId === targetDeviceId && 
         eventData.sessionId === viewingSessionId
       ) {
-        console.log(`[ReportsDetailed] Relevant data changed (${eventData.type} for session ${viewingSessionId}). Triggering debounced refresh...`);
+        console.log(`[ReportsDetailed] Generic data change detected (${eventData.type} for session ${viewingSessionId}). Triggering debounced refresh...`);
+        // This will call fetchData with isInitialLoadOrRefresh=false
         debouncedFetchData();
       }
     };
@@ -645,7 +819,7 @@ export default function ReportsDetailedScreen() {
         <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.error} />
         <Text style={styles.errorTitle}>Error Loading Report</Text>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => fetchData(true)}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>

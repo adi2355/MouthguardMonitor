@@ -7,12 +7,14 @@ interface SeverityDistributionGraphProps {
   data: { labels: string[]; data: number[] };
   height?: number;
   width?: number;
+  noDataMessage?: string;
 }
 
-const SeverityDistributionGraph: React.FC<SeverityDistributionGraphProps> = ({
+const SeverityDistributionGraph: React.FC<SeverityDistributionGraphProps> = React.memo(({
   data,
-  height = 180,
+  height = 200,
   width = Dimensions.get('window').width - 64,
+  noDataMessage = "No impact data available"
 }) => {
   // Check if we have valid data to display
   const hasData = data && 
@@ -25,7 +27,7 @@ const SeverityDistributionGraph: React.FC<SeverityDistributionGraphProps> = ({
   if (!hasData) {
     return (
       <View style={[styles.container, { height, width }]}>
-        <Text style={styles.emptyText}>No severity distribution data available</Text>
+        <Text style={styles.emptyText}>{noDataMessage}</Text>
       </View>
     );
   }
@@ -39,7 +41,7 @@ const SeverityDistributionGraph: React.FC<SeverityDistributionGraphProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

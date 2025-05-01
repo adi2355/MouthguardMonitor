@@ -10,20 +10,22 @@ interface ImpactTimelineGraphProps {
   maxG?: number | null;
   height?: number;
   width?: number;
+  noDataMessage?: string;
 }
 
-const ImpactTimelineGraph: React.FC<ImpactTimelineGraphProps> = ({
+const ImpactTimelineGraph: React.FC<ImpactTimelineGraphProps> = React.memo(({
   data,
   totalImpacts,
   maxG,
   height = 180,
   width = Dimensions.get('window').width - 64,
+  noDataMessage = "No impact data available"
 }) => {
   // Check if we have valid data to display
   if (!data || !data.datasets || !Array.isArray(data.datasets) || data.datasets.length === 0) {
     return (
       <View style={[styles.container, { height, width }]}>
-        <Text style={styles.emptyText}>No impact data available</Text>
+        <Text style={styles.emptyText}>{noDataMessage}</Text>
       </View>
     );
   }
@@ -99,7 +101,7 @@ const ImpactTimelineGraph: React.FC<ImpactTimelineGraphProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

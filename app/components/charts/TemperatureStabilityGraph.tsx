@@ -13,7 +13,7 @@ interface TemperatureStabilityGraphProps {
   width?: number;
 }
 
-const TemperatureStabilityGraph: React.FC<TemperatureStabilityGraphProps> = ({
+const TemperatureStabilityGraph: React.FC<TemperatureStabilityGraphProps> = React.memo(({
   data,
   avgTemp,
   maxTemp,
@@ -121,7 +121,7 @@ const TemperatureStabilityGraph: React.FC<TemperatureStabilityGraphProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

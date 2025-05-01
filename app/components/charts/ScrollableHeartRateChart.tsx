@@ -41,7 +41,7 @@ interface ScrollableHeartRateChartProps {
   };
 }
 
-const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
+const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = React.memo(({
   data,
   height = 300,
   currentValue,
@@ -342,13 +342,16 @@ const ScrollableHeartRateChart: React.FC<ScrollableHeartRateChartProps> = ({
       </View>
       
       {/* Current value indicator */}
-      <View style={styles.currentValueContainer}>
-        <Text style={styles.currentValueLabel}>Latest: {derivedTimestamp}</Text>
+      <View style={[
+        styles.currentValueContainer, 
+        { backgroundColor: derivedCurrentValue > 100 ? '#FF453A' : '#34C759' }
+      ]}>
+        <Text style={styles.currentValueLabel}>Latest {derivedTimestamp}</Text>
         <Text style={styles.currentValue}>{derivedCurrentValue} BPM</Text>
       </View>
     </Animated.View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -365,18 +368,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 12,
     marginTop: 12,
+    paddingHorizontal: 8, // Added padding to prevent overflowing
   },
   timeRangeButton: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12, // Reduced horizontal padding
     paddingVertical: 6,
     borderRadius: 16,
+    flex: 1, // Make buttons flex to fit container
+    alignItems: 'center', // Center text within button
+    marginHorizontal: 2, // Add spacing between buttons
   },
   selectedTimeRange: {
     backgroundColor: '#2C2C2E',
   },
   timeRangeText: {
     color: '#8E8E93',
-    fontSize: 16,
+    fontSize: 15, // Slightly smaller font size
     fontWeight: '500',
   },
   selectedTimeRangeText: {
@@ -459,11 +466,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '500',
+    opacity: 0.9, // Reduce visual intensity
   },
   currentValue: {
-    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '600',
+    opacity: 0.9, // Reduce visual intensity
   },
   emptyChart: {
     justifyContent: 'center',
