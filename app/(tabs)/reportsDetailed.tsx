@@ -41,6 +41,25 @@ import ImpactTimelineGraph from '../components/charts/ImpactTimelineGraph';
 import SeverityDistributionGraph from '../components/charts/SeverityDistributionGraph';
 import CumulativeExposureGraph from '../components/charts/CumulativeExposureGraph';
 
+// Custom theme colors for beige theme
+const THEME = {
+  background: '#f2efe4', // Beige background matching bottom bar
+  cardBackground: '#ffffff',
+  primary: '#00b076', // Green primary color
+  text: {
+    primary: '#333333',
+    secondary: '#666666',
+    tertiary: '#999999',
+  },
+  divider: 'rgba(0,0,0,0.08)',
+  card: {
+    shadow: 'rgba(0,0,0,0.12)',
+    border: 'rgba(0,0,0,0.05)',
+  },
+  error: COLORS.error,
+  warning: COLORS.warning,
+};
+
 // Safe wrapper for LineChart that ensures proper dataset format
 const SafeLineChart = ({ 
   data, 
@@ -1150,11 +1169,12 @@ export default function ReportsDetailedScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background, // Use beige background
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background, // Use beige background
+    padding: 12,
   },
   contentContainer: {
     paddingBottom: 32,
@@ -1177,31 +1197,31 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 34,
     fontWeight: '700',
-    color: COLORS.textPrimary,
+    color: THEME.text.primary,
     letterSpacing: 0.5,
   },
   // Card container styling
   cardContainer: {
-    marginHorizontal: 20,
-    marginBottom: 8,
     borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    backgroundColor: THEME.cardBackground, // Use white card background
+    shadowColor: THEME.card.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: THEME.card.border,
+  },
+  blurView: {
     overflow: 'hidden',
   },
   cardContent: {
-    padding: 20,
-  },
-  blurView: {
-    ...StyleSheet.absoluteFillObject,
+    padding: 16,
   },
   cardAndroid: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.04)',
+    backgroundColor: THEME.cardBackground, // White card
   },
   summaryCard: {
     marginBottom: 16,
@@ -1235,18 +1255,18 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: COLORS.textPrimary,
+    color: THEME.text.primary,
   },
   sessionNameText: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     marginLeft: 'auto', // Push to the right
     textAlign: 'right',
   },
   deviceId: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     marginLeft: 8,
     alignSelf: 'flex-end',
   },
@@ -1262,17 +1282,17 @@ const styles = StyleSheet.create({
   metricDivider: {
     width: 1,
     height: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.06)',
+    backgroundColor: THEME.divider,
   },
   metricNumber: {
     fontSize: 24,
     fontWeight: '600',
-    color: COLORS.textPrimary,
+    color: THEME.text.primary,
     marginBottom: 4,
   },
   metricLabel: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     textAlign: 'center',
   },
   dataValueContainer: {
@@ -1284,18 +1304,18 @@ const styles = StyleSheet.create({
   dataValue: {
     fontSize: 40,
     fontWeight: '500',
-    color: COLORS.textPrimary,
+    color: THEME.text.primary,
   },
   dataUnit: {
     fontSize: 16,
     fontWeight: '500',
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     marginLeft: 4,
   },
   dataSubtext: {
     fontSize: 13,
     fontWeight: '500',
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -1326,7 +1346,7 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 13,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
   },
   riskValueContainer: {
     alignItems: 'center',
@@ -1339,7 +1359,7 @@ const styles = StyleSheet.create({
   },
   emptyChartText: {
     fontSize: 14,
-    color: COLORS.textTertiary,
+    color: THEME.text.tertiary,
     textAlign: 'center',
     marginVertical: 30,
     fontWeight: '500',
@@ -1348,35 +1368,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background,
   },
   loadingText: {
     marginTop: 12,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     fontSize: 16,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background,
     padding: 20,
   },
   errorTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: COLORS.error,
+    color: THEME.error,
     marginTop: 16,
     marginBottom: 8,
     textAlign: 'center',
   },
   errorText: {
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     textAlign: 'center',
     marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: THEME.primary,
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 12,
@@ -1391,29 +1411,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background,
   },
   emptyText: {
     fontSize: 20,
     fontWeight: '600',
-    color: COLORS.textPrimary,
+    color: THEME.text.primary,
     marginTop: 16,
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     textAlign: 'center',
     lineHeight: 20,
   },
   chartCardContainer: {
     marginHorizontal: 20,
     marginVertical: 8, // Consistent vertical margin
-    backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : COLORS.card,
+    backgroundColor: THEME.cardBackground,
     borderRadius: 16,
     padding: 16,
-    shadowColor: "#000",
+    shadowColor: THEME.card.shadow,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1425,5 +1445,16 @@ const styles = StyleSheet.create({
   gaugeContainer: {
     alignItems: 'center',
     marginTop: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: THEME.text.primary,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    marginBottom: 12,
+    color: THEME.text.secondary,
   },
 });

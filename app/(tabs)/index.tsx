@@ -18,13 +18,16 @@ import {
   SAMPLE_SENSOR_READINGS,
   playerData,
 } from '@/src/constants';
-import { useBluetoothService, useDeviceService, useSessionRepository } from '@/src/providers/AppProvider';
+import { useBluetoothService, useDeviceService, useSessionRepository, useSensorDataRepository } from '@/src/providers/AppProvider';
 import { LiveDataPoint, SavedDevice, DeviceStatus } from '@/src/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LineChart from '../../app/components/charts/LineChart';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSession } from '@/src/contexts/SessionContext';
+import { throttle } from 'lodash';
+import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
+import { processHrmForChart, processTempForChart, processMotionForChart } from '@/src/utils/dataProcessing';
 
 // Sample data remains the same
 const SAMPLE_DEVICES = [
@@ -85,6 +88,7 @@ export default function Dashboard() {
   const router = useRouter();
   const bluetoothService = useBluetoothService();
   const deviceService = useDeviceService();
+  const sensorDataRepository = useSensorDataRepository();
   const { activeSession, startNewSession, endCurrentSession, isSessionActive, sessionLoading, sessionInitError } = useSession();
   const sessionRepository = useSessionRepository();
   
@@ -105,6 +109,15 @@ export default function Dashboard() {
   const [currentAcceleration, setCurrentAcceleration] = useState<number | null>(null);
   const [currentHeartRate, setCurrentHeartRate] = useState<number | null>(null);
   const [maxHeartRateSession, setMaxHeartRateSession] = useState<number | null>(null);
+  const [currentTemperature, setCurrentTemperature] = useState<number | null>(null);
+  
+  // Average data state - used for displays
+  const [avgHeartRate, setAvgHeartRate] = useState<number | null>(null);
+  const [avgTemperature, setAvgTemperature] = useState<number | null>(null);
+  const [avgAcceleration, setAvgAcceleration] = useState<number | null>(null);
+  
+  // Target device ID for fetching data
+  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(null);
   
   // Create a ref to track the latest connectedDevices state without triggering effect reruns
   const connectedDevicesRef = useRef<DeviceStatus[]>([]);
@@ -142,6 +155,61 @@ export default function Dashboard() {
       }
     };
   }, [isSessionActive, activeSession]);
+
+  // Effect to find and set the target device ID for data fetching
+  useEffect(() => {
+    const findDevice = async () => {
+      let foundId: string | null = null;
+      try {
+        // 1. Check actively connected devices first (highest priority)
+        if (bluetoothService) {
+          const connectedIds = bluetoothService.getConnectedDeviceIds();
+          if (connectedIds.length > 0) {
+            foundId = connectedIds[0]; // Use the first connected device
+            console.log(`[Dashboard] Using actively connected device: ${foundId}`);
+          }
+        } else {
+          console.log('[Dashboard] BluetoothService not available yet');
+        }
+
+        // If no connected devices found or bluetoothService isn't available
+        if (!foundId) {
+          // 2. If none connected, check saved devices
+          const savedDevices = await deviceService.getSavedDevices();
+          console.log(`[Dashboard] Found ${savedDevices.length} saved devices`);
+          
+          if (savedDevices.length > 0) {
+            // Sort by lastConnected (most recent first)
+            const sortedDevices = [...savedDevices].sort((a: SavedDevice, b: SavedDevice) => {
+              const aTime = a.lastConnected || 0;
+              const bTime = b.lastConnected || 0;
+              return bTime - aTime;
+            });
+            
+            // Use the most recently connected device
+            foundId = sortedDevices[0].id;
+            console.log(`[Dashboard] Using most recently connected saved device: ${foundId}`);
+          }
+        }
+        
+        // 3. Fall back to simulation device
+        if (!foundId) {
+          console.log(`[Dashboard] No connected or saved devices found, falling back to simulation device ID.`);
+          foundId = 'simulated_mouthguard_1';
+        }
+        
+        // Set the target device ID
+        setTargetDeviceId(foundId);
+        
+      } catch (err) {
+        console.error('[Dashboard] Error finding device:', err);
+        // Fall back to simulation device on error
+        setTargetDeviceId('simulated_mouthguard_1');
+      }
+    };
+    
+    findDevice();
+  }, [bluetoothService, deviceService]);
   
   // Add a serviceReady state to track when BluetoothService is available
   const [serviceReady, setServiceReady] = useState(false);
@@ -152,6 +220,113 @@ export default function Dashboard() {
       setServiceReady(true);
     }
   }, [bluetoothService]);
+  
+  // Fetch functions for different data types
+  const fetchHrmData = useCallback(async () => {
+    if (!targetDeviceId || !activeSession?.id) {
+      setAvgHeartRate(null);
+      return;
+    }
+    
+    try {
+      const options = { sessionId: activeSession.id, limit: 500 };
+      const fetchedHrm = await sensorDataRepository.getSensorData(targetDeviceId, 'hrm_packets', options);
+      
+      if (fetchedHrm.length > 0) {
+        const hrmResults = processHrmForChart(fetchedHrm);
+        setAvgHeartRate(hrmResults.avgHr);
+        setCurrentHeartRate(fetchedHrm[fetchedHrm.length - 1]?.heartRate || null);
+      } else {
+        // No data available
+        setAvgHeartRate(null);
+        setCurrentHeartRate(null);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error fetching HRM data:', err);
+      setAvgHeartRate(null);
+    }
+  }, [targetDeviceId, activeSession, sensorDataRepository]);
+  
+  const fetchTempData = useCallback(async () => {
+    if (!targetDeviceId || !activeSession?.id) {
+      setAvgTemperature(null);
+      return;
+    }
+    
+    try {
+      const options = { sessionId: activeSession.id, limit: 500 };
+      const fetchedTemp = await sensorDataRepository.getSensorData(targetDeviceId, 'htm_packets', options);
+      
+      if (fetchedTemp.length > 0) {
+        const tempResults = processTempForChart(fetchedTemp);
+        setAvgTemperature(tempResults.avgTemp);
+        setCurrentTemperature(tempResults.currentTemp);
+      } else {
+        // No data available
+        setAvgTemperature(null);
+        setCurrentTemperature(null);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error fetching temperature data:', err);
+      setAvgTemperature(null);
+    }
+  }, [targetDeviceId, activeSession, sensorDataRepository]);
+  
+  const fetchMotionData = useCallback(async () => {
+    if (!targetDeviceId || !activeSession?.id) {
+      setAvgAcceleration(null);
+      return;
+    }
+    
+    try {
+      const options = { sessionId: activeSession.id, limit: 500 };
+      const fetchedMotion = await sensorDataRepository.getSensorData(targetDeviceId, 'motion_packets', options);
+      
+      if (fetchedMotion.length > 0) {
+        const motionResults = processMotionForChart(fetchedMotion);
+        // Convert G-force to mph (rough approximation)
+        const avgAccelG = motionResults.peakAccel;
+        const avgAccelMph = avgAccelG ? parseFloat((avgAccelG * 2.23694).toFixed(1)) : null;
+        setAvgAcceleration(avgAccelMph);
+      } else {
+        // No data available
+        setAvgAcceleration(null);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error fetching motion data:', err);
+      setAvgAcceleration(null);
+    }
+  }, [targetDeviceId, activeSession, sensorDataRepository]);
+
+  // Create throttled versions of the fetch functions
+  const throttledFetchHrm = useRef(
+    throttle(fetchHrmData, 3000, { leading: true, trailing: true })
+  ).current;
+  
+  const throttledFetchTemp = useRef(
+    throttle(fetchTempData, 3000, { leading: true, trailing: true })
+  ).current;
+  
+  const throttledFetchMotion = useRef(
+    throttle(fetchMotionData, 3000, { leading: true, trailing: true })
+  ).current;
+  
+  // Fetch all sensor data
+  const fetchAllSensorData = useCallback(() => {
+    if (isSessionActive && activeSession && targetDeviceId) {
+      throttledFetchHrm();
+      throttledFetchTemp();
+      throttledFetchMotion();
+    } else {
+      // Clear data when no active session
+      setAvgHeartRate(null);
+      setAvgTemperature(null);
+      setAvgAcceleration(null);
+      setCurrentHeartRate(null);
+      setCurrentTemperature(null);
+      setCurrentAcceleration(null);
+    }
+  }, [isSessionActive, activeSession, targetDeviceId, throttledFetchHrm, throttledFetchTemp, throttledFetchMotion]);
 
   // Use a single effect for initial loading with stable dependencies
   useEffect(() => {
@@ -209,6 +384,123 @@ export default function Dashboard() {
   // Remove unnecessary dependencies to prevent rerenders
   }, [serviceReady, sessionLoading, bluetoothService, deviceService]);
 
+  // Listen for data changes when there's an active session
+  useEffect(() => {
+    if (!isSessionActive || !activeSession || !targetDeviceId) {
+      return;
+    }
+    
+    // Fetch initial data
+    fetchAllSensorData();
+    
+    // Set up listeners for data changes
+    const handleHrmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
+        throttledFetchHrm();
+      }
+    };
+    
+    const handleHtmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
+        throttledFetchTemp();
+      }
+    };
+    
+    const handleMotionChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
+        throttledFetchMotion();
+      }
+    };
+    
+    // Register all listeners
+    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+    dataChangeEmitter.on(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+    
+    // Generic data change event as a fallback
+    const handleDataChange = (eventData: { deviceId: string; type: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === activeSession.id) {
+        // Determine which data to update based on type
+        if (eventData.type.includes('hrm') || eventData.type.includes('heart')) {
+          throttledFetchHrm();
+        } else if (eventData.type.includes('htm') || eventData.type.includes('temp')) {
+          throttledFetchTemp();
+        } else if (eventData.type.includes('motion') || eventData.type.includes('accel')) {
+          throttledFetchMotion();
+        } else {
+          // If type is unknown, refresh all data
+          fetchAllSensorData();
+        }
+      }
+    };
+    
+    dataChangeEmitter.on(dbEvents.DATA_CHANGED, handleDataChange);
+    
+    // Also set a regular polling interval as a fallback
+    const pollingInterval = setInterval(fetchAllSensorData, 5000);
+    
+    return () => {
+      // Clean up listeners
+      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+      dataChangeEmitter.off(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+      dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
+      
+      // Clear interval
+      clearInterval(pollingInterval);
+      
+      // Cancel any pending throttled fetches
+      throttledFetchHrm.cancel();
+      throttledFetchTemp.cancel();
+      throttledFetchMotion.cancel();
+    };
+  }, [isSessionActive, activeSession, targetDeviceId, fetchAllSensorData, throttledFetchHrm, throttledFetchTemp, throttledFetchMotion]);
+
+  // Create a function to load data with access to the latest state
+  const loadData = useCallback(async () => {
+    if (!bluetoothService) {
+      console.log("[Dashboard] Bluetooth service not available");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    
+    console.log('[Dashboard] Refreshing data...');
+    
+    try {
+      // Refresh device statuses
+      const statuses = bluetoothService.getDeviceStatuses();
+      setConnectedDevices(statuses.filter(d => d.connected));
+      
+      // Refresh saved device history
+      const saved = await deviceService.getSavedDevices();
+      // Sort by last connected time (most recent first) and take top 5
+      const sortedHistory = saved
+        .filter(d => d.lastConnected)
+        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
+        .slice(0, 5);
+      
+      setDeviceHistory(sortedHistory);
+      
+      // Also refresh sensor data if there's an active session
+      if (isSessionActive && activeSession && targetDeviceId) {
+        fetchAllSensorData();
+      }
+      
+    } catch (err: any) {
+      console.error('Error refreshing dashboard data:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [bluetoothService, deviceService, isSessionActive, activeSession, targetDeviceId, fetchAllSensorData]);
+
+  // Pull-to-refresh handler with stable identity
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadData();
+  }, [loadData]);
+
   // Use a separate effect for subscriptions
   useEffect(() => {
     // Skip if services aren't ready
@@ -263,6 +555,11 @@ export default function Dashboard() {
             return prev;
           });
         }
+      } else if (dataPoint.type === 'temperature') {
+        const temp = dataPoint.values[0];
+        if (temp !== undefined) {
+          setCurrentTemperature(temp);
+        }
       }
     });
     
@@ -273,46 +570,6 @@ export default function Dashboard() {
       sensorSubscription.remove();
     };
   }, [serviceReady, sessionLoading, bluetoothService]);
-
-  // Create a function to load data with access to the latest state
-  const loadData = useCallback(async () => {
-    if (!bluetoothService) {
-      console.log("[Dashboard] Bluetooth service not available");
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-    
-    console.log('[Dashboard] Refreshing data...');
-    
-    try {
-      // Refresh device statuses
-      const statuses = bluetoothService.getDeviceStatuses();
-      setConnectedDevices(statuses.filter(d => d.connected));
-      
-      // Refresh saved device history
-      const saved = await deviceService.getSavedDevices();
-      // Sort by last connected time (most recent first) and take top 5
-      const sortedHistory = saved
-        .filter(d => d.lastConnected)
-        .sort((a, b) => (b.lastConnected || 0) - (a.lastConnected || 0))
-        .slice(0, 5);
-      
-      setDeviceHistory(sortedHistory);
-      
-    } catch (err: any) {
-      console.error('Error refreshing dashboard data:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [bluetoothService, deviceService]);
-
-  // Pull-to-refresh handler with stable identity
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    loadData();
-  }, [loadData]);
 
   // Session management functions using SessionContext
   const handleStartSession = async () => {
@@ -336,6 +593,10 @@ export default function Dashboard() {
       setMaxHeartRateSession(null);
       setCurrentAcceleration(null);
       setCurrentHeartRate(null);
+      setCurrentTemperature(null);
+      setAvgHeartRate(null);
+      setAvgTemperature(null);
+      setAvgAcceleration(null);
       
       console.log(`[Dashboard] Session started: ${sessionName}`);
     } catch (error) {
@@ -536,6 +797,7 @@ export default function Dashboard() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -580,21 +842,33 @@ export default function Dashboard() {
             {/* Heart Rate Tile */}
             <TouchableOpacity style={styles.summaryTile} onPress={() => handleTilePress('heartRate')}>
               <MaterialCommunityIcons name="heart-pulse" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>{sessionStats?.heartRate?.avg ?? '--'} bpm</Text>
+              <Text style={styles.summaryTileValue}>
+                {isSessionActive ? 
+                  (avgHeartRate !== null ? `${avgHeartRate}` : '--') : 
+                  '--'} bpm
+              </Text>
               <Text style={styles.summaryTileLabel}>Avg Heart Rate</Text>
             </TouchableOpacity>
 
             {/* Temperature Tile */}
             <TouchableOpacity style={styles.summaryTile} onPress={() => handleTilePress('temperature')}>
               <MaterialCommunityIcons name="thermometer" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>{sessionStats?.temperature ?? '--'} °F</Text>
+              <Text style={styles.summaryTileValue}>
+                {isSessionActive ? 
+                  (avgTemperature !== null ? `${avgTemperature}` : '--') : 
+                  '--'} °F
+              </Text>
               <Text style={styles.summaryTileLabel}>Avg Temp</Text>
             </TouchableOpacity>
 
             {/* Acceleration Tile */}
             <TouchableOpacity style={styles.summaryTile} onPress={() => handleTilePress('acceleration')}>
               <MaterialCommunityIcons name="run-fast" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>{sessionStats?.acceleration ?? '--'} mph</Text>
+              <Text style={styles.summaryTileValue}>
+                {isSessionActive ? 
+                  (avgAcceleration !== null ? `${avgAcceleration}` : '--') : 
+                  '--'} mph
+              </Text>
               <Text style={styles.summaryTileLabel}>Avg Accel</Text>
             </TouchableOpacity>
           </View>
@@ -607,31 +881,31 @@ export default function Dashboard() {
           </View>
           <View style={styles.summaryTilesContainer}>
             {/* Data Logs Tile */}
-            <TouchableOpacity style={styles.summaryTile} onPress={navigateToLogs}>
-              <MaterialCommunityIcons name="chart-line" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>Logs</Text>
-              <Text style={styles.summaryTileLabel}>View Data</Text>
+            <TouchableOpacity style={styles.dataActionTile} onPress={navigateToLogs}>
+              <MaterialCommunityIcons name="chart-line" size={28} color={THEME.primary} />
+              <Text style={styles.dataActionValue}>Logs</Text>
+              <Text style={styles.dataActionLabel}>View Data</Text>
             </TouchableOpacity>
             
             {/* Test Data Generator Tile */}
-            <TouchableOpacity style={styles.summaryTile} onPress={() => router.push('/screens/TestDataScreen')}>
-              <MaterialCommunityIcons name="database-plus" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>Test Data</Text>
-              <Text style={styles.summaryTileLabel}>Insert Data</Text>
+            <TouchableOpacity style={styles.dataActionTile} onPress={() => router.push('/screens/TestDataScreen')}>
+              <MaterialCommunityIcons name="database-plus" size={28} color={THEME.primary} />
+              <Text style={styles.dataActionValue}>Test Data</Text>
+              <Text style={styles.dataActionLabel}>Insert Data</Text>
             </TouchableOpacity>
             
             {/* Reports Tile */}
-            <TouchableOpacity style={styles.summaryTile} onPress={() => router.push('/(tabs)/reportsDetailed')}>
-              <MaterialCommunityIcons name="chart-timeline-variant" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>Reports</Text>
-              <Text style={styles.summaryTileLabel}>Analytics</Text>
+            <TouchableOpacity style={styles.dataActionTile} onPress={() => router.push('/(tabs)/reportsDetailed')}>
+              <MaterialCommunityIcons name="chart-timeline-variant" size={28} color={THEME.primary} />
+              <Text style={styles.dataActionValue}>Reports</Text>
+              <Text style={styles.dataActionLabel}>Analytics</Text>
             </TouchableOpacity>
             
             {/* Settings Tile */}
-            <TouchableOpacity style={styles.summaryTile} onPress={() => router.push('/(tabs)/settings')}>
-              <MaterialCommunityIcons name="cog-outline" size={32} color={THEME.primary} />
-              <Text style={styles.summaryTileValue}>Settings</Text>
-              <Text style={styles.summaryTileLabel}>Configure</Text>
+            <TouchableOpacity style={styles.dataActionTile} onPress={() => router.push('/(tabs)/settings')}>
+              <MaterialCommunityIcons name="cog-outline" size={28} color={THEME.primary} />
+              <Text style={styles.dataActionValue}>Settings</Text>
+              <Text style={styles.dataActionLabel}>Configure</Text>
             </TouchableOpacity>
           </View>
         </GlassCard>
@@ -816,17 +1090,17 @@ const styles = StyleSheet.create({
   },
   summaryTilesContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     padding: 16,
   },
   summaryTile: {
-    flex: 1,
+    width: '30%',
     alignItems: 'center',
     padding: 10,
-    marginHorizontal: 4,
     borderRadius: 12,
     backgroundColor: 'rgba(0,0,0,0.03)',
-    minHeight: 120,
+    minHeight: 115,
     justifyContent: 'center',
   },
   summaryTileValue: {
@@ -834,6 +1108,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: THEME.text.primary,
     marginVertical: 8,
+    textAlign: 'center',
   },
   summaryTileLabel: {
     fontSize: 13,
@@ -938,5 +1213,27 @@ const styles = StyleSheet.create({
   },
   buttonLoader: {
     marginRight: 6,
+  },
+  dataActionTile: {
+    width: '22%', // Slightly narrower to fit 4 tiles
+    alignItems: 'center',
+    padding: 8,
+    marginHorizontal: 2,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    minHeight: 110,
+    justifyContent: 'center',
+  },
+  dataActionValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.text.primary,
+    marginVertical: 6,
+    textAlign: 'center',
+  },
+  dataActionLabel: {
+    fontSize: 12,
+    color: THEME.text.secondary,
+    textAlign: 'center',
   },
 });

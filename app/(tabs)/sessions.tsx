@@ -10,6 +10,25 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+// Custom theme colors for beige theme - matching index.tsx
+const THEME = {
+  background: '#f2efe4', // Beige background matching bottom bar
+  cardBackground: '#ffffff',
+  primary: '#00b076', // Green primary color
+  text: {
+    primary: '#333333',
+    secondary: '#666666',
+    tertiary: '#999999',
+  },
+  divider: 'rgba(0,0,0,0.08)',
+  card: {
+    shadow: 'rgba(0,0,0,0.12)',
+    border: 'rgba(0,0,0,0.05)',
+  },
+  error: COLORS.error,
+  warning: COLORS.warning,
+};
+
 const SessionCard = ({ session, onSelect, isActive }: { 
   session: Session; 
   onSelect: (session: Session) => void;
@@ -52,12 +71,12 @@ const SessionCard = ({ session, onSelect, isActive }: {
       
       <View style={styles.cardDetails}>
         <View style={styles.detailRow}>
-          <MaterialCommunityIcons name="calendar-clock" size={18} color={COLORS.primary} />
+          <MaterialCommunityIcons name="calendar-clock" size={18} color={THEME.primary} />
           <Text style={styles.detailText}>{formatDate(session.startTime)}</Text>
         </View>
         
         <View style={styles.detailRow}>
-          <MaterialCommunityIcons name="timer-outline" size={18} color={COLORS.primary} />
+          <MaterialCommunityIcons name="timer-outline" size={18} color={THEME.primary} />
           <Text style={styles.detailText}>
             {getDuration(session.startTime, session.endTime)}
           </Text>
@@ -65,7 +84,7 @@ const SessionCard = ({ session, onSelect, isActive }: {
         
         {session.team && (
           <View style={styles.detailRow}>
-            <MaterialCommunityIcons name="account-group" size={18} color={COLORS.primary} />
+            <MaterialCommunityIcons name="account-group" size={18} color={THEME.primary} />
             <Text style={styles.detailText}>{session.team}</Text>
           </View>
         )}
@@ -73,7 +92,7 @@ const SessionCard = ({ session, onSelect, isActive }: {
       
       <View style={styles.cardFooter}>
         <Text style={styles.viewDetailsText}>View Details</Text>
-        <MaterialCommunityIcons name="chevron-right" size={20} color={COLORS.primary} />
+        <MaterialCommunityIcons name="chevron-right" size={20} color={THEME.primary} />
       </View>
     </TouchableOpacity>
   );
@@ -121,7 +140,7 @@ export default function SessionsScreen() {
   if (loading && !refreshing) {
     return (
       <SafeAreaView style={[styles.centeredContainer, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={THEME.primary} />
         <Text style={styles.loadingText}>Loading sessions...</Text>
       </SafeAreaView>
     );
@@ -130,7 +149,7 @@ export default function SessionsScreen() {
   if (sessions.length === 0) {
     return (
       <SafeAreaView style={[styles.centeredContainer, { paddingTop: insets.top }]}>
-        <MaterialCommunityIcons name="calendar-remove" size={64} color={COLORS.textSecondary} />
+        <MaterialCommunityIcons name="calendar-remove" size={64} color={THEME.text.secondary} />
         <Text style={styles.emptyTitle}>No Sessions Yet</Text>
         <Text style={styles.emptyText}>
           Start a new session from the dashboard to begin tracking data.
@@ -161,7 +180,7 @@ export default function SessionsScreen() {
           <RefreshControl 
             refreshing={refreshing} 
             onRefresh={onRefresh}
-            colors={[COLORS.primary]}
+            colors={[THEME.primary]}
           />
         }
       />
@@ -173,74 +192,77 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background, // Beige background
   },
   centeredContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.background, // Beige background
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.textPrimary,
+    color: THEME.text.primary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     marginBottom: 16,
   },
   listContent: {
-    paddingBottom: 80,
+    paddingTop: 8,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: THEME.cardBackground, // White card background
+    borderRadius: 16,
     marginBottom: 16,
-    shadowColor: '#000',
+    padding: 16, 
+    shadowColor: THEME.card.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 6,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: THEME.card.border,
   },
   activeCard: {
-    borderColor: COLORS.primary,
     borderWidth: 2,
+    borderColor: THEME.primary,
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   sessionName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.textPrimary,
+    fontWeight: '600',
+    color: THEME.text.primary,
     flex: 1,
   },
   activeBadge: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: THEME.primary,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 12,
+    marginLeft: 8,
   },
   activeBadgeText: {
-    color: '#ffffff',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   cardDetails: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   detailRow: {
     flexDirection: 'row',
@@ -249,33 +271,34 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     marginLeft: 8,
   },
   cardFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: THEME.divider,
   },
   viewDetailsText: {
     fontSize: 14,
-    color: COLORS.primary,
+    fontWeight: '500',
+    color: THEME.primary,
     marginRight: 4,
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: COLORS.textPrimary,
+    fontWeight: '600',
+    color: THEME.text.primary,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: COLORS.textSecondary,
+    color: THEME.text.secondary,
     textAlign: 'center',
-    paddingHorizontal: 32,
-  },
+    maxWidth: 300,
+  }
 }); 
