@@ -64,20 +64,6 @@ export default function TabLayout() {
       />
       
       <Tabs.Screen
-        name="coach"
-        options={{
-          title: 'Coach View',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons 
-              name="clipboard-account-outline" 
-              size={size} 
-              color={color} 
-            />
-          ),
-        }}
-      />
-      
-      <Tabs.Screen
         name="devices"
         options={{
           title: 'Athletes & Devices',
