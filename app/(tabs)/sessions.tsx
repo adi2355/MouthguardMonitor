@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Session } from '@/src/types';
 import { useSession } from '@/src/contexts/SessionContext';
@@ -108,20 +108,34 @@ export default function SessionsScreen() {
   const insets = useSafeAreaInsets();
 
   const loadSessions = useCallback(async () => {
-    setLoading(true);
+    if (!sessionRepository) {
+      console.log('[Sessions] sessionRepository not available');
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    
     try {
+      console.log('[Sessions] Loading sessions...');
+      // Only set loading to true if it's not a pull-to-refresh
+      if (!refreshing) {
+        setLoading(true);
+      }
+      
       const allSessions = await sessionRepository.getAllSessions(50);
+      console.log(`[Sessions] Loaded ${allSessions.length} sessions`);
       setSessions(allSessions);
     } catch (error) {
-      console.error('Error loading sessions:', error);
+      console.error('[Sessions] Error loading sessions:', error);
       Alert.alert('Error', 'Failed to load sessions');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [sessionRepository]);
+  }, [sessionRepository, refreshing]);
 
   useEffect(() => {
+    console.log('[Sessions] Initial load');
     loadSessions();
   }, [loadSessions]);
 
@@ -132,10 +146,11 @@ export default function SessionsScreen() {
     });
   };
 
-  const onRefresh = () => {
+  const handleRefresh = useCallback(() => {
+    console.log('[Sessions] Refresh triggered');
     setRefreshing(true);
     loadSessions();
-  };
+  }, [loadSessions]);
 
   if (loading && !refreshing) {
     return (
@@ -146,82 +161,133 @@ export default function SessionsScreen() {
     );
   }
 
-  if (sessions.length === 0) {
-    return (
-      <SafeAreaView style={[styles.centeredContainer, { paddingTop: insets.top }]}>
-        <MaterialCommunityIcons name="calendar-remove" size={64} color={THEME.text.secondary} />
-        <Text style={styles.emptyTitle}>No Sessions Yet</Text>
-        <Text style={styles.emptyText}>
-          Start a new session from the dashboard to begin tracking data.
-        </Text>
-      </SafeAreaView>
-    );
-  }
+  const renderEmptyState = () => (
+    <View style={styles.emptyStateContainer}>
+      <LinearGradient
+        colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.03)']}
+        style={[styles.emptyStateIcon, { borderRadius: 30 }]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <MaterialCommunityIcons name="calendar-clock" size={36} color={THEME.text.tertiary} />
+      </LinearGradient>
+      <Text style={styles.emptyTitle}>No Sessions Yet</Text>
+      <Text style={styles.emptyText}>
+        Start a new session from the dashboard to begin tracking data.
+      </Text>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
-      <Text style={styles.title}>Session History</Text>
-      <Text style={styles.subtitle}>
-        View data from previous monitoring sessions
-      </Text>
-      
-      <FlatList
-        data={sessions}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <SessionCard 
-            session={item} 
-            onSelect={handleSessionSelect}
-            isActive={activeSession?.id === item.id}
-          />
-        )}
-        contentContainerStyle={[styles.listContent, { paddingBottom: 20 + insets.bottom }]}
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh}
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={THEME.primary}
             colors={[THEME.primary]}
+            progressBackgroundColor={THEME.cardBackground}
           />
         }
-      />
+      >
+        <View style={styles.header}>
+          <LinearGradient
+            colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)', 'transparent']}
+            style={styles.headerGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Sessions</Text>
+          </View>
+        </View>
+
+        <Text style={styles.subtitle}>
+          View data from previous monitoring sessions
+        </Text>
+        
+        {sessions.length === 0 ? (
+          renderEmptyState()
+        ) : (
+          <View style={styles.listContainer}>
+            {sessions.map(session => (
+              <SessionCard 
+                key={session.id}
+                session={session} 
+                onSelect={handleSessionSelect}
+                isActive={activeSession?.id === session.id}
+              />
+            ))}
+          </View>
+        )}
+        
+        {/* Bottom spacer for tab navigation */}
+        <View style={{ height: 20 + insets.bottom }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: THEME.background,
+  },
   container: {
     flex: 1,
+    backgroundColor: THEME.background,
+  },
+  contentContainer: {
     padding: 16,
-    backgroundColor: THEME.background, // Beige background
+    paddingBottom: 32,
   },
   centeredContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: THEME.background, // Beige background
+    backgroundColor: THEME.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
     color: THEME.text.secondary,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  // Premium header styling
+  header: {
+    height: 140,
+    position: 'relative',
+    marginBottom: 10,
+  },
+  headerGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  headerContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: 16,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: '700',
     color: THEME.text.primary,
-    marginBottom: 8,
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 16,
     color: THEME.text.secondary,
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  listContent: {
+  listContainer: {
     paddingTop: 8,
+    marginBottom: 12,
   },
+  // Session card styles
   card: {
-    backgroundColor: THEME.cardBackground, // White card background
+    backgroundColor: THEME.cardBackground,
     borderRadius: 16,
     marginBottom: 16,
     padding: 16, 
@@ -250,16 +316,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   activeBadge: {
-    backgroundColor: THEME.primary,
+    backgroundColor: 'rgba(0, 176, 118, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 176, 118, 0.3)',
   },
   activeBadgeText: {
+    color: THEME.primary,
     fontSize: 12,
     fontWeight: '600',
-    color: '#FFFFFF',
   },
   cardDetails: {
     marginBottom: 12,
@@ -278,27 +345,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingTop: 8,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: THEME.divider,
+    paddingTop: 12,
   },
   viewDetailsText: {
     fontSize: 14,
-    fontWeight: '500',
     color: THEME.primary,
+    fontWeight: '500',
     marginRight: 4,
   },
+  // Empty state styles
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  emptyStateIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: THEME.text.primary,
-    marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
     color: THEME.text.secondary,
     textAlign: 'center',
-    maxWidth: 300,
-  }
+    lineHeight: 22,
+    maxWidth: '80%',
+  },
 }); 
