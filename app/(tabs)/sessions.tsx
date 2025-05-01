@@ -8,6 +8,7 @@ import { COLORS } from '@/src/constants';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SessionCard = ({ session, onSelect, isActive }: { 
   session: Session; 
@@ -85,6 +86,7 @@ export default function SessionsScreen() {
   const sessionRepository = useSessionRepository();
   const { activeSession } = useSession();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const loadSessions = useCallback(async () => {
     setLoading(true);
@@ -118,27 +120,27 @@ export default function SessionsScreen() {
 
   if (loading && !refreshing) {
     return (
-      <View style={styles.centeredContainer}>
+      <SafeAreaView style={[styles.centeredContainer, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading sessions...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (sessions.length === 0) {
     return (
-      <View style={styles.centeredContainer}>
+      <SafeAreaView style={[styles.centeredContainer, { paddingTop: insets.top }]}>
         <MaterialCommunityIcons name="calendar-remove" size={64} color={COLORS.textSecondary} />
         <Text style={styles.emptyTitle}>No Sessions Yet</Text>
         <Text style={styles.emptyText}>
           Start a new session from the dashboard to begin tracking data.
         </Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={[styles.container, { paddingTop: Math.max(insets.top, 16) }]}>
       <Text style={styles.title}>Session History</Text>
       <Text style={styles.subtitle}>
         View data from previous monitoring sessions
@@ -154,7 +156,7 @@ export default function SessionsScreen() {
             isActive={activeSession?.id === item.id}
           />
         )}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 20 + insets.bottom }]}
         refreshControl={
           <RefreshControl 
             refreshing={refreshing} 
@@ -163,7 +165,7 @@ export default function SessionsScreen() {
           />
         }
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -197,7 +199,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   listContent: {
-    paddingBottom: 20,
+    paddingBottom: 80,
   },
   card: {
     backgroundColor: '#ffffff',
