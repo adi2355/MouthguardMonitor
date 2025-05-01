@@ -8,7 +8,7 @@ import { COLORS, DEVICE_ID_SIM } from '@/src/constants';
 import { useSensorDataRepository, useDeviceService, useBluetoothService } from '@/src/providers/AppProvider';
 import { dataChangeEmitter, dbEvents } from '@/src/utils/EventEmitter';
 import { MotionPacket, FSRPacket, HRMPacket, HTMPacket, ImpactEvent, ChartData, SavedDevice } from '@/src/types';
-import { debounce } from 'lodash';
+import { throttle } from 'lodash';
 import { useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/src/contexts/SessionContext';
 import { useSessionRepository } from '@/src/providers/AppProvider';
@@ -529,105 +529,29 @@ export default function ReportsDetailedScreen() {
     }
   }, [targetDeviceId, viewingSessionId, sensorDataRepository]);
   
-  // Create debounced versions of the fetch functions
+  // Create throttled versions of the fetch functions
   const debouncedFetchHrm = useRef(
-    debounce(() => fetchHrmData(false), 1500, { leading: false, trailing: true })
+    throttle(() => fetchHrmData(false), 1500, { leading: true, trailing: true })
   ).current;
   
   const debouncedFetchHtm = useRef(
-    debounce(() => fetchHtmData(false), 1500, { leading: false, trailing: true })
+    throttle(() => fetchHtmData(false), 1500, { leading: true, trailing: true })
   ).current;
   
   const debouncedFetchFsr = useRef(
-    debounce(() => fetchFsrData(false), 1500, { leading: false, trailing: true })
+    throttle(() => fetchFsrData(false), 1500, { leading: true, trailing: true })
   ).current;
   
   const debouncedFetchMotion = useRef(
-    debounce(() => fetchMotionData(false), 1500, { leading: false, trailing: true })
+    throttle(() => fetchMotionData(false), 1500, { leading: true, trailing: true })
   ).current;
   
   const debouncedFetchImpact = useRef(
-    debounce(() => fetchImpactData(false), 1500, { leading: false, trailing: true })
+    throttle(() => fetchImpactData(false), 1500, { leading: true, trailing: true })
   ).current;
 
-  // Set up specific event listeners for each data type
-  useEffect(() => {
-    if (!targetDeviceId || !viewingSessionId) return;
-    
-    // Handler for heart rate data changes
-    const handleHrmChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
-        console.log(`[ReportsDetailed] HRM data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
-        debouncedFetchHrm();
-      }
-    };
-    
-    // Handler for temperature data changes
-    const handleHtmChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
-        console.log(`[ReportsDetailed] Temperature data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
-        debouncedFetchHtm();
-      }
-    };
-    
-    // Handler for FSR data changes
-    const handleFsrChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
-        console.log(`[ReportsDetailed] FSR data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
-        debouncedFetchFsr();
-      }
-    };
-    
-    // Handler for motion data changes
-    const handleMotionChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
-        console.log(`[ReportsDetailed] Motion data changed for session ${viewingSessionId}. Triggering debounced fetch...`);
-        debouncedFetchMotion();
-      }
-    };
-    
-    // Handler for impact events
-    const handleImpactChange = (eventData: { deviceId: string; sessionId?: string }) => {
-      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
-        console.log(`[ReportsDetailed] Impact event recorded for session ${viewingSessionId}. Triggering debounced fetch...`);
-        debouncedFetchImpact();
-      }
-    };
-    
-    // Register all listeners
-    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
-    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
-    dataChangeEmitter.on(dbEvents.FSR_DATA_CHANGED, handleFsrChange);
-    dataChangeEmitter.on(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
-    dataChangeEmitter.on(dbEvents.IMPACT_EVENT_RECORDED, handleImpactChange);
-    
-    // Cleanup function to remove listeners
-    return () => {
-      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
-      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
-      dataChangeEmitter.off(dbEvents.FSR_DATA_CHANGED, handleFsrChange);
-      dataChangeEmitter.off(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
-      dataChangeEmitter.off(dbEvents.IMPACT_EVENT_RECORDED, handleImpactChange);
-      
-      // Cancel any pending debounced fetches
-      debouncedFetchHrm.cancel();
-      debouncedFetchHtm.cancel();
-      debouncedFetchFsr.cancel();
-      debouncedFetchMotion.cancel();
-      debouncedFetchImpact.cancel();
-    };
-  }, [
-    targetDeviceId, 
-    viewingSessionId, 
-    debouncedFetchHrm, 
-    debouncedFetchHtm, 
-    debouncedFetchFsr, 
-    debouncedFetchMotion, 
-    debouncedFetchImpact
-  ]);
-  
   // Modify the main fetchData function to use the specific fetch functions
-  const fetchData = useCallback(async (isInitialLoadOrRefresh = true) => {
+  const fetchData = useCallback(async (triggerSource = 'Initial Load', isInitialLoadOrRefresh = true) => {
     // Don't attempt to fetch if targetDeviceId is not set yet or no session is being viewed
     if (targetDeviceId === null || viewingSessionId === null) {
       console.log(`[ReportsDetailed] Cannot fetch data: targetDeviceId=${targetDeviceId}, viewingSessionId=${viewingSessionId}`);
@@ -635,7 +559,7 @@ export default function ReportsDetailedScreen() {
       return;
     }
     
-    console.log(`[ReportsDetailed] Fetching all data for Device: ${targetDeviceId}, Session: ${viewingSessionId}, Initial/Refresh: ${isInitialLoadOrRefresh}`);
+    console.log(`[ReportsDetailed] Fetching all data (Trigger: ${triggerSource}) for Device: ${targetDeviceId}, Session: ${viewingSessionId}, Initial/Refresh: ${isInitialLoadOrRefresh}`);
     
     // Only set loading state for initial load or manual refresh
     if (isInitialLoadOrRefresh) {
@@ -721,20 +645,97 @@ export default function ReportsDetailedScreen() {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
   
-  // Keep the debounced version of the full fetchData for the generic DATA_CHANGED event
-  const debouncedFetchData = useRef(
-    debounce(() => {
-      console.log('[ReportsDetailed] Debounced background fetch triggered after 1.5s idle period');
+  // Create a throttled version of the full fetchData for the generic DATA_CHANGED event
+  // Using 2000ms (2 seconds) throttling to ensure regular UI updates even with constant data stream
+  const throttledFetchData = useRef(
+    throttle((triggerSource = 'Data Change') => {
+      console.log(`[ReportsDetailed] Throttled fetch triggered (Source: ${triggerSource})`);
       // Call the latest fetchData function from the ref with isInitialLoadOrRefresh=false
-      fetchDataRef.current(false);
-    }, 1500, { leading: false, trailing: true })
+      fetchDataRef.current(triggerSource, false);
+    }, 2000, { leading: true, trailing: true })
   ).current;
+
+  // Set up specific event listeners for each data type
+  useEffect(() => {
+    if (!targetDeviceId || !viewingSessionId) return;
+    
+    // Handler for heart rate data changes
+    const handleHrmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] HRM data changed for session ${viewingSessionId}. Triggering throttled fetch...`);
+        debouncedFetchHrm();
+      }
+    };
+    
+    // Handler for temperature data changes
+    const handleHtmChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] Temperature data changed for session ${viewingSessionId}. Triggering throttled fetch...`);
+        debouncedFetchHtm();
+      }
+    };
+    
+    // Handler for FSR data changes
+    const handleFsrChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] FSR data changed for session ${viewingSessionId}. Triggering throttled fetch...`);
+        debouncedFetchFsr();
+      }
+    };
+    
+    // Handler for motion data changes
+    const handleMotionChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] Motion data changed for session ${viewingSessionId}. Triggering throttled fetch...`);
+        debouncedFetchMotion();
+      }
+    };
+    
+    // Handler for impact events
+    const handleImpactChange = (eventData: { deviceId: string; sessionId?: string }) => {
+      if (eventData.deviceId === targetDeviceId && eventData.sessionId === viewingSessionId) {
+        console.log(`[ReportsDetailed] Impact event recorded for session ${viewingSessionId}. Triggering throttled fetch...`);
+        debouncedFetchImpact();
+      }
+    };
+    
+    // Register all listeners
+    dataChangeEmitter.on(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+    dataChangeEmitter.on(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+    dataChangeEmitter.on(dbEvents.FSR_DATA_CHANGED, handleFsrChange);
+    dataChangeEmitter.on(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+    dataChangeEmitter.on(dbEvents.IMPACT_EVENT_RECORDED, handleImpactChange);
+    
+    // Cleanup function to remove listeners
+    return () => {
+      dataChangeEmitter.off(dbEvents.HRM_DATA_CHANGED, handleHrmChange);
+      dataChangeEmitter.off(dbEvents.HTM_DATA_CHANGED, handleHtmChange);
+      dataChangeEmitter.off(dbEvents.FSR_DATA_CHANGED, handleFsrChange);
+      dataChangeEmitter.off(dbEvents.MOTION_DATA_CHANGED, handleMotionChange);
+      dataChangeEmitter.off(dbEvents.IMPACT_EVENT_RECORDED, handleImpactChange);
+      
+      // Cancel any pending throttled fetches
+      debouncedFetchHrm.cancel();
+      debouncedFetchHtm.cancel();
+      debouncedFetchFsr.cancel();
+      debouncedFetchMotion.cancel();
+      debouncedFetchImpact.cancel();
+    };
+  }, [
+    targetDeviceId, 
+    viewingSessionId, 
+    debouncedFetchHrm, 
+    debouncedFetchHtm, 
+    debouncedFetchFsr, 
+    debouncedFetchMotion, 
+    debouncedFetchImpact
+  ]);
 
   // Fetch data whenever targetDeviceId or viewingSessionId changes
   useEffect(() => {
     if (targetDeviceId !== null && viewingSessionId !== null) {
       // Initial load or when IDs change, treat as a full refresh
-      fetchData(true);
+      fetchData('Initial Mount/ID Change', true);
     } else {
       // If we don't have a session ID, ensure loading is false
       setLoading(false);
@@ -753,9 +754,9 @@ export default function ReportsDetailedScreen() {
         eventData.deviceId === targetDeviceId && 
         eventData.sessionId === viewingSessionId
       ) {
-        console.log(`[ReportsDetailed] Generic data change detected (${eventData.type} for session ${viewingSessionId}). Triggering debounced refresh...`);
+        console.log(`[ReportsDetailed] Generic data change detected (${eventData.type} for session ${viewingSessionId}). Triggering throttled refresh...`);
         // This will call fetchData with isInitialLoadOrRefresh=false
-        debouncedFetchData();
+        throttledFetchData(`Data Change: ${eventData.type}`);
       }
     };
 
@@ -764,10 +765,10 @@ export default function ReportsDetailedScreen() {
     // Cleanup subscription on unmount
     return () => {
       dataChangeEmitter.off(dbEvents.DATA_CHANGED, handleDataChange);
-      // Make sure to cancel any pending debounced fetch
-      debouncedFetchData.cancel();
+      // Make sure to cancel any pending throttled fetch
+      throttledFetchData.cancel();
     };
-  }, [targetDeviceId, viewingSessionId, debouncedFetchData]);
+  }, [targetDeviceId, viewingSessionId, throttledFetchData]);
 
   // Add detailed chart data logging
   useEffect(() => {
@@ -819,7 +820,7 @@ export default function ReportsDetailedScreen() {
         <MaterialCommunityIcons name="alert-circle-outline" size={48} color={COLORS.error} />
         <Text style={styles.errorTitle}>Error Loading Report</Text>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => fetchData(true)}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => fetchData('Retry Button', true)}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -886,7 +887,7 @@ export default function ReportsDetailedScreen() {
               <GlassCard style={styles.summaryCard}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardTitle}>Session Report</Text>
-                  <Text style={styles.deviceId}>({targetDeviceId})</Text>
+                  <Text style={styles.sessionNameText}>{currentSession?.name || ''}</Text>
                 </View>
                 
                 <View style={styles.metricsRow}>
@@ -898,7 +899,7 @@ export default function ReportsDetailedScreen() {
                   <View style={styles.metricDivider} />
                   
                   <View style={styles.metricColumn}>
-                    <Text style={styles.metricNumber}>{sessionStats?.maxG ?? '0'}g</Text>
+                    <Text style={styles.metricNumber}>{sessionStats?.maxG ? sessionStats.maxG.toFixed(1) : '0'}g</Text>
                     <Text style={styles.metricLabel}>Max G-Force</Text>
                   </View>
                   
@@ -1007,7 +1008,7 @@ export default function ReportsDetailedScreen() {
             <View style={[styles.chartCardContainer, {marginTop: 8}]}>
               <View style={styles.cardHeader}>
                 <View style={[styles.iconContainer, {backgroundColor: 'rgba(88, 86, 214, 0.1)'}]}>
-                  <MaterialCommunityIcons name="wave" size={20} color="rgba(88, 86, 214, 1)" />
+                  <MaterialCommunityIcons name="run-fast" size={20} color="rgba(88, 86, 214, 1)" />
                 </View>
                 <Text style={styles.cardTitle}>Motion Overview</Text>
               </View>
@@ -1225,6 +1226,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textPrimary,
   },
+  sessionNameText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    marginLeft: 'auto', // Push to the right
+    textAlign: 'right',
+  },
   deviceId: {
     fontSize: 13,
     color: COLORS.textSecondary,
@@ -1390,7 +1398,7 @@ const styles = StyleSheet.create({
   },
   chartCardContainer: {
     marginHorizontal: 20,
-    marginBottom: 16,
+    marginVertical: 8, // Consistent vertical margin
     backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.8)' : COLORS.card,
     borderRadius: 16,
     padding: 16,
