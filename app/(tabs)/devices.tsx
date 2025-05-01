@@ -15,7 +15,7 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useBluetoothService, useAthleteRepository } from '@/src/providers/AppProvider';
+import { useBluetoothService, useDeviceService, useAthleteRepository } from '@/src/providers/AppProvider';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 
@@ -60,6 +60,7 @@ const GlassCard = ({ style, children, intensity = 15 }: {
 export default function Devices() {
   const router = useRouter();
   const bluetoothService = useBluetoothService();
+  const deviceService = useDeviceService();
   const athleteRepository = useAthleteRepository();
   
   const [savedDevices, setSavedDevices] = useState<DeviceStatus[]>([]);
@@ -72,79 +73,150 @@ export default function Devices() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [serviceReady, setServiceReady] = useState(false);
   
-  // Check if bluetoothService is available
+  // Check if both services are available
   useEffect(() => {
-    setServiceReady(!!bluetoothService);
-  }, [bluetoothService]);
+    setServiceReady(!!bluetoothService && !!deviceService);
+  }, [bluetoothService, deviceService]);
   
   // Load devices and status
   const loadDevices = useCallback(async () => {
-    if (!bluetoothService) {
-      console.log('BluetoothService not available, skipping device load');
+    if (!bluetoothService || !deviceService) {
+      console.log('[Devices] Services not available, skipping device load');
       setLoading(false);
+      setRefreshing(false);
       return;
     }
     
+    console.log('[Devices] Loading devices...');
+    setLoading(true);
+    
     try {
-      setLoading(true);
-      // Get device statuses from BluetoothService
-      const deviceStatuses = bluetoothService.getDeviceStatuses();
-      setSavedDevices(deviceStatuses);
+      // 1. Get persisted saved devices from DeviceService
+      const persistedDevices: SavedDevice[] = await deviceService.getSavedDevices();
+      console.log(`[Devices] Found ${persistedDevices.length} persisted devices.`);
+
+      // 2. Get current live statuses from BluetoothService
+      const currentStatuses = bluetoothService.getDeviceStatuses();
+      const statusMap = new Map(currentStatuses.map(s => [s.id, s]));
+      console.log(`[Devices] Found ${currentStatuses.length} current device statuses.`);
+
+      // 3. Merge persisted list with current statuses
+      const mergedDeviceStatuses = await Promise.all(persistedDevices.map(async (saved) => {
+        const currentStatus = statusMap.get(saved.id);
+        const athlete = saved.athleteId ? await athleteRepository.getAthleteById(saved.athleteId) : null;
+
+        // Create the final status object, prioritizing current status where available
+        const finalStatus: DeviceStatus = {
+          id: saved.id,
+          name: currentStatus?.name || saved.name || 'Unknown Device', // Prefer current name
+          connected: currentStatus?.connected || false,
+          connectionState: currentStatus?.connectionState || 'disconnected',
+          batteryLevel: currentStatus?.batteryLevel ?? saved.batteryLevel, // Use current if available, else saved
+          lastSeen: currentStatus?.lastSeen,
+          athleteInfo: athlete ? { id: athlete.id, name: athlete.name } : undefined,
+          connectionError: currentStatus?.connectionError || null,
+        };
+        
+        // Remove the processed status from the map
+        statusMap.delete(saved.id);
+        return finalStatus;
+      }));
+
+      // 4. Add any devices from currentStatuses that weren't in persistedDevices
+      for (const remainingStatus of statusMap.values()) {
+        console.log(`[Devices] Adding status for device not found in persisted list: ${remainingStatus.id}`);
+        const athlete = remainingStatus.athleteInfo?.id ? await athleteRepository.getAthleteById(remainingStatus.athleteInfo.id) : null;
+        mergedDeviceStatuses.push({
+          ...remainingStatus,
+          athleteInfo: athlete ? { id: athlete.id, name: athlete.name } : undefined,
+        });
+      }
+
+      console.log(`[Devices] Setting ${mergedDeviceStatuses.length} merged device statuses.`);
+      setSavedDevices(mergedDeviceStatuses);
 
       // Load athletes for assignment
       const athleteList = await athleteRepository.getAllAthletes();
       setAthletes(athleteList);
     } catch (error) {
-      console.error('Error loading devices:', error);
+      console.error('[Devices] Error loading devices:', error);
       Alert.alert('Error', 'Failed to load devices');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [bluetoothService, athleteRepository]);
+  }, [bluetoothService, deviceService, athleteRepository]);
   
   // Handle refresh
   const handleRefresh = useCallback(async () => {
+    console.log('[Devices] Refresh triggered');
     setRefreshing(true);
     await loadDevices();
-    setRefreshing(false);
   }, [loadDevices]);
   
   // Initial load
   useEffect(() => {
-    loadDevices();
-  }, [loadDevices]);
+    if (serviceReady) {
+      console.log('[Devices] Services ready, performing initial load.');
+      loadDevices();
+    } else {
+      console.log('[Devices] Services not yet ready, delaying initial load.');
+    }
+  }, [serviceReady, loadDevices]);
   
   // Subscribe to device status updates
   useEffect(() => {
     if (!bluetoothService) return;
     
-    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates((status: DeviceStatus) => {
-      // Use a function to update based on previous state
+    console.log('[Devices] Subscribing to device status updates.');
+    const unsubscribe = bluetoothService.subscribeToDeviceStatusUpdates(async (statusUpdate: DeviceStatus) => {
+      console.log('[Devices] Received status update:', statusUpdate);
+      
+      // Ensure athlete info is potentially fetched for the update
+      let athleteInfo = statusUpdate.athleteInfo;
+      if (!athleteInfo && statusUpdate.id) {
+        try {
+          const athlete = await athleteRepository.getAthleteByDeviceId(statusUpdate.id);
+          if (athlete) {
+            athleteInfo = { id: athlete.id, name: athlete.name };
+          }
+        } catch (e) {
+          console.error("[Devices] Error fetching athlete during status update", e);
+        }
+      }
+
+      const finalStatusUpdate = { ...statusUpdate, athleteInfo };
+
       setSavedDevices(prevStatuses => {
-        // Check if this status is already in our list
-        const statusIndex = prevStatuses.findIndex(s => s.id === status.id);
-        
-        if (statusIndex >= 0) {
-          // Update existing status
-          return prevStatuses.map(s => 
-            s.id === status.id ? status : s
-          );
+        const existingIndex = prevStatuses.findIndex(s => s.id === finalStatusUpdate.id);
+        if (existingIndex >= 0) {
+          // Update existing status in the array
+          const updatedStatuses = [...prevStatuses];
+          // Merge new status with existing, preserving potentially missing fields from update
+          updatedStatuses[existingIndex] = {
+            ...prevStatuses[existingIndex], // Keep old data as base
+            ...finalStatusUpdate // Overwrite with new data
+          };
+          console.log(`[Devices] Updated device status in state: ${finalStatusUpdate.id}`);
+          return updatedStatuses;
         } else {
-          // Add new status
-          return [...prevStatuses, status];
+          // Add new status if it wasn't in the list before
+          console.log(`[Devices] Added new device status to state: ${finalStatusUpdate.id}`);
+          return [...prevStatuses, finalStatusUpdate];
         }
       });
     });
     
-    // Call the remove method on the unsubscribe object instead of treating it as a function
+    // Cleanup function
     return () => {
+      console.log('[Devices] Unsubscribing from device status updates.');
       if (unsubscribe && typeof unsubscribe.remove === 'function') {
         unsubscribe.remove();
       } else {
         console.warn("[Devices] Cleanup function received invalid unsubscribe object:", unsubscribe);
       }
     };
-  }, [bluetoothService]);
+  }, [bluetoothService, athleteRepository]);
   
   // Connect to a device
   const connectToDevice = async (deviceId: string, deviceName: string) => {
@@ -153,12 +225,25 @@ export default function Devices() {
       return;
     }
     
+    // Immediately update UI to show 'connecting' state
+    setSavedDevices(prev => prev.map(d => 
+      d.id === deviceId ? 
+      { ...d, connected: false, connectionState: 'connecting', connectionError: null } : 
+      d
+    ));
+    
     try {
       await bluetoothService.connectToDevice(deviceId);
-      // Success state is handled by the status subscription
+      // Success/failure state is handled by the status subscription
     } catch (error) {
-      // Error state is handled by the status subscription
-      console.log(`[DevicesScreen] Attempted connection for ${deviceId}, status updates will reflect outcome.`);
+      console.error(`[Devices] Connection error for ${deviceId}:`, error);
+      // The error state should be handled by the status subscription, 
+      // but we'll update here just in case
+      setSavedDevices(prev => prev.map(d => 
+        d.id === deviceId ? 
+        { ...d, connected: false, connectionState: 'failed', connectionError: error instanceof Error ? error.message : String(error) } : 
+        d
+      ));
     }
   };
   
@@ -169,13 +254,26 @@ export default function Devices() {
       return;
     }
     
+    // Update UI immediately to 'disconnecting'
+    setSavedDevices(prev => prev.map(d => 
+      d.id === deviceId ? 
+      { ...d, connected: false, connectionState: 'disconnecting' } : 
+      d
+    ));
+    
     try {
       await bluetoothService.disconnectFromDevice(deviceId);
-      
-      // Success will be reflected via the subscription to device status updates
+      // Status should update to 'disconnected' via subscription
     } catch (error) {
       console.error('Error disconnecting from device:', error);
-      Alert.alert('Disconnection Error', 'Failed to disconnect from device. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Update the status to show the error
+      setSavedDevices(prev => prev.map(d => 
+        d.id === deviceId ? 
+        { ...d, connected: false, connectionState: 'failed', connectionError: `Disconnect Error: ${errorMessage}` } : 
+        d
+      ));
+      Alert.alert('Disconnection Error', `Failed to disconnect from device. ${errorMessage}`);
     }
   };
   
@@ -195,15 +293,16 @@ export default function Devices() {
           const deviceMap = new Map(prevDevices.map(d => [d.id, d]));
           if (!deviceMap.has(device.id) && device.name) {
             deviceMap.set(device.id, { id: device.id, name: device.name });
-            return Array.from(deviceMap.values());
+            return Array.from(deviceMap.values()).sort((a, b) => a.name.localeCompare(b.name));
           }
           return prevDevices;
         });
       });
       
+      console.log("[Devices] Scan finished.");
     } catch (error) {
       console.error('Error scanning for devices:', error);
-      Alert.alert('Scan Error', 'Failed to scan for devices. Please check Bluetooth permissions and try again.');
+      Alert.alert('Scan Error', `Failed to scan for devices. Please check Bluetooth permissions and try again. Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setScanning(false);
     }
@@ -217,13 +316,35 @@ export default function Devices() {
   
   // Assign device to athlete
   const assignDeviceToAthlete = async (athleteId: string) => {
-    if (!selectedDeviceId) return;
+    if (!selectedDeviceId || !deviceService) return;
     
     try {
       await athleteRepository.assignDeviceToAthlete(athleteId, selectedDeviceId);
       
-      // Update local saved devices
-      await loadDevices();
+      // Update the device in persistent storage
+      await deviceService.updateDeviceAthleteAssignment(selectedDeviceId, athleteId);
+      
+      // Update the local device status to reflect the new assignment
+      const athlete = await athleteRepository.getAthleteById(athleteId);
+      if (athlete) {
+        setSavedDevices(prev => prev.map(d => 
+          d.id === selectedDeviceId ? 
+          { ...d, athleteInfo: { id: athlete.id, name: athlete.name } } : 
+          d
+        ));
+      }
+      
+      // Update the athletes list locally
+      setAthletes(prevAthletes => prevAthletes.map(ath => {
+        if (ath.id === athleteId) {
+          return { ...ath, deviceId: selectedDeviceId };
+        }
+        // Also unassign from any other athlete who might have had this device
+        if (ath.deviceId === selectedDeviceId && ath.id !== athleteId) {
+          return { ...ath, deviceId: undefined };
+        }
+        return ath;
+      }));
       
       // Close the modal
       setAthleteListVisible(false);
@@ -232,7 +353,7 @@ export default function Devices() {
       Alert.alert('Success', 'Device assigned to athlete');
     } catch (error) {
       console.error('Error assigning device to athlete:', error);
-      Alert.alert('Assignment Error', 'Failed to assign device to athlete. Please try again.');
+      Alert.alert('Assignment Error', `Failed to assign device to athlete. Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
   
