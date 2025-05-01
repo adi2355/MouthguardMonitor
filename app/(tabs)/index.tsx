@@ -140,11 +140,18 @@ export default function Dashboard() {
     let timerInterval: NodeJS.Timeout | null = null;
     
     if (isSessionActive && activeSession) {
-      timerInterval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = now - activeSession.startTime;
-        setElapsedTime(elapsed);
-      }, 1000);
+      // Add validation to ensure startTime is valid
+      if (typeof activeSession.startTime === 'number' && !isNaN(activeSession.startTime)) {
+        timerInterval = setInterval(() => {
+          const now = Date.now();
+          const elapsed = now - activeSession.startTime;
+          setElapsedTime(elapsed);
+        }, 1000);
+      } else {
+        // Handle invalid startTime
+        console.warn(`[Dashboard] Active session ${activeSession.id} has invalid startTime. Resetting elapsed time.`);
+        setElapsedTime(0); // Reset to 0 or an indicator value
+      }
     } else {
       setElapsedTime(0);
     }

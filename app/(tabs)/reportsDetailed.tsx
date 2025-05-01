@@ -281,31 +281,30 @@ export default function ReportsDetailedScreen() {
 
   // Effect to determine which session to view
   useEffect(() => {
-    // Prioritize session ID from route params
+    let newViewingId: string | null = null;
+    
     if (routeSessionId) {
-      console.log(`[ReportsDetailed] Viewing specific session from route: ${routeSessionId}`);
-      setViewingSessionId(routeSessionId);
+      console.log(`[ReportsDetailed] Using session ID from route params: ${routeSessionId}`);
+      newViewingId = routeSessionId;
+    } else if (activeSession) {
+      console.log(`[ReportsDetailed] Using active session ID from context: ${activeSession.id}`);
+      newViewingId = activeSession.id;
+    } else {
+      console.log(`[ReportsDetailed] No route param or active session found.`);
+      newViewingId = null;
     }
-    // If no route param, check for an active session
-    else if (activeSession) {
-      console.log(`[ReportsDetailed] Viewing currently active session: ${activeSession.id}`);
-      setViewingSessionId(activeSession.id);
+
+    // Only update state if the ID actually changes
+    if (newViewingId !== viewingSessionId) {
+      console.log(`[ReportsDetailed] Updating viewingSessionId from ${viewingSessionId} to ${newViewingId}`);
+      setViewingSessionId(newViewingId);
     }
-    // Otherwise, no session is being viewed
-    else {
-      console.log(`[ReportsDetailed] No specific or active session to view.`);
+    // Add a check in case activeSession becomes null while viewing it
+    else if (!routeSessionId && !activeSession && viewingSessionId) {
+      console.log(`[ReportsDetailed] Active session ended, clearing viewingSessionId.`);
       setViewingSessionId(null);
-      // Clear existing chart data when no session is active/selected
-      setHrmChartData(null);
-      setTempChartData(null);
-      setBiteForceChartData(null);
-      setMotionChartData(null);
-      setImpactTimelineData(null);
-      setSeverityDistData(null);
-      setChieData(null);
-      setSessionStats(null);
     }
-  }, [routeSessionId, activeSession]);
+  }, [routeSessionId, activeSession, viewingSessionId]); // Add viewingSessionId to dependencies
 
   // Effect to load session data when a session ID is provided
   useEffect(() => {

@@ -16,9 +16,11 @@ import { DeviceStatus, LiveDataPoint } from '@/src/types';
 import LineChart from '../components/charts/LineChart';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { throttle } from 'lodash';
 
 // Maximum number of data points to keep per device
-const MAX_DATA_POINTS = 20;
+const MAX_DATA_POINTS = 50; // Increased for smoother scrollable charts
+const THROTTLE_INTERVAL = 250; // Update UI max 4 times per second
 
 // Custom theme colors to match the beige theme from index.tsx
 const THEME = {
@@ -37,8 +39,9 @@ const THEME = {
   }
 };
 
-// Premium Glass Card component
-const GlassCard = ({ style, children, intensity = 15 }) => {
+// Premium Glass Card component with proper types
+const GlassCard: React.FC<{style?: any, children: React.ReactNode, intensity?: number}> = 
+  ({ style, children, intensity = 15 }) => {
   return Platform.OS === 'ios' ? (
     <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
       {children}
@@ -51,13 +54,20 @@ const GlassCard = ({ style, children, intensity = 15 }) => {
 };
 
 export default function LiveMonitorScreen() {
-  const [connectedDevices, setConnectedDevices] = useState([]);
+  const [connectedDevices, setConnectedDevices] = useState<DeviceStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionActive, setSessionActive] = useState(false);
-  const [liveData, setLiveData] = useState({});
+  const [liveData, setLiveData] = useState<Record<string, LiveDataPoint[]>>({});
   const [serviceReady, setServiceReady] = useState(false);
   
   const bluetoothService = useBluetoothService();
+  
+  // Create throttled state updater with proper typing
+  const throttledSetLiveData = useRef(
+    throttle((updater: React.SetStateAction<Record<string, LiveDataPoint[]>>) => {
+      setLiveData(updater);
+    }, THROTTLE_INTERVAL, { leading: true, trailing: true })
+  ).current;
   
   // Check if bluetoothService is available and set serviceReady state
   useEffect(() => {
@@ -68,8 +78,8 @@ export default function LiveMonitorScreen() {
     }
   }, [bluetoothService]);
   
-  // Reference to store sensor data subscriptions
-  const sensorDataSubscriptionRef = useRef(null);
+  // Reference to store sensor data subscriptions - updated to match the correct return type
+  const sensorDataSubscriptionRef = useRef<any>(null);
   
   // Initialize device status and data
   useEffect(() => {
@@ -85,7 +95,7 @@ export default function LiveMonitorScreen() {
     let initialLoadComplete = false;
     
     // Subscribe to device status updates
-    const subscription = bluetoothService.subscribeToDeviceStatusUpdates((deviceStatus) => {
+    const subscription = bluetoothService.subscribeToDeviceStatusUpdates((deviceStatus: DeviceStatus) => {
       console.log('[LiveMonitorScreen] Device Status Update Received:', deviceStatus);
       setConnectedDevices(prevDevices => {
         // Update or add device
@@ -110,15 +120,18 @@ export default function LiveMonitorScreen() {
       }
     });
     
-    // Subscribe to sensor data updates
-    const unsubscribeSensorData = bluetoothService.subscribeSensorData((deviceId, dataPoint) => {
-      setLiveData(prevData => {
+    // Subscribe to sensor data updates - using throttled updates now
+    const unsubscribeSensorData = bluetoothService.subscribeSensorData((deviceId: string, dataPoint: LiveDataPoint) => {
+      // Use throttled function to update state
+      throttledSetLiveData((prevData: Record<string, LiveDataPoint[]>) => {
         // Initialize array for this device if it doesn't exist
         const deviceData = prevData[deviceId] || [];
         
         // Add new data point and limit length
         const updatedData = [...deviceData, dataPoint];
-        if (updatedData.length > MAX_DATA_POINTS) {
+        
+        // Limit data points after adding the new one
+        while (updatedData.length > MAX_DATA_POINTS) {
           updatedData.shift(); // Remove oldest data point
         }
         
@@ -140,18 +153,25 @@ export default function LiveMonitorScreen() {
       }
     }, 1500); // Wait 1.5 seconds
     
-    // Save unsubscribe function to ref
-    sensorDataSubscriptionRef.current = unsubscribeSensorData;
+    // Save unsubscribe function to ref - this is the actual function to call for cleanup
+    if (typeof unsubscribeSensorData === 'function') {
+      sensorDataSubscriptionRef.current = unsubscribeSensorData;
+    } else if (unsubscribeSensorData && typeof unsubscribeSensorData.remove === 'function') {
+      // If it's an object with a remove method (like an EventSubscription)
+      sensorDataSubscriptionRef.current = unsubscribeSensorData.remove.bind(unsubscribeSensorData);
+    }
     
     return () => {
       console.log('[LiveMonitorScreen] Cleaning up subscriptions.');
       clearTimeout(loadingTimeout); // Clear the timeout on cleanup
       subscription.remove();
       if (sensorDataSubscriptionRef.current) {
+        // Call the appropriate cleanup function
         sensorDataSubscriptionRef.current();
       }
+      throttledSetLiveData.cancel(); // Cancel any pending throttled updates on unmount
     };
-  }, [bluetoothService]);
+  }, [bluetoothService, throttledSetLiveData]); // Add throttledSetLiveData to dependencies
   
   // Handle session start/stop
   const toggleSession = async () => {
@@ -179,8 +199,8 @@ export default function LiveMonitorScreen() {
     }
   };
   
-  // Render chart for a device's data
-  const renderDeviceChart = (deviceId) => {
+  // Render chart for a device's data with proper typing
+  const renderDeviceChart = (deviceId: string) => {
     const deviceData = liveData[deviceId] || [];
     
     if (deviceData.length === 0) {
@@ -348,10 +368,9 @@ export default function LiveMonitorScreen() {
             >
               <LinearGradient
                 colors={sessionActive ? ['#ff5252', '#ff3b30'] : ['rgba(100,100,100,0.1)', 'rgba(100,100,100,0.2)']}
-                style={StyleSheet.absoluteFill}
+                style={[StyleSheet.absoluteFill, { borderRadius: 24 }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                borderRadius={24}
               />
               <MaterialCommunityIcons 
                 name={sessionActive ? "record-circle" : "record-circle-outline"} 
@@ -389,10 +408,9 @@ export default function LiveMonitorScreen() {
                 <View key={device.id} style={styles.deviceItem}>
                   <LinearGradient
                     colors={['rgba(0,176,118,0.15)', 'rgba(0,176,118,0.05)']}
-                    style={styles.deviceIcon}
+                    style={[styles.deviceIcon, { borderRadius: 20 }]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    borderRadius={20}
                   >
                     <MaterialCommunityIcons 
                       name="tooth-outline" 

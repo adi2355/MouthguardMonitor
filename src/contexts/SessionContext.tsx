@@ -44,8 +44,15 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         // Check for unfinished session
         const unfinished = await repo.findUnfinishedSession();
         if (unfinished) {
-          console.log(`[SessionContext] Found unfinished session: ${unfinished.id}`);
-          setActiveSession(unfinished);
+          // Add validation for startTime
+          if (typeof unfinished.startTime === 'number' && !isNaN(unfinished.startTime)) {
+            console.log(`[SessionContext] Found valid unfinished session: ${unfinished.id}`);
+            setActiveSession(unfinished);
+          } else {
+            console.warn(`[SessionContext] Found unfinished session (${unfinished.id}) with invalid startTime (${unfinished.startTime}). Discarding.`);
+            // Could potentially fix the session here by adding a valid startTime
+            // But for now, just don't set it as active
+          }
         }
         setSessionLoading(false);
       } catch (error) {
