@@ -1,6 +1,6 @@
 # Mouthguard Monitoring App
 
-Original author: **Aditya Khetarpal** | [GitHub](https://github.com/adi235)
+Original author: **Aditya Khetarpal** | [GitHub](https://github.com/adi2355)
 
 ![Built by Aditya Khetarpal](https://img.shields.io/badge/built%20by-Aditya%20Khetarpal-blue)
 
