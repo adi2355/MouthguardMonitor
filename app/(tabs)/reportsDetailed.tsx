@@ -33,6 +33,7 @@ import {
 import HeartRateTrendChart from '../components/charts/HeartRateTrendChart';
 import ScrollableHeartRateChart from '../components/charts/ScrollableHeartRateChart';
 import ScrollableTemperatureChart from '../components/charts/ScrollableTemperatureChart';
+import ScrollableMotionChart from '../components/charts/ScrollableMotionChart';
 import BiteForceDynamicsChart from '../components/charts/BiteForceDynamicsChart';
 import MotionOverviewGraph from '../components/charts/MotionOverviewGraph';
 import ConcussionRiskGauge from '../components/charts/ConcussionRiskGauge';
@@ -1017,17 +1018,23 @@ export default function ReportsDetailedScreen() {
                 <Text style={styles.cardTitle}>Motion Overview</Text>
               </View>
               
-              <View style={styles.chartContainer}>
+              <View style={styles.scrollableChartContainer}>
                 {loading ? (
                   <ActivityIndicator color={COLORS.primary} />
                 ) : error ? (
                   <Text style={styles.errorText}>{error}</Text>
                 ) : motionChartData ? (
-                  <MotionOverviewGraph 
+                  <ScrollableMotionChart 
                     data={motionChartData}
-                    peakAccel={sessionStats?.peakAccel}
-                    width={Dimensions.get('window').width - 40}
-                    height={180}
+                    currentValue={sessionStats?.peakAccel ?? undefined}
+                    timestamp={(motionChartData as any)?.latestTimestamp || (new Date()).toLocaleTimeString().slice(0, 5)}
+                    height={280}
+                    peakAccel={sessionStats?.peakAccel ?? undefined}
+                    rangeData={{
+                      min: 0,
+                      max: sessionStats?.peakAccel ?? 5,
+                      timeRange: (motionChartData as any)?.timeRangeLabel || "Today"
+                    }}
                   />
                 ) : (
                   <Text style={styles.emptyChartText}>No motion data available</Text>
