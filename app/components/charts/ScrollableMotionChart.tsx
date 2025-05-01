@@ -15,10 +15,7 @@ import { ChartData } from '../../../src/types';
 
 // Constants with more descriptive time range labels
 const TIME_RANGES = [
-  { id: '1h', label: 'Recent' },
   { id: '3h', label: 'Short' },
-  { id: '12h', label: 'Medium' },
-  { id: '1d', label: 'Long' },
   { id: '1w', label: 'All' }
 ];
 const chartWidth = 1500; // Make chart scrollable with larger width
@@ -50,8 +47,8 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
   rangeData,
   peakAccel
 }) => {
-  // State for selected time range
-  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('12h');
+  // State for selected time range - default to Short (3h) instead of 12h
+  const [selectedTimeRange, setSelectedTimeRange] = useState<string>('3h');
   // Reference to the scroll view to scroll to end (newest data) on mount
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -92,15 +89,15 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
   
   // Calculate min/max acceleration values from dataset if not provided
   const derivedRangeData = rangeData || (hasValidData ? {
-    min: Math.min(...data.datasets[0].data.filter(val => !isNaN(val))),
-    max: Math.max(...data.datasets[0].data.filter(val => !isNaN(val))),
+    min: 0,
+    max: Math.min(10, Math.max(...data.datasets[0].data.filter(val => !isNaN(val)))),
     timeRange: "Today"
   } : { min: 0, max: 0, timeRange: "No data available" });
   
-  // Calculate current value if not provided
-  const derivedCurrentValue = currentValue || (hasValidData ? 
+  // Calculate current value if not provided - cap at 10g
+  const derivedCurrentValue = Math.min(10, currentValue || (hasValidData ? 
     (isNaN(data.datasets[0].data[data.datasets[0].data.length - 1]) ? 
-      0 : data.datasets[0].data[data.datasets[0].data.length - 1]) : 0);
+      0 : data.datasets[0].data[data.datasets[0].data.length - 1]) : 0));
   
   // Get current timestamp if not provided
   const derivedTimestamp = timestamp || (hasValidData ? data.labels[data.labels.length - 1] : "--:--");
@@ -111,8 +108,8 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
   
   // Determine intensity level based on g-force
   const getAccelIntensity = (gForce: number): 'low' | 'medium' | 'high' => {
-    if (gForce >= 10) return 'high';
-    if (gForce >= 5) return 'medium';
+    if (gForce >= 5) return 'high';
+    if (gForce >= 2) return 'medium';
     return 'low';
   };
   
@@ -142,23 +139,13 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
     let percentToShow: number;
     
     switch(selectedTimeRange) {
-      case '1h': 
-        percentToShow = 0.1; // Show 10% of the data for 1h
-        break;
       case '3h': 
         percentToShow = 0.25; // Show 25% of the data for 3h
         break; 
-      case '12h': 
-        percentToShow = 0.5; // Show 50% of the data for 12h
-        break;
-      case '1d': 
-        percentToShow = 0.75; // Show 75% of the data for 1d
-        break;
-      case '1w': 
+      case '1w':
+      default: 
         percentToShow = 1; // Show all data for 1w
         break;
-      default: 
-        percentToShow = 0.5; // Default to 50%
     }
     
     // Calculate how many data points to include
@@ -261,9 +248,9 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
   const accelerationIntensity = getAccelIntensity(derivedCurrentValue);
   const intensityColor = getIntensityColor(accelerationIntensity);
 
-  // Derive peak acceleration if not provided
-  const derivedPeakAccel = peakAccel ?? (hasValidData ? 
-    Math.max(...data.datasets[0].data.filter(val => !isNaN(val))) : 0);
+  // Derive peak acceleration if not provided - cap at 10g for display
+  const derivedPeakAccel = Math.min(10, peakAccel ?? (hasValidData ? 
+    Math.max(...data.datasets[0].data.filter(val => !isNaN(val))) : 0));
 
   return (
     <Animated.View 
@@ -328,20 +315,20 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
             <LineChart
               data={getFilteredData()}
               width={chartWidth}
-              height={height - 100} // Reduce height to account for static range display
+              height={height - 120} // Further reduce height to account for static range display
               bezier={true}
               chartConfig={{
                 backgroundColor: 'transparent',
                 backgroundGradientFrom: 'transparent',
                 backgroundGradientTo: 'transparent',
-                decimalPlaces: 2, // 2 decimal places for acceleration
+                decimalPlaces: 1, // 1 decimal place for acceleration (more readable)
                 color: (opacity = 1) => `rgba(88, 86, 214, 1)`, // Purple for motion
                 labelColor: (opacity = 1) => `rgba(150, 150, 150, ${opacity * 0.6})`,
                 style: {
                   borderRadius: 0,
                 },
                 propsForDots: {
-                  r: "3.5",
+                  r: "3",
                   strokeWidth: "0",
                   stroke: "transparent",
                   fill: "rgba(88, 86, 214, 1)", // Purple for motion dots
@@ -351,12 +338,12 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
                   strokeWidth: 0.5,
                   stroke: 'rgba(150, 150, 150, 0.15)',
                 },
-                strokeWidth: 2.5, // Increase line thickness
+                strokeWidth: 2, // Slightly thinner line
                 fillShadowGradient: 'rgba(88, 86, 214, 0.4)', // Semi-transparent gradient fill
                 fillShadowGradientOpacity: 0.3, // Reduced opacity for the fill
               }}
               style={{
-                marginVertical: 8,
+                marginVertical: 6, // Less vertical margin
                 borderRadius: 0,
               }}
             />
@@ -375,12 +362,12 @@ const ScrollableMotionChart: React.FC<ScrollableMotionChartProps> = React.memo((
       ]}>
         <View style={styles.valueSection}>
           <Text style={styles.valueLabel}>Latest {derivedTimestamp}</Text>
-          <Text style={styles.currentValue}>{derivedCurrentValue.toFixed(2)} g</Text>
+          <Text style={styles.currentValue}>{derivedCurrentValue.toFixed(1)} g</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.valueSection}>
           <Text style={styles.valueLabel}>Peak Acceleration</Text>
-          <Text style={styles.currentValue}>{derivedPeakAccel.toFixed(2)} g</Text>
+          <Text style={styles.currentValue}>{derivedPeakAccel.toFixed(1)} g</Text>
         </View>
       </View>
     </Animated.View>
@@ -425,7 +412,7 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     position: 'relative',
-    height: 240, // Fixed height for the chart area
+    height: 220, // Slightly reduced height
   },
   staticRangeContainer: {
     position: 'absolute',
@@ -433,7 +420,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
     zIndex: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -448,11 +436,11 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 13,
     fontWeight: '500',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   rangeValue: {
     color: '#FFFFFF',
-    fontSize: 32,
+    fontSize: 28, // Smaller font size
     fontWeight: '700',
     marginBottom: 2,
   },
@@ -463,8 +451,8 @@ const styles = StyleSheet.create({
   },
   dateRange: {
     color: '#8E8E93',
-    fontSize: 16,
-    marginBottom: 16,
+    fontSize: 14, // Smaller font size
+    marginBottom: 8, // Reduced margin
   },
   averageContainer: {
     alignItems: 'flex-end',
@@ -482,7 +470,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollView: {
-    marginTop: 80, // Give space for the static range display
+    marginTop: 72, // Reduced space for the static range display
   },
   scrollViewContent: {
     paddingHorizontal: 20,
@@ -493,7 +481,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#5856D6', // Default to purple
-    paddingVertical: 16,
+    paddingVertical: 12, // Reduced padding
   },
   valueSection: {
     flex: 1,
@@ -502,20 +490,20 @@ const styles = StyleSheet.create({
   },
   divider: {
     width: 1,
-    height: '80%',
+    height: '70%', // Slightly smaller divider
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   valueLabel: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13, // Smaller font
     fontWeight: '500',
-    opacity: 0.9, // Reduce visual intensity
+    opacity: 0.9,
   },
   currentValue: {
-    fontSize: 17,
+    fontSize: 16, // Smaller font
     fontWeight: '600',
     color: '#FFFFFF',
-    opacity: 0.9, // Reduce visual intensity
+    opacity: 0.9,
   },
   emptyChart: {
     justifyContent: 'center',
